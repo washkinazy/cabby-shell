@@ -24,6 +24,18 @@ For regressions, create a fix branch from main and test the failing behavior. Pr
 
 ## Architecture and lifecycle
 
+### Configuration contract
+
+The default user configuration root is `$HOME/.config/cabby-shell`. Any supported XDG or command-line override must be explicitly documented and tested; do not silently change the default. Use subdirectories/files where they improve clarity, with documented discovery, relative-path resolution, and precedence.
+
+Maintain `docs/configuration.md` as the user-facing configuration reference and `examples/config/` as the complete example configuration set. Every added, changed, renamed, deprecated, or removed setting must update the reference and affected examples in the same feature branch before merging. This applies to defaults and behavior changes even if the key name stays the same.
+
+For every setting document its full key and file, purpose, type, default/omission behavior, valid values/range and units, example, dependencies/interactions, and reload-versus-restart behavior. Explain migration for incompatible changes. Examples must cover every supported setting, including alternatives that need separate mutually exclusive examples, and contain no private paths or credentials.
+
+Once the parser exists, validate every runnable example with the production parser and semantic validator. Keep an automated setting-coverage check tied to the actual schema/metadata so adding a setting without documentation/example coverage fails validation. Do not add speculative config keys before implementation; label future layout/format proposals explicitly. Never overwrite a user's configuration during install or upgrade.
+
+### Implementation guidelines
+
 - Use Rust and Iced for Cabby-owned implementation, subject to Phase 0 validation. Native system libraries and existing Linux services are allowed dependencies.
 - Keep service logic independent of UI widgets. Use typed commands/events and event subscriptions; avoid recurring command execution or polling when a suitable event interface exists.
 - Start with a few processes justified by lifecycle or isolation needs. Do not create one daemon per widget.
