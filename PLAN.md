@@ -6,7 +6,7 @@ The required feature set and exclusions are in README.md. Working direction: Rus
 
 Multiple cooperating services are acceptable. A UI crash may leave healthy components running under systemd; a shell shutdown must clean up ordinary components, and compositor-session loss must clean up all Cabby components. An active lock is session-owned and survives an ordinary UI stop/restart. This exception must be explicit in commands and units.
 
-Planning documents are prepared. No implementation phase has started, and no runtime capability has been verified locally. Local branches and validated merges into main are the delivery workflow; PRs are not required. Push policy is request-only for now.
+Phase 0 is in progress: the first platform prototype and isolated smoke harness are implemented. Software-rendered nested-session probes pass; full platform acceptance is still pending. See docs/development.md for exact evidence and unresolved checks. Local branches and validated merges into main are the delivery workflow; PRs are not required. Push policy is request-only for now.
 
 ## Decisions to settle at the relevant phase
 
@@ -158,3 +158,4 @@ For each feature, add a brief record containing scope, branch, checks and outcom
 
 - Planning baseline: README requirements plus AGENTS.md and this plan. Documentation validation only; runtime checks are not applicable yet.
 - Configuration contract: `docs/configuration-contract` documents the default root, reference/example layout, and ongoing merge checks. Whitespace and local-link checks pass; parser/example/schema validation starts with Phase 1 because no settings are implemented yet.
+- Phase 0 initial increment (`feat/phase0-platform`): Cargo workspace/lockfile, Iced bar and popup prototype, guarded test locker, Fedora dependency installer, and private nested-niri harness. Rust fmt/check/Clippy/test/build pass (zero Rust unit tests). Software-rendered nested probes pass for advertised protocols, rendered bar, PNG capture through grim, scale-change survival, lock confirmation, and locker survival after a bar crash. GPU adapter initialization failed in the initial wgpu-only runs. Popup focus, multiple outputs, Rust capture, and full Phase 0 acceptance remain open; this increment does not complete Phase 0.
