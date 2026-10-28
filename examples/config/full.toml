@@ -1,0 +1,9 @@
+# All settings at their defaults. Install as ~/.config/cabby-shell/config.toml.
+# Reference: docs/configuration.md. Changes require restarting the UI.
+
+# UI renderer: "vulkan" (hardware path) or "software" (tiny-skia).
+# Vulkan explicitly overrides an inherited WGPU_BACKEND=gl for the UI child.
+renderer = "vulkan"
+
+# Bar height and reserved area in logical pixels: integer, 32 through 128.
+bar_height = 40

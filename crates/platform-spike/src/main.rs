@@ -4,8 +4,42 @@ use iced_exwlshell::actions::IcedNewPopupSettings;
 use iced_exwlshell::reexport::{Anchor, KeyboardInteractivity, LayerSize, PixelSize};
 use iced_exwlshell::settings::{LayerShellSettings, Settings, StartMode};
 use iced_exwlshell::{daemon, to_exwlshell_message};
+use std::os::unix::process::CommandExt;
+
+fn configuration() -> cabby_config::Result<cabby_config::Config> {
+    let mut args = std::env::args_os().skip(1);
+    let path = match args.next() {
+        None => None,
+        Some(flag) if flag == "--config" => Some(std::path::PathBuf::from(
+            args.next().ok_or("--config requires a path")?,
+        )),
+        _ => return Err("Usage: cabby-platform-spike [--config PATH]".into()),
+    };
+    if args.next().is_some() {
+        return Err("unexpected arguments".into());
+    }
+    cabby_config::Source::from_env(path.as_deref())?.load(true)
+}
 
 fn main() -> iced_exwlshell::Result {
+    let config = configuration().unwrap_or_else(|error| {
+        eprintln!("{error}");
+        std::process::exit(1)
+    });
+    let environment = config.renderer.environment();
+    if environment
+        .iter()
+        .any(|(key, value)| std::env::var(key).as_deref() != Ok(*value))
+    {
+        // Re-exec before the renderer creates threads; never mutate process-wide
+        // environment unsafely or change the user's session environment.
+        let error = std::process::Command::new(std::env::current_exe().expect("executable path"))
+            .args(std::env::args_os().skip(1))
+            .envs(environment)
+            .exec();
+        eprintln!("cannot apply renderer environment: {error}");
+        std::process::exit(1);
+    }
     cabby_platform_spike::renderer_diagnostics();
     daemon(
         Spike::default,
@@ -17,8 +51,8 @@ fn main() -> iced_exwlshell::Result {
     .settings(Settings {
         layer_settings: LayerShellSettings {
             anchor: Anchor::Top | Anchor::Left | Anchor::Right,
-            size: LayerSize::fill_width(40),
-            exclusive_zone: 40,
+            size: LayerSize::fill_width(u32::from(config.bar_height)),
+            exclusive_zone: i32::from(config.bar_height),
             keyboard_interactivity: KeyboardInteractivity::None,
             start_mode: StartMode::AllScreens,
             ..Default::default()

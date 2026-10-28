@@ -1,0 +1,4 @@
+# Explicit alternative for systems without a working hardware Vulkan path.
+# This is not considered a successful GPU validation.
+renderer = "software"
+bar_height = 48
