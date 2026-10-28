@@ -33,6 +33,8 @@ The baseline is a niri environment without Noctalia or DMS. Cabby Shell should p
 
 These features define the required scope; whether each is implemented directly or integrated through an existing service remains an implementation decision. Interactive controls belong in the shell, while persistent configuration remains file-driven.
 
+Existing tools such as grim may provide backend functionality behind Cabby's Rust/Iced interface. Implementing every backend in Rust is not a requirement.
+
 Each addition should serve a frequent desktop interaction and fit the boundaries above. Configuration format, toolkit, and support for compositors beyond niri remain open decisions.
 
 ## Process ownership and lifecycle

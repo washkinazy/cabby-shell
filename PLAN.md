@@ -29,12 +29,13 @@ Each phase is split into small feature branches. The listed branch topics are ex
 Suggested topics: `chore/rust-workspace`, `feat/wayland-spike`, `test/nested-session`.
 
 - Establish a reproducible Cargo workspace and pin compatible Iced/shell bindings.
-- Run a minimal layer-shell bar and keyboard-focused popup under niri; verify opening, dismissal, and focus restoration.
-- Exercise multiple outputs and scale changes, an independent session-lock surface in a disposable session, and a screenshot capture path.
+- Run a minimal layer-shell bar and popup under niri. Cover opening/dismissal and focus behavior with automated/synthetic checks where practical; manual popup acceptance is waived, and any unexercised behavior is recorded as unverified.
+- Exercise single-output scale changes, an independent session-lock surface in a disposable session, and a screenshot capture path. A wrapped tool such as grim satisfies the capture-path requirement; an all-Rust capture backend is not required.
+- Model multiple outputs and geometry synthetically where practical. Physical multi-monitor testing is deferred because the available setup has one output; document assumptions and handle reported failures as fixes rather than blocking Phase 0.
 - Inspect advertised protocols; report unavailable capabilities rather than assuming all niri versions match current documentation.
 - Build a repeatable isolated test harness and document invocation/cleanup.
 
-Exit: build/lint/tests pass; the listed experiments have recorded results and blockers; a repeatable smoke test exits without leftover processes. If a critical capability fails, document the finding and revisit the stack before expanding UI work.
+Exit: build/lint/tests pass; feasible automated/synthetic experiments have recorded results, assumptions, and coverage gaps; a repeatable smoke test exits without leftover processes. Manual popup and physical multi-monitor checks are not completion gates. If a critical capability fails, document the finding and resolve it or explicitly select a working fallback before expanding UI work. Unavailable tests remain unverified rather than being reported as passes.
 
 ### Phase 1 — Configuration and service ownership
 
@@ -58,7 +59,7 @@ Suggested topics: `feat/bar`, `feat/launcher`, `feat/wallpaper`.
 - Use file-configured colors, typography, spacing, and layout; no settings GUI.
 - Handle output arrival/removal, differing scale factors, and keyboard navigation.
 
-Exit: a usable basic session; correct workspace actions and application launches; launching an app then stopping Cabby does not terminate the app; no idle rendering loop without a reason.
+Exit: automated/synthetic checks cover workspace actions and application launches; launching an app then stopping Cabby does not terminate the app; no idle rendering loop without a reason. Record any unverified physical-output behavior.
 
 ### Phase 3 — Notifications and device controls
 
@@ -69,7 +70,7 @@ Suggested topics: `feat/notifications`, `feat/audio`, `feat/bluetooth`.
 - Add Bluetooth discovery, pairing interaction, connect/disconnect, and removal.
 - Reconnect to dependencies after restarts and expose useful unavailable/error states.
 
-Exit: protocol/service integration tests pass; mock-driven UI states are exercised; real device operations are recorded in an agreed hardware test session. No duplicate notification owner or indefinite discovery remains after shutdown.
+Exit: protocol/service integration tests pass; mock-driven UI states are exercised; real device operations are recorded if safely automatable in the available environment, otherwise explicitly unverified. No duplicate notification owner or indefinite discovery remains after shutdown.
 
 ### Phase 4 — Clipboard workflow
 
@@ -90,17 +91,18 @@ Suggested topics: `feat/session-lock`, `feat/idle-policy`, `feat/night-light`.
 - Require compositor lock confirmation before a Cabby-initiated suspend; define behavior if locking fails or times out.
 - Implement temperature scheduling, output restoration, hotplug/resume, and unsupported-output reporting.
 
-Exit: isolated failure tests and real-session tests pass for lock/authentication, suspend/resume, inhibitors, display changes, and gamma. Killing the UI never unlocks the session. A killed locker must not expose the desktop; document how the user recovers access. Do not replace a working daily-use locker before these checks pass.
+Exit: feasible isolated automated failure tests pass for lock/authentication, suspend/resume policy, inhibitors, display changes, and gamma handling. Killing the UI never requests unlock. A killed locker must not expose the desktop; document the protocol guarantee, available test evidence, and recovery path. Untestable real-session behavior stays explicitly unverified; do not silently replace a working daily-use locker based only on mocks.
 
 ### Phase 6 — Screenshot GUI
 
 Suggested topics: `feat/screenshot-capture`, `feat/screenshot-preview`.
 
 - Capture without including Cabby's selection overlay; handle logical versus physical coordinates, monitor transforms, and scale.
+- Reuse a capture tool/service where useful. Keep capture behind a Rust interface so grim or niri actions can supply pixels while Cabby owns its UI workflow; no all-Rust-backend requirement.
 - Provide selection, preview, copy/save/cancel and clear errors for failed capture/write.
 - Keep captures out of logs and remove temporary files on cancellation and recovery.
 
-Exit: verify region and monitor capture, mixed scaling, clipboard image paste, save failures, and cancellation. Tests demonstrate crop geometry; visual inspection confirms output and interaction quality. Additional editing tools require an explicit scope decision.
+Exit: automated/synthetic tests verify region and monitor capture, scaling geometry, clipboard image transfer, save failures, and cancellation where the environment permits. Record untestable interaction and hardware behavior as coverage gaps; manual inspection is optional. Additional editing tools require an explicit scope decision.
 
 ### Phase 7 — Daily-use readiness
 
@@ -114,6 +116,8 @@ Suggested topics: `chore/packaging`, `test/session-recovery`, `docs/setup`.
 Exit: all required features have acceptance evidence; packaging works in a clean environment; logout/crash leaves no Cabby-owned processes; an agreed daily-use trial has no unresolved blocking failures.
 
 ## How we test
+
+Automated and synthetic testing is the default. Physical multi-monitor tests and manual popup acceptance are waived for the available single-output setup. Mocked geometry/output events can validate application logic but do not prove physical behavior. Where automation is impractical or hardware unavailable, record assumptions and limitations and continue; do not invent evidence or retain impossible acceptance gates. Known reproducible failures still require a fix or an explicit supported fallback.
 
 Every phase and feature branch that changes configuration must update `docs/configuration.md` and `examples/config/` in the same branch, including default/behavior changes, renames, and removals. This is a merge requirement throughout development, not a final documentation task. Reference entries include type, default, valid values/units, omission behavior, example, interactions, and reload requirements. Breaking changes include migration instructions.
 
@@ -129,11 +133,11 @@ Use a private D-Bus session and fixtures for notifications and device backends. 
 
 Use a nested niri session with dedicated sockets, config, cache/state, and test-specific systemd units, or a disposable VM with a real user service manager. Never attach destructive lifecycle tests to the host's `niri.service` or `graphical-session.target`. Ensure cleanup runs after success/failure and verify the test cgroups are empty.
 
-Test focus, overlays, capture, process exits, IPC reconnection, and service restart with actual clients. Visual inspection complements behavioral assertions. A nested compositor may not expose the same gamma, suspend, or lock behavior as a real DRM session.
+Test focus, overlays, capture, process exits, IPC reconnection, and service restart with actual clients where automation is practical. Visual inspection is optional, not a recurring user task. A nested compositor may not expose the same gamma, suspend, or lock behavior as a real DRM session.
 
-### Tier 4 — Explicit hardware/session acceptance
+### Tier 4 — Optional hardware/session evidence
 
-Use an agreed test session for real Bluetooth/audio, monitor hotplug, fractional scaling, gamma, suspend/resume, and PAM locking. Record environment and results. Preserve access through a recovery path before lock tests. Distinguish skipped, failed, and passed checks; mocks cannot satisfy hardware acceptance.
+When hardware and safe automation are available, use an isolated or explicitly agreed session for real Bluetooth/audio, monitor hotplug, fractional scaling, gamma, suspend/resume, and PAM locking. Record environment and results. Preserve access through a recovery path before lock tests. Distinguish skipped, failed, and passed checks; mocks cannot establish hardware behavior. Unavailable hardware and manual tests are not completion gates, and do not justify requesting a manual test cycle from the user.
 
 ## Lifecycle acceptance matrix
 
@@ -159,3 +163,4 @@ For each feature, add a brief record containing scope, branch, checks and outcom
 - Planning baseline: README requirements plus AGENTS.md and this plan. Documentation validation only; runtime checks are not applicable yet.
 - Configuration contract: `docs/configuration-contract` documents the default root, reference/example layout, and ongoing merge checks. Whitespace and local-link checks pass; parser/example/schema validation starts with Phase 1 because no settings are implemented yet.
 - Phase 0 initial increment (`feat/phase0-platform`): Cargo workspace/lockfile, Iced bar and popup prototype, guarded test locker, Fedora dependency installer, and private nested-niri harness. Rust fmt/check/Clippy/test/build pass (zero Rust unit tests). Software-rendered nested probes pass for advertised protocols, rendered bar, PNG capture through grim, scale-change survival, lock confirmation, and locker survival after a bar crash. GPU adapter initialization failed in the initial wgpu-only runs. Popup focus, multiple outputs, Rust capture, and full Phase 0 acceptance remain open; this increment does not complete Phase 0.
+- Scope revision (`docs/capture-and-test-scope`): external capture helpers are permitted; the existing grim probe satisfies the capture-path experiment. Physical multi-monitor and manual popup acceptance are waived; automate or synthesize feasible checks and record remaining gaps. This supersedes the original increment's Rust-capture/manual/multi-monitor gates. GPU investigation and feasible automated coverage remain work for Phase 0; it is not marked complete by this documentation change.

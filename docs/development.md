@@ -22,7 +22,7 @@ The script uses DNF and requests sudo when needed. It installs packages only; it
 | gcc, pkgconf-pkg-config | Native linker and library discovery |
 | wayland-devel, libxkbcommon-devel | Wayland and keyboard development libraries |
 | niri, wayland-utils | Nested compositor and protocol inspection |
-| grim | Capture oracle for the Phase 0 harness; not the planned production Rust backend |
+| grim | Working capture backend for the Phase 0 harness; also a permitted production helper |
 | dbus-daemon, systemd | Private D-Bus session and service lifecycle tooling |
 | python3 | Isolated-session harness |
 | mesa-dri-drivers, mesa-vulkan-drivers | Mesa rendering support, including software fallback where available |
@@ -52,7 +52,7 @@ Results live in an ignored `.artifacts/phase0-*` directory: protocol inventory, 
 
 The automatic run verifies bar mapping, a PNG capture through grim, survival after a scale change, compositor lock confirmation, and locker survival after the bar is killed. It then destroys the disposable session. The lock probe intentionally has **no authentication** and must never be installed as a real locker. Its environment guard is an accident-prevention measure, not a security boundary.
 
-For manual focus inspection:
+Optional developer inspection (not a required test or user task):
 
 ```sh
 ICED_BACKEND=tiny-skia python3 scripts/phase0-session.py --interactive
@@ -60,7 +60,25 @@ ICED_BACKEND=tiny-skia python3 scripts/phase0-session.py --interactive
 
 Click Open popup, type synthetic text, dismiss with Escape and by clicking outside, reopen, and check focus returns to another nested client. Then create `request-lock` in the printed artifact directory to continue to the lock probe. Click Release test lock to finish. The interactive run times out after five minutes; it does not automatically mark manual observations as passed.
 
-Still required for full Phase 0: observed popup keyboard/focus behavior, multiple outputs and scale correctness (not just process survival), visual lock surfaces, an evaluated Rust capture path, and failure/cleanup checks. A single nested output cannot establish multi-monitor support. Real DRM lock security, PAM authentication, gamma, and suspend/resume belong to later explicit hardware acceptance.
+Phase 0 now prioritizes automated/synthetic checks. Manual popup acceptance and physical multi-monitor tests are waived for the available single-output setup. Test application state and geometry synthetically where useful and record unexercised focus/physical behavior as unverified. The existing grim capture satisfies the capture-path experiment; a Rust-native backend is not required. Continue GPU investigation and feasible automated surface/failure checks. Real DRM lock security, PAM authentication, gamma, and suspend/resume remain distinct from nested-session evidence.
+
+The harness's `not_proven` entries are coverage disclosures, not automatically phase gates. In particular, `Rust-capture-backend` is no longer required, and `multiple-outputs` remains a documented physical-validation gap.
+
+## Screenshot backend direction
+
+Niri 26.04 implements screenshots inside the compositor. Its screenshot UI copies/maps captured renderer textures; it does not wrap grim. The available actions are:
+
+```sh
+niri msg action screenshot
+niri msg action screenshot-screen --path /absolute/path/capture.png
+niri msg action screenshot-window --path /absolute/path/capture.png
+```
+
+These are reference commands, not tests to run against the user's live display. `screenshot` opens niri's interactive selector; screen/window actions capture their respective targets and also update the clipboard. The local 26.04 CLI accepts an absolute output path, and the window action supports a window ID. Action acknowledgement must not be assumed to mean asynchronous file writing has completed.
+
+For Cabby's own selection/preview/copy/save flow, wrapping grim is a reasonable initial backend: it accepts a region or output and can write the capture to a file (or stdout using `-`). Niri actions remain an alternative when its built-in selection UI or window targeting is useful. Backend choice is separate from the Iced UI; use a narrow Rust interface and test helper failures, timeout/cancellation, result decoding, and temporary-file cleanup. Capture helpers must remain in the invoking service's cgroup. The full production wrapper belongs to Phase 6.
+
+References: [niri screenshot actions](https://niri-wm.github.io/niri/Configuration:-Key-Bindings.html#screenshot-screenshot-screen-screenshot-window), [niri 26.04 screenshot implementation](https://github.com/niri-wm/niri/blob/v26.04/src/ui/screenshot_ui.rs), and locally verified `niri msg action screenshot-screen --help` / `grim -h`.
 
 ## Sources used for the prototype
 
