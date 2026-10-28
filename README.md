@@ -54,6 +54,8 @@ User configuration defaults to `$HOME/.config/cabby-shell`, with subfiles/direct
 
 See [PLAN.md](PLAN.md) for implementation phases, acceptance criteria, and testing strategy, and [AGENTS.md](AGENTS.md) for repository instructions and the branch/commit/merge workflow. Initial development uses validated feature branches merged into main without a required pull request.
 
+Build prerequisites, the Fedora dependency installer, and isolated Phase 0 test commands are documented in [docs/development.md](docs/development.md).
+
 ## Reference tools
 
 These are examples of tools previously used to assemble the environment. They describe the roles Cabby should cover, rather than prescribing dependencies or toolkits; the no-GTK principle still applies to Cabby's interface.

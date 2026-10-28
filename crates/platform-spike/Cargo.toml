@@ -1,0 +1,10 @@
+[package]
+name = "cabby-platform-spike"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+iced.workspace = true
+iced_exwlshell.workspace = true

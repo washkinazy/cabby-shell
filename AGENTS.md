@@ -45,6 +45,7 @@ Once the parser exists, validate every runnable example with the production pars
 - Handle missing dependencies, disconnects, output changes, and invalid config explicitly. Keep the previous valid configuration on reload failure.
 - Keep persistent preferences, runtime state, and caches separate using XDG locations. Treat clipboard content, notification bodies, credentials, and screenshots as sensitive data; do not log their contents.
 - Pin the tested dependency combination and commit Cargo.lock once the Rust workspace exists. Record decisions and measured limitations; do not claim performance or compatibility without evidence.
+- Maintain `scripts/install-fedora-deps.sh` and `docs/development.md` whenever a build or test prerequisite changes. The installer must list the full Fedora development/test package set, support a non-mutating `--print` mode, and never enable services or overwrite user configuration.
 
 ## Testing and reporting
 
