@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import subprocess
@@ -17,7 +18,21 @@ def run(*args):
     return subprocess.run(args, check=True, capture_output=True, text=True, timeout=15).stdout
 
 
-def inside(directory, interactive):
+def selected_adapter(log):
+    """Read the adapter actually selected by Iced, not the enumeration list."""
+    match = re.search(r"Selected: AdapterInfo \{(.*?)\n\}", log, re.S)
+    if not match:
+        raise RuntimeError("No selected GPU adapter in renderer diagnostics")
+    block = match.group(1)
+    name = re.search(r'name: "([^"]+)"', block)
+    backend = re.search(r'backend: (\w+)', block)
+    kind = re.search(r'device_type: (\w+)', block)
+    if not (name and backend and kind):
+        raise RuntimeError("Incomplete GPU adapter diagnostics")
+    return {"name": name.group(1), "backend": backend.group(1), "device_type": kind.group(1)}
+
+
+def inside(directory, interactive, renderer):
     """Invoked by the nested compositor, with its private display and IPC socket."""
     directory = Path(directory)
     runtime = directory / "runtime"
@@ -27,6 +42,11 @@ def inside(directory, interactive):
         raise RuntimeError("Refusing to test outside the disposable compositor")
     os.environ["CABBY_TEST_WAYLAND"] = os.environ["WAYLAND_DISPLAY"]
     os.environ["WAYLAND_DEBUG"] = "1"
+    # Scope these overrides to probe children. Inherited WGPU_BACKEND=gl caused
+    # the original failure; never mutate the user's global environment.
+    os.environ["ICED_BACKEND"] = "wgpu" if renderer == "gpu" else "tiny-skia"
+    os.environ["WGPU_BACKEND"] = "vulkan"
+    os.environ["CABBY_RENDERER_DIAGNOSTICS"] = "1"
     children = []
     try:
         protocols = run("wayland-info")
@@ -60,7 +80,11 @@ def inside(directory, interactive):
             time.sleep(1)
             if bar.poll() is not None:
                 raise RuntimeError("Bar exited after scale change")
-            (directory / "scaled-outputs.json").write_text(run("niri", "msg", "--json", "outputs"))
+            scaled = run("niri", "msg", "--json", "outputs")
+            (directory / "scaled-outputs.json").write_text(scaled)
+            for name in outputs:
+                if json.loads(scaled)[name]["logical"]["scale"] != 1.5:
+                    raise RuntimeError(f"Output {name} did not adopt the requested scale")
             if interactive:
                 (directory / "interactive-ready").touch()
                 # User can inspect popup/focus before creating this request file.
@@ -88,12 +112,20 @@ def inside(directory, interactive):
                     raise RuntimeError("Locker exited when bar died")
                 if interactive:
                     lock.wait(timeout=180)
+            adapters = {}
+            if renderer == "gpu":
+                for client in ("bar", "lock"):
+                    adapter = selected_adapter((directory / f"{client}.log").read_text())
+                    if adapter["backend"] != "Vulkan" or adapter["device_type"] not in ("DiscreteGpu", "IntegratedGpu"):
+                        raise RuntimeError(f"{client} did not use hardware Vulkan: {adapter}")
+                    adapters[client] = adapter
             (directory / "result.json").write_text(json.dumps({
                 "status": "passed", "renderer_request": os.environ.get("ICED_BACKEND", "automatic"),
+                "adapters": adapters,
                 "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim",
                 "scale-change-process-survival", "lock-confirmed", "lock-survives-bar-crash"],
                 "not_proven": ["popup-keyboard-focus", "focus-restoration", "multiple-outputs",
-                "Rust-capture-backend", "PAM", "DRM-lock-security", "gamma", "suspend"],
+                "PAM", "DRM-lock-security", "gamma", "suspend"],
             }, indent=2))
     except Exception as error:
         (directory / "error.txt").write_text(f"{type(error).__name__}: {error}\n")
@@ -113,10 +145,12 @@ def inside(directory, interactive):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--interactive", action="store_true", help="Wait for popup inspection and lock release")
+    parser.add_argument("--renderer", choices=("gpu", "software"), default="gpu",
+                        help="gpu requires hardware Vulkan; software explicitly selects tiny-skia")
     parser.add_argument("--inside", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.inside:
-        inside(args.inside, args.interactive)
+        inside(args.inside, args.interactive, args.renderer)
         return
     for binary in ("cabby-platform-spike", "lock-probe"):
         if not (ROOT / "target/debug" / binary).is_file():
@@ -149,7 +183,7 @@ def main():
                                                     "XDG_STATE_HOME", "XDG_DATA_HOME", "WAYLAND_DISPLAY")]]
     command = ["systemd-run", "--user", "--scope", "--quiet", "--collect", f"--unit={unit}",
                "--property=RuntimeMaxSec=360", "--", *isolated_env, "dbus-run-session", "--", "niri", "-c", str(config), "--", sys.executable,
-               str(Path(__file__).resolve()), "--inside", str(directory)]
+               str(Path(__file__).resolve()), "--inside", str(directory), "--renderer", args.renderer]
     if args.interactive:
         command.append("--interactive")
     print(f"Artifacts: {directory}", flush=True)
@@ -186,7 +220,7 @@ def main():
             (directory / "cleanup.txt").write_text(
                 f"Unit: {unit}\nStop result: {stopped.returncode}\nState: {state.stdout.strip()}\n"
                 "Wrapper process group terminated and parent reaped.\n")
-            if state.stdout.strip() not in ("inactive", "failed", ""):
+            if state.returncode != 0 or state.stdout.strip() != "inactive":
                 raise RuntimeError(f"Test scope did not stop: {unit}")
 
 
