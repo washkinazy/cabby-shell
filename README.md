@@ -5,7 +5,7 @@ Cabby Shell is a personal, simplified alternative to Noctalia and Dank shells. I
 ## Design principles
 
 1. **Configuration lives in files.** There is no settings app. Persistent preferences, layout, and styling are configured through documented text files.
-2. **Use Qt or the implementation language's native styling.** The shell does not use GTK for its interface or theming. The implementation language and toolkit are still to be selected.
+2. **Use Qt or the implementation language's native styling.** The shell does not use GTK for its interface or theming. Rust with Iced is the working direction, pending the platform validation in PLAN.md.
 3. **Provide the essentials around the window manager.** Combine the basic desktop interactions into one coherent shell without taking ownership of unrelated system services.
 
 ## Scope boundaries
@@ -46,7 +46,11 @@ Cabby may comprise multiple cooperating services. A single process is not a requ
 - Ending or losing the compositor session must stop the associated Cabby components.
 - Shared system services such as BlueZ and PipeWire are dependencies, not Cabby-owned processes.
 
-A proposed Linux implementation uses systemd user services with control-group cleanup and explicit dependencies on the compositor session. Restart policy and component boundaries remain to be finalized. The lock service needs a separate lifecycle from the ordinary UI so a UI crash cannot unlock the session or discard the active lock interface.
+The Linux implementation will use systemd user services with control-group cleanup and explicit dependencies on the compositor session. Restart policy and component boundaries remain to be finalized. The lock service needs a separate lifecycle from the ordinary UI so a UI crash cannot unlock the session or discard the active lock interface.
+
+## Development
+
+See [PLAN.md](PLAN.md) for implementation phases, acceptance criteria, and testing strategy, and [AGENTS.md](AGENTS.md) for repository instructions and the branch/commit/merge workflow. Initial development uses validated feature branches merged into main without a required pull request.
 
 ## Reference tools
 
