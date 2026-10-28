@@ -36,7 +36,7 @@ Once the parser exists, validate every runnable example with the production pars
 
 ### Implementation guidelines
 
-- Use Rust and Iced for Cabby-owned implementation, subject to Phase 0 validation. Native system libraries and existing Linux services are allowed dependencies.
+- Use Rust and Iced for Cabby-owned implementation, subject to Phase 0 validation. Native system libraries, existing Linux services, and wrapped tools such as grim are allowed dependencies; reimplementing them in Rust is not a requirement. Invoke helpers with explicit argument arrays, handle errors/timeouts/cancellation, and keep their processes under supervision.
 - Keep service logic independent of UI widgets. Use typed commands/events and event subscriptions; avoid recurring command execution or polling when a suitable event interface exists.
 - Start with a few processes justified by lifecycle or isolation needs. Do not create one daemon per widget.
 - Every Cabby process and child must have an explicit supervisor and shutdown policy. Use systemd user units, cgroup cleanup, bounded restart behavior, and compositor-session dependencies. A target alone does not establish process ownership or crash propagation.
@@ -50,6 +50,8 @@ Once the parser exists, validate every runnable example with the production pars
 ## Testing and reporting
 
 Follow the test tiers and event matrix in PLAN.md. Prefer behavior tests for policy, protocol boundaries, and recovery. Do not write tests that simply duplicate implementation or add tests for trivial documentation edits.
+
+Prioritize automated and synthetic tests. The user has a single physical output: physical multi-monitor acceptance is deferred, not a merge or phase gate. Test output models and geometry synthetically where practical and label hardware assumptions as unverified. Skip manual popup acceptance; automate what can reasonably be exercised and record remaining coverage gaps. Do not repeatedly ask for manual testing or block progress solely on unavailable hardware/untestable interactions. This does not convert a failed automated check into a pass or authorize disruptive live-session tests.
 
 Once a Cargo workspace exists, the standard merge checks are `cargo fmt --all -- --check`, `cargo check --workspace --all-targets --locked`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, and `cargo test --workspace --locked`. Add feature-specific integration checks. Feature combinations must be deliberately supported before adding them to CI; do not blindly enable mutually exclusive backends with `--all-features`.
 
