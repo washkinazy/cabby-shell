@@ -41,12 +41,14 @@ Exit: build/lint/tests pass; the listed experiments have recorded results and bl
 Suggested topics: `feat/config`, `feat/session-lifecycle`, `feat/control-cli`.
 
 - Implement typed config, defaults, useful parse errors, and atomic valid-config reload.
+- Use `$HOME/.config/cabby-shell` as the default configuration root. Document any subfiles/directories, discovery rules, path resolution, and precedence in `docs/configuration.md`.
+- Ship a complete annotated example set in `examples/config/` alongside the parser. Validate all runnable examples with the production parser/semantic validator and enforce documentation/example coverage for every setting using schema metadata.
 - Add `cabby` control commands and a small set of systemd user services grouped by a target.
 - Bind services to the actual compositor service/session. Test dependency behavior on unexpected exit; `PartOf=` alone is not a crash detector.
 - Set bounded shutdown and restart policies; prevent duplicate instances and stale IPC endpoints.
 - Separate the lock lifecycle and user-launched application ownership from ordinary shell components.
 
-Exit: start, stop, UI crash, service crash, repeated start, compositor crash, and failed reload behave as specified. Cgroups and sockets show no abandoned Cabby work. No persistent services are installed or enabled merely by building/testing.
+Exit: start, stop, UI crash, service crash, repeated start, compositor crash, and failed reload behave as specified. Cgroups and sockets show no abandoned Cabby work. No persistent services are installed or enabled merely by building/testing. Configuration documentation and examples cover every implemented setting and pass parser, semantic, and coverage checks.
 
 ### Phase 2 — Everyday shell surface
 
@@ -113,6 +115,8 @@ Exit: all required features have acceptance evidence; packaging works in a clean
 
 ## How we test
 
+Every phase and feature branch that changes configuration must update `docs/configuration.md` and `examples/config/` in the same branch, including default/behavior changes, renames, and removals. This is a merge requirement throughout development, not a final documentation task. Reference entries include type, default, valid values/units, omission behavior, example, interactions, and reload requirements. Breaking changes include migration instructions.
+
 ### Tier 1 — Fast deterministic checks
 
 Run formatting, compilation, Clippy, and Rust tests on code branches (commands in AGENTS.md). Test configuration/reload, idle state transitions, notification replacement/expiry, clipboard retention, launcher matching, screenshot geometry, and schedule calculations. Inject clocks and service interfaces to avoid timing-dependent sleeps and real hardware in unit tests.
@@ -153,3 +157,4 @@ Use an agreed test session for real Bluetooth/audio, monitor hotplug, fractional
 For each feature, add a brief record containing scope, branch, checks and outcomes, environment for graphical/hardware checks, and any remaining limitations. Keep summaries small; scripts and fixtures should reproduce the details. A merged scaffold is not a completed feature, and a successful compile is not proof of session behavior.
 
 - Planning baseline: README requirements plus AGENTS.md and this plan. Documentation validation only; runtime checks are not applicable yet.
+- Configuration contract: `docs/configuration-contract` documents the default root, reference/example layout, and ongoing merge checks. Whitespace and local-link checks pass; parser/example/schema validation starts with Phase 1 because no settings are implemented yet.

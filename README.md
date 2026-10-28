@@ -50,6 +50,8 @@ The Linux implementation will use systemd user services with control-group clean
 
 ## Development
 
+User configuration defaults to `$HOME/.config/cabby-shell`, with subfiles/directories as needed. See the [configuration reference](docs/configuration.md) and [example configuration directory](examples/config/README.md). Every feature or setting change must keep the reference and complete example set current in the same branch.
+
 See [PLAN.md](PLAN.md) for implementation phases, acceptance criteria, and testing strategy, and [AGENTS.md](AGENTS.md) for repository instructions and the branch/commit/merge workflow. Initial development uses validated feature branches merged into main without a required pull request.
 
 ## Reference tools
