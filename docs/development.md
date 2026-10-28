@@ -44,7 +44,7 @@ python3 scripts/phase0-session.py --renderer software
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
-Synthetic Rust tests cover duplicate popup opens, Escape dismissal/reopening, and delayed close events. Python tests check that renderer evidence comes from the selected adapter, not merely an enumeration of available devices. These tests do not prove real keyboard focus delivery. No Cabby configuration parser or settings have been introduced.
+Synthetic Rust tests cover duplicate popup opens, Escape dismissal/reopening, and delayed close events. Python tests check that renderer evidence comes from the selected adapter, not merely an enumeration of available devices. These tests do not prove real keyboard focus delivery. The production config parser now supplies renderer and bar-height settings to the UI prototype; see [configuration.md](configuration.md).
 
 ## Isolated runtime harness
 
@@ -95,8 +95,8 @@ The inherited environment contains `WGPU_BACKEND=gl`. Consequently, the initial 
 
 Explicit Vulkan selection succeeds. Both bar and lock probe select **NVIDIA GeForce RTX 4070 / Vulkan / DiscreteGpu** and pass the nested smoke test, including buffer submission, capture, scale change, lock confirmation, bar-crash isolation, and inactive systemd scope after cleanup. This establishes a working GPU path on this machine, not universal driver compatibility. The explicit tiny-skia run also passes; no performance comparison has been made.
 
-The harness defaults to `--renderer gpu`, which sets `ICED_BACKEND=wgpu`, `WGPU_BACKEND=vulkan`, and `CABBY_RENDERER_DIAGNOSTICS=1` only for its probe children. It records the selected adapter for both clients and rejects CPU adapters or silent software fallback. `--renderer software` explicitly selects tiny-skia. Renderer flags are development harness options, not persistent Cabby configuration. Directly launching a probe still honors inherited upstream renderer variables; for the validated hardware path use `ICED_BACKEND=wgpu WGPU_BACKEND=vulkan`.
+The harness defaults to `--renderer gpu`, which sets `ICED_BACKEND=wgpu`, `WGPU_BACKEND=vulkan`, and `CABBY_RENDERER_DIAGNOSTICS=1` only for its probe children. It records the selected adapter for both clients and rejects CPU adapters or silent software fallback. `--renderer software` explicitly selects tiny-skia. Renderer flags are development harness options, not persistent Cabby configuration. The UI prototype reads config and re-execs with the selected backend when inherited renderer variables disagree. The standalone lock probe still uses upstream environment selection; the harness sets it explicitly.
 
-Diagnostics use the existing Rust log ecosystem and filter to Iced/wgpu renderer messages. `CABBY_RENDERER_DIAGNOSTICS` enables these messages when present; leave it unset to disable them for direct runs. The Fedora installer needs no new system packages for this change. Any production renderer setting will receive a complete reference/example entry in Phase 1.
+Diagnostics use the existing Rust log ecosystem and filter to Iced/wgpu renderer messages. `CABBY_RENDERER_DIAGNOSTICS` enables these messages when present; leave it unset to disable them for direct runs. The Fedora installer needs no new system packages for this change. The renderer setting now has a full entry and examples in the configuration reference.
 
 COSMIC's [libcosmic documentation](https://github.com/pop-os/libcosmic#cargo-features) describes an Iced-based toolkit with software rendering by default and optional wgpu GPU rendering. Its [manifest](https://github.com/pop-os/libcosmic/blob/master/Cargo.toml) exposes that selection. This is the application toolkit, distinct from COSMIC's compositor renderer. Cabby similarly keeps both renderer paths available, but tests GPU and software separately instead of treating fallback as GPU success.

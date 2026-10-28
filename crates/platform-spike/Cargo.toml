@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+cabby-config.workspace = true
 iced.workspace = true
 iced_exwlshell.workspace = true
 log = "=0.4.34"

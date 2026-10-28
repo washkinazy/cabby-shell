@@ -56,8 +56,10 @@ def inside(directory, interactive, renderer):
                 raise RuntimeError(f"Required probe protocol missing: {protocol}")
         outputs = json.loads(run("niri", "msg", "--json", "outputs"))
         (directory / "outputs.json").write_text(json.dumps(outputs, indent=2))
+        config = directory / "cabby.toml"
+        config.write_text(f'renderer = "{"vulkan" if renderer == "gpu" else "software"}"\nbar_height = 40\n')
         with (directory / "bar.log").open("w") as log:
-            bar = subprocess.Popen([ROOT / "target/debug/cabby-platform-spike"], stdout=log, stderr=log)
+            bar = subprocess.Popen([ROOT / "target/debug/cabby-platform-spike", "--config", config], stdout=log, stderr=log)
             children.append(bar)
             deadline = time.monotonic() + 30
             while time.monotonic() < deadline:

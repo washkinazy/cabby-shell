@@ -1,45 +1,47 @@
 # Configuration reference
 
-## Status
+## Location and loading
 
-Cabby is in the planning stage. No configuration parser or settings are implemented yet. TOML is the proposed format; entrypoint filenames and any component files will be finalized with the parser in Phase 1. There are no runnable configuration examples yet, and this document does not claim otherwise.
+Cabby reads TOML from `$HOME/.config/cabby-shell/config.toml`. This is currently one file; there are no includes, automatic subfile discovery, or layered merges. `$XDG_CONFIG_HOME` does not override this explicitly chosen default. `HOME` must be absolute when no explicit path is supplied.
 
-## Location and ownership
+`cabby validate --config PATH` and `cabby-platform-spike --config PATH` select a different file. Relative CLI paths resolve against the command's working directory. Cabby does not expand `~` or environment variables inside path strings; a shell may expand an unquoted CLI path before invoking Cabby.
 
-The default configuration directory is `$HOME/.config/cabby-shell`. All Cabby user configuration files and any configuration subdirectories belong under this root. Shared themes or component configuration may be split into files when useful; each file must have a documented purpose and loading rule.
+A missing default file at startup uses built-in defaults. A missing explicitly selected file is an error. Empty files and omitted settings use defaults. Invalid startup configuration fails startup. Invalid reloads (including a removed file) retain the entire previous valid snapshot. Unknown/duplicate keys, wrong types, unknown renderer names, and invalid ranges are errors. Files are limited to 64 KiB and must be UTF-8.
 
-Any supported override, including `XDG_CONFIG_HOME` or a command-line path, must be documented here when implemented, together with exact precedence. Environment-variable and tilde expansion inside configuration values must not be assumed. Document path resolution for each path-valued setting and how relative paths resolve across subfiles.
+The parser and atomic in-memory reload store are implemented. Live service reload is added with the control service in Phase 1; the UI prototype currently reads settings on startup only. Both settings below require UI restart to take effect.
 
-Configuration is user-owned: installation and upgrades must not overwrite it. Runtime sockets, logs, caches, clipboard history, and other generated state do not belong in this directory. Their separate locations will be documented when implemented.
+## Validation and installation
 
-## Reference organization
+```sh
+cargo run -p cabby -- validate --config examples/config/full.toml
+cargo run -p cabby -- validate --config examples/config/minimal.toml
+cargo run -p cabby -- validate --config examples/config/software.toml
+```
 
-As features land, this reference will describe:
+Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if you do not already have a configuration. Installation and upgrades never overwrite user configuration. Runtime snapshots, logs, caches, clipboard history, and sockets are separate from user preferences.
 
-- The entrypoint and directory tree, required/optional files, and missing-file behavior.
-- Loading order, overrides, includes if supported, and duplicate/unknown-key handling.
-- How to install the [example configurations](../examples/config/README.md), validate changes, and reload or restart affected components.
-- Every supported setting, organized by feature, with links to the corresponding examples.
-- Compatibility and migration notes for changed or removed settings.
+## Settings in `config.toml`
 
-Each setting's entry must specify:
+### `renderer`
 
-| Field | Required description |
-| --- | --- |
-| File and key | Exact file location and complete setting key |
-| Purpose | What user-visible behavior it controls |
-| Type | Boolean, string, number, array, table, or other supported form |
-| Default | Actual default and behavior when omitted, including environment-dependent values |
-| Accepted values | Enum options, bounds, units, formats, and path semantics as applicable |
-| Example | Valid representative value and link to a runnable example |
-| Interactions | Dependencies, conflicts, prerequisites, or related settings; explicitly say when none |
-| Application | Whether the change applies on reload or requires a component/session restart |
-| Migration | Replacement or migration steps when compatibility changes |
+- **Purpose:** selects the renderer for Cabby's UI surfaces.
+- **Type/default:** string; `"vulkan"` when omitted.
+- **Values:** `"vulkan"` or `"software"`, case-sensitive; no units.
+- **Example:** `renderer = "vulkan"` in [full.toml](../examples/config/full.toml); the software alternative is [software.toml](../examples/config/software.toml).
+- **Dependencies/interactions:** Vulkan requires a compatible Vulkan driver/adapter. Software selects Iced tiny-skia and is not proof of hardware acceleration. The UI process explicitly selects its backend, overriding inherited `ICED_BACKEND`/`WGPU_BACKEND` values without changing the user's session environment. System services and screenshot helpers do not use this renderer.
+- **Application:** UI restart required. No silent fallback when Vulkan is selected.
+- **Migration:** first schema; no prior setting to migrate.
 
-## Documentation and example maintenance
+### `bar_height`
 
-Adding a feature is incomplete until its configuration is documented and represented in the example set. Key additions, removals, renames, deprecations, new enum choices, default changes, and changed behavior require updates in the same branch as the implementation.
+- **Purpose:** sets the bar's logical height and matching reserved screen area.
+- **Type/default:** integer; `40` when omitted.
+- **Values:** inclusive range `32` through `128`, in logical pixels. Fractional output scaling determines physical pixel size.
+- **Example:** `bar_height = 40` in [full.toml](../examples/config/full.toml).
+- **Dependencies/interactions:** applies to the bar on each output, independently of renderer choice. It does not configure monitor resolution or scale.
+- **Application:** UI restart required.
+- **Migration:** first schema; no prior setting to migrate.
 
-The example set must cover all supported settings. Provide separate examples for incompatible alternatives rather than presenting an invalid combined configuration. Every runnable example must pass the production parser and semantic validation. Automated coverage checks must compare the implementation's schema/metadata with reference and example coverage once the configuration system exists.
+## Keeping this reference complete
 
-Keep examples portable and synthetic. Explain any hardware-specific values or prerequisites, and distinguish runnable configurations from illustrative snippets. Tests must not install examples over a user's real configuration.
+The configuration type and its setting-key metadata come from the same Rust declaration. Tests require every key in this reference and the full example, parse/validate every `.toml` example with the production parser, check enum alternatives, and compare the full example with actual defaults. Additions, removals, renames, new values, default changes, and changed behavior must update code, reference, examples, and relevant tests in the same branch.
