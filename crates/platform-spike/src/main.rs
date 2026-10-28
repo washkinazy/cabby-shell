@@ -6,6 +6,7 @@ use iced_exwlshell::settings::{LayerShellSettings, Settings, StartMode};
 use iced_exwlshell::{daemon, to_exwlshell_message};
 
 fn main() -> iced_exwlshell::Result {
+    cabby_platform_spike::renderer_diagnostics();
     daemon(
         Spike::default,
         || "cabby-phase0".into(),
@@ -25,6 +26,59 @@ fn main() -> iced_exwlshell::Result {
         ..Default::default()
     })
     .run()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_dismisses_popup_and_allows_reopening() {
+        let mut spike = Spike::default();
+        let parent = window::Id::unique();
+        let _ = spike.update(Message::Open(parent));
+        let _ = spike.update(Message::Event(Event::Keyboard(
+            keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(keyboard::key::Named::Escape),
+                modified_key: keyboard::Key::Named(keyboard::key::Named::Escape),
+                physical_key: keyboard::key::Physical::Code(keyboard::key::Code::Escape),
+                location: keyboard::Location::Standard,
+                modifiers: keyboard::Modifiers::empty(),
+                text: None,
+                repeat: false,
+            },
+        )));
+        assert_eq!(spike.popup, None);
+        let _ = spike.update(Message::Open(parent));
+        assert!(spike.popup.is_some());
+    }
+
+    #[test]
+    fn repeated_open_does_not_replace_the_live_popup() {
+        let mut spike = Spike::default();
+        let parent = window::Id::unique();
+        let _ = spike.update(Message::Open(parent));
+        let first = spike.popup.expect("popup created");
+        let _ = spike.update(Message::Open(parent));
+        assert_eq!(spike.popup, Some(first));
+    }
+
+    #[test]
+    fn delayed_close_does_not_clear_a_reopened_popup() {
+        let mut spike = Spike::default();
+        let parent = window::Id::unique();
+        let _ = spike.update(Message::Open(parent));
+        let old = spike.popup.expect("first popup");
+        let _ = spike.update(Message::Close);
+        assert_eq!(spike.popup, None);
+        let _ = spike.update(Message::Open(parent));
+        let new = spike.popup.expect("second popup");
+        assert_ne!(old, new);
+        let _ = spike.update(Message::Closed(old));
+        assert_eq!(spike.popup, Some(new));
+        let _ = spike.update(Message::Closed(new));
+        assert_eq!(spike.popup, None);
+    }
 }
 
 #[derive(Default)]

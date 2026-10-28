@@ -8,3 +8,4 @@ publish = false
 [dependencies]
 iced.workspace = true
 iced_exwlshell.workspace = true
+log = "=0.4.34"

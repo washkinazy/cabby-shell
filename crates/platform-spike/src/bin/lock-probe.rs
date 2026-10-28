@@ -4,6 +4,7 @@ use iced::{Element, Length, Task};
 use iced_exwlshell::{sessionlock::application, to_sessionlock_message};
 
 fn main() -> iced_exwlshell::Result {
+    cabby_platform_spike::renderer_diagnostics();
     // The harness supplies both paths only to children of its disposable compositor.
     let expected = std::env::var("CABBY_TEST_WAYLAND").ok();
     let actual = std::env::var("WAYLAND_DISPLAY").ok();

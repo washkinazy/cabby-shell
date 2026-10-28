@@ -39,10 +39,12 @@ cargo check --workspace --all-targets --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 cargo build --workspace --locked
-ICED_BACKEND=tiny-skia python3 scripts/phase0-session.py
+python3 scripts/phase0-session.py
+python3 scripts/phase0-session.py --renderer software
+python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
-The small experiment has no application policy unit tests yet; its meaningful checks are compilation and the protocol/runtime probes. No Cabby configuration parser or settings have been introduced.
+Synthetic Rust tests cover duplicate popup opens, Escape dismissal/reopening, and delayed close events. Python tests check that renderer evidence comes from the selected adapter, not merely an enumeration of available devices. These tests do not prove real keyboard focus delivery. No Cabby configuration parser or settings have been introduced.
 
 ## Isolated runtime harness
 
@@ -55,14 +57,14 @@ The automatic run verifies bar mapping, a PNG capture through grim, survival aft
 Optional developer inspection (not a required test or user task):
 
 ```sh
-ICED_BACKEND=tiny-skia python3 scripts/phase0-session.py --interactive
+python3 scripts/phase0-session.py --interactive
 ```
 
 Click Open popup, type synthetic text, dismiss with Escape and by clicking outside, reopen, and check focus returns to another nested client. Then create `request-lock` in the printed artifact directory to continue to the lock probe. Click Release test lock to finish. The interactive run times out after five minutes; it does not automatically mark manual observations as passed.
 
-Phase 0 now prioritizes automated/synthetic checks. Manual popup acceptance and physical multi-monitor tests are waived for the available single-output setup. Test application state and geometry synthetically where useful and record unexercised focus/physical behavior as unverified. The existing grim capture satisfies the capture-path experiment; a Rust-native backend is not required. Continue GPU investigation and feasible automated surface/failure checks. Real DRM lock security, PAM authentication, gamma, and suspend/resume remain distinct from nested-session evidence.
+Phase 0 now prioritizes automated/synthetic checks. Manual popup acceptance and physical multi-monitor tests are waived for the available single-output setup. Test application state and geometry synthetically where useful and record unexercised focus/physical behavior as unverified. The existing grim capture satisfies the capture-path experiment; a Rust-native backend is not required. Hardware Vulkan rendering now passes; retain the documented limits on real input delivery and untested outputs. Real DRM lock security, PAM authentication, gamma, and suspend/resume remain distinct from nested-session evidence.
 
-The harness's `not_proven` entries are coverage disclosures, not automatically phase gates. In particular, `Rust-capture-backend` is no longer required, and `multiple-outputs` remains a documented physical-validation gap.
+The harness's `not_proven` entries are coverage disclosures, not automatically phase gates. `multiple-outputs` remains a documented physical-validation gap; native Rust capture is not a requirement.
 
 ## Screenshot backend direction
 
@@ -85,12 +87,16 @@ References: [niri screenshot actions](https://niri-wm.github.io/niri/Configurati
 - [iced_exwlshell 0.20.1 API and examples](https://docs.rs/iced_exwlshell/0.20.1/iced_exwlshell/)
 - [niri nesting and CLI options](https://niri-wm.github.io/niri/Getting-Started.html)
 
-The production architecture remains undecided until Phase 0 exit criteria are met.
+The validated platform baseline is Rust/Iced with hardware Vulkan, an explicit software fallback, and systemd-owned component lifecycles. Production configuration and services follow in Phase 1.
 
-## Initial results (2026-10-28)
+## Renderer diagnosis and results (2026-10-28)
 
-Compilation, formatting, Clippy, and the Cargo test command pass (there are currently zero Rust unit tests). The nested software-renderer run passed protocol, bar, capture, scaling-survival, lock-confirmation, and lock-survival probes. The captured bar was visually inspected. Test state and captures remain ignored under `.artifacts/`.
+The inherited environment contains `WGPU_BACKEND=gl`. Consequently, the initial runs selected only OpenGL, not wgpu's unrestricted adapter selection. Diagnostics identify the NVIDIA OpenGL adapter but report an incompatible presentation surface. This OpenGL path remains unsupported in the tested nested setup; we have not modified the driver or global environment.
 
-The initial wgpu-only build failed to obtain a compatible graphics adapter; trying `WGPU_BACKEND=gl` did not resolve it. The host advertises NVIDIA RTX 4070, AMD integrated graphics, and llvmpipe Vulkan adapters, so missing GPU hardware is not an established explanation. The root cause remains open. Software rendering lets protocol validation proceed but is not evidence of GPU performance or compatibility.
+Explicit Vulkan selection succeeds. Both bar and lock probe select **NVIDIA GeForce RTX 4070 / Vulkan / DiscreteGpu** and pass the nested smoke test, including buffer submission, capture, scale change, lock confirmation, bar-crash isolation, and inactive systemd scope after cleanup. This establishes a working GPU path on this machine, not universal driver compatibility. The explicit tiny-skia run also passes; no performance comparison has been made.
 
-`ICED_BACKEND=tiny-skia` is an upstream Iced developer override, not a Cabby config setting. Omit it to investigate automatic renderer selection, or use `ICED_BACKEND=wgpu` to require GPU rendering. Do not mark GPU validation complete just because automatic fallback succeeds.
+The harness defaults to `--renderer gpu`, which sets `ICED_BACKEND=wgpu`, `WGPU_BACKEND=vulkan`, and `CABBY_RENDERER_DIAGNOSTICS=1` only for its probe children. It records the selected adapter for both clients and rejects CPU adapters or silent software fallback. `--renderer software` explicitly selects tiny-skia. Renderer flags are development harness options, not persistent Cabby configuration. Directly launching a probe still honors inherited upstream renderer variables; for the validated hardware path use `ICED_BACKEND=wgpu WGPU_BACKEND=vulkan`.
+
+Diagnostics use the existing Rust log ecosystem and filter to Iced/wgpu renderer messages. `CABBY_RENDERER_DIAGNOSTICS` enables these messages when present; leave it unset to disable them for direct runs. The Fedora installer needs no new system packages for this change. Any production renderer setting will receive a complete reference/example entry in Phase 1.
+
+COSMIC's [libcosmic documentation](https://github.com/pop-os/libcosmic#cargo-features) describes an Iced-based toolkit with software rendering by default and optional wgpu GPU rendering. Its [manifest](https://github.com/pop-os/libcosmic/blob/master/Cargo.toml) exposes that selection. This is the application toolkit, distinct from COSMIC's compositor renderer. Cabby similarly keeps both renderer paths available, but tests GPU and software separately instead of treating fallback as GPU success.
