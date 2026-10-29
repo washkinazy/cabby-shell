@@ -47,6 +47,9 @@ configuration! {
     foreground: String = "#e5e9f0".into(),
     accent: String = "#88c0d0".into(),
     show_window_title: bool = true,
+    launcher_width: u16 = 640,
+    launcher_rows: u16 = 8,
+    launcher_terminal: Vec<String> = Vec::new(),
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,6 +102,21 @@ impl Config {
             if rgb(value).is_none() {
                 return Err(format!("{key} must be #RRGGBB"));
             }
+        }
+        if !(320..=1200).contains(&config.launcher_width)
+            || !(4..=12).contains(&config.launcher_rows)
+        {
+            return Err("launcher_width must be 320..1200 pixels and launcher_rows 4..12".into());
+        }
+        if config.launcher_terminal.len() > 32
+            || config
+                .launcher_terminal
+                .iter()
+                .any(|s| s.is_empty() || s.contains('\0'))
+        {
+            return Err(
+                "launcher_terminal must contain at most 32 nonempty, NUL-free arguments".into(),
+            );
         }
         Ok(config)
     }
@@ -211,6 +229,9 @@ mod tests {
             "bar_height = 500",
             "renderer = 'unknown'",
             "typo = true",
+            "launcher_width = 0",
+            "launcher_rows = 13",
+            "launcher_terminal = ['']",
             "background = '#xyz123'",
             "accent = 'é00000'",
             "bar_position = 'left'",

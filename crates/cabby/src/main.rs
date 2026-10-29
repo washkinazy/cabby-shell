@@ -2,7 +2,7 @@ mod runtime;
 use cabby_config::{Result, Source};
 use std::ffi::OsString;
 use std::os::unix::process::CommandExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const HELP: &str = "Usage:
@@ -10,7 +10,10 @@ const HELP: &str = "Usage:
   cabby status|reload [--runtime-dir PATH]
   cabby start|stop|restart [--target UNIT] [--session-unit UNIT]
   cabby restart-ui [--ui-unit UNIT] [--session-unit UNIT]
-  cabby launch [--session-unit UNIT] -- PROGRAM [ARG...]
+  cabby launcher [--launcher-unit UNIT] [--target UNIT] [--session-unit UNIT]
+  cabby launcher-ui [--config PATH]
+  cabby launch-app --desktop-id ID [--config PATH] [--session-unit UNIT]
+  cabby launch [--session-unit UNIT] [--working-directory PATH] -- PROGRAM [ARG...]
   cabby serve [--config PATH] [--runtime-dir PATH] [--ui-unit UNIT]
   cabby ui [--config PATH]
 
@@ -55,7 +58,7 @@ fn require_session(session: &str) -> Result<()> {
     Ok(())
 }
 
-fn launch(session: &str, program: &[OsString]) -> Result<()> {
+fn launch(session: &str, program: &[OsString], directory: Option<&Path>) -> Result<()> {
     if program.is_empty() {
         return Err("launch requires -- PROGRAM [ARG...]".into());
     }
@@ -95,6 +98,9 @@ fn launch(session: &str, program: &[OsString]) -> Result<()> {
             cmd.arg(argument);
         }
     }
+    if let Some(directory) = directory {
+        cmd.current_dir(directory);
+    }
     let status = cmd
         .arg("--")
         .args(program)
@@ -116,12 +122,14 @@ fn run() -> Result<()> {
     }
     let command = command.to_str().ok_or("command must be UTF-8")?;
     let allowed: &[&str] = match command {
-        "validate" | "ui" => &["--config"],
+        "validate" | "ui" | "launcher-ui" => &["--config"],
         "serve" => &["--config", "--runtime-dir", "--ui-unit"],
         "status" | "reload" => &["--runtime-dir"],
         "start" | "stop" | "restart" => &["--target", "--session-unit"],
         "restart-ui" => &["--ui-unit", "--session-unit"],
-        "launch" => &["--session-unit"],
+        "launcher" => &["--launcher-unit", "--target", "--session-unit"],
+        "launch-app" => &["--desktop-id", "--config", "--session-unit"],
+        "launch" => &["--session-unit", "--working-directory"],
         _ => return Err("unknown command; use cabby --help".into()),
     };
     let mut options = std::collections::BTreeMap::new();
@@ -179,12 +187,16 @@ fn run() -> Result<()> {
                 return Err("configuration accepted, but UI restart could not be queued".into());
             }
         }
-        "ui" => {
+        "ui" | "launcher-ui" => {
             let source = Source::from_env(config.as_deref())?;
             source.load(true)?;
             let executable = std::env::current_exe()
                 .map_err(|error| error.to_string())?
-                .with_file_name("cabby-platform-spike");
+                .with_file_name(if command == "ui" {
+                    "cabby-platform-spike"
+                } else {
+                    "cabby-launcher"
+                });
             let mut child = Command::new(executable);
             if source.explicit {
                 child.arg("--config").arg(source.path);
@@ -200,7 +212,40 @@ fn run() -> Result<()> {
             require_session(&session)?;
             systemctl(&["restart", &ui])?;
         }
-        "launch" => launch(&session, &program)?,
+        "launcher" => {
+            let launcher = text_option("--launcher-unit", "cabby-launcher.service")?;
+            unit(&launcher, ".service")?;
+            require_session(&session)?;
+            systemctl(&["is-active", "--quiet", &target])?;
+            systemctl(&["start", &launcher])?;
+        }
+        "launch-app" => {
+            let id = text_option("--desktop-id", "")?;
+            if id.is_empty() {
+                return Err("--desktop-id is required".into());
+            }
+            let config = Source::from_env(config.as_deref())?.load(true)?;
+            let catalog = cabby_launcher::discover();
+            let app = catalog
+                .apps
+                .iter()
+                .find(|a| a.id == id)
+                .ok_or("application is unavailable or hidden")?;
+            let args = app
+                .command(&config.launcher_terminal)?
+                .into_iter()
+                .map(OsString::from)
+                .collect::<Vec<_>>();
+            launch(&session, &args, app.directory.as_deref())?;
+        }
+        "launch" => launch(
+            &session,
+            &program,
+            options
+                .get("--working-directory")
+                .map(PathBuf::from)
+                .as_deref(),
+        )?,
         _ => unreachable!(),
     }
     Ok(())

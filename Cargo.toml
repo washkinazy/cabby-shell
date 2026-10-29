@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/platform-spike", "crates/config", "crates/cabby"]
+members = ["crates/platform-spike", "crates/config", "crates/cabby", "crates/launcher"]
 resolver = "3"
 
 [workspace.package]
@@ -7,6 +7,7 @@ edition = "2024"
 rust-version = "1.98"
 
 [workspace.dependencies]
+cabby-launcher = { path = "crates/launcher" }
 cabby-config = { path = "crates/config" }
 serde = { version = "=1.0.229", features = ["derive"] }
 toml = "=1.1.8"

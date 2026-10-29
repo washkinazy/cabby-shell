@@ -6,3 +6,8 @@ bar_height = 48
 # Alternative bottom bar with title hidden.
 bar_position = "bottom"
 show_window_title = false
+
+# Optional terminal integration; foot must be installed separately to use this.
+launcher_terminal = ["foot", "-e"]
+launcher_width = 720
+launcher_rows = 6
