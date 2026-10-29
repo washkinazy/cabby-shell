@@ -8,7 +8,7 @@ Cabby reads TOML from `$HOME/.config/cabby-shell/config.toml`. This is currently
 
 A missing default file at startup uses built-in defaults. A missing explicitly selected file is an error. Empty files and omitted settings use defaults. Invalid startup configuration fails startup. Invalid reloads (including a removed file) retain the entire previous valid snapshot. Unknown/duplicate keys, wrong types, unknown renderer names, and invalid ranges are errors. Files are limited to 64 KiB and must be UTF-8.
 
-The parser and atomic in-memory reload store are implemented. Live service reload is added with the control service in Phase 1; the UI prototype currently reads settings on startup only. Both settings below require UI restart to take effect.
+The coordinator implements `cabby reload`: invalid input retains the previous active snapshot; changed valid input is published atomically and queues a managed UI restart. Both settings below require that restart. Direct UI invocation reads settings on startup only. See [services.md](services.md) for runtime ownership and restart results.
 
 ## Validation and installation
 

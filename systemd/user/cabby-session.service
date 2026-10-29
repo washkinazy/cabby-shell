@@ -1,0 +1,21 @@
+[Unit]
+Description=Cabby configuration and control coordinator
+BindsTo=niri.service
+After=niri.service
+PartOf=cabby.target
+Upholds=cabby-ui.service
+StartLimitIntervalSec=30
+StartLimitBurst=3
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/cabby serve --ui-unit cabby-ui.service
+RuntimeDirectory=cabby-shell
+RuntimeDirectoryMode=0700
+UMask=0077
+KillMode=control-group
+TimeoutStartSec=10
+TimeoutStopSec=5
+Restart=on-failure
+RestartSec=1

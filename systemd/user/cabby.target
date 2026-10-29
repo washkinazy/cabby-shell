@@ -1,0 +1,5 @@
+[Unit]
+Description=Cabby shell components
+BindsTo=niri.service
+After=niri.service
+Wants=cabby-session.service cabby-ui.service

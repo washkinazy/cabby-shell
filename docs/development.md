@@ -24,7 +24,8 @@ The script uses DNF and requests sudo when needed. It installs packages only; it
 | niri, wayland-utils | Nested compositor and protocol inspection |
 | grim | Working capture backend for the Phase 0 harness; also a permitted production helper |
 | dbus-daemon, systemd | Private D-Bus session and service lifecycle tooling |
-| python3 | Isolated-session harness |
+| python3 | Isolated-session and lifecycle harnesses |
+| util-linux | setsid for detached-descendant cleanup tests |
 | mesa-dri-drivers, mesa-vulkan-drivers | Mesa rendering support, including software fallback where available |
 
 Initial environment: Fedora 45, Rust/Cargo 1.98.1, niri 26.04, systemd 262, Wayland 1.26.0, libxkbcommon 1.13.1. Other distributions/versions are not yet validated. Existing proprietary GPU installations may supply a different Vulkan driver.
@@ -100,3 +101,7 @@ The harness defaults to `--renderer gpu`, which sets `ICED_BACKEND=wgpu`, `WGPU_
 Diagnostics use the existing Rust log ecosystem and filter to Iced/wgpu renderer messages. `CABBY_RENDERER_DIAGNOSTICS` enables these messages when present; leave it unset to disable them for direct runs. The Fedora installer needs no new system packages for this change. The renderer setting now has a full entry and examples in the configuration reference.
 
 COSMIC's [libcosmic documentation](https://github.com/pop-os/libcosmic#cargo-features) describes an Iced-based toolkit with software rendering by default and optional wgpu GPU rendering. Its [manifest](https://github.com/pop-os/libcosmic/blob/master/Cargo.toml) exposes that selection. This is the application toolkit, distinct from COSMIC's compositor renderer. Cabby similarly keeps both renderer paths available, but tests GPU and software separately instead of treating fallback as GPU success.
+
+## Coordinator lifecycle
+
+See [services.md](services.md) for systemd units, IPC, and the isolated lifecycle test. Run `python3 scripts/test_session_lifecycle.py` after building. Tests stage only uniquely named runtime units and remove them afterward; no production service is installed.
