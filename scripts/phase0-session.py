@@ -57,7 +57,7 @@ def inside(directory, interactive, renderer):
         outputs = json.loads(run("niri", "msg", "--json", "outputs"))
         (directory / "outputs.json").write_text(json.dumps(outputs, indent=2))
         config = directory / "cabby.toml"
-        config.write_text(f'renderer = "{"vulkan" if renderer == "gpu" else "software"}"\nbar_height = 40\n')
+        config.write_text(f'renderer = "{"vulkan" if renderer == "gpu" else "software"}"\nbar_height = 40\nbar_position = "{"top" if renderer == "gpu" else "bottom"}"\n')
         with (directory / "bar.log").open("w") as log:
             bar = subprocess.Popen([ROOT / "target/debug/cabby", "ui", "--config", config], stdout=log, stderr=log)
             children.append(bar)
@@ -67,12 +67,15 @@ def inside(directory, interactive, renderer):
                     raise RuntimeError("Bar exited; see bar.log")
                 layers = run("niri", "msg", "--json", "layers")
                 rendered = ".attach(wl_buffer" in (directory / "bar.log").read_text()
-                if "cabby-phase0" in layers and rendered:
+                if "cabby-bar" in layers and rendered:
                     break
                 time.sleep(0.2)
             else:
                 raise RuntimeError("Bar did not map within 30 seconds")
             (directory / "layers.json").write_text(layers)
+            probe = subprocess.run([ROOT / "target/debug/bar-ipc-probe"], capture_output=True, text=True, timeout=15)
+            (directory / "bar-ipc-probe.log").write_text(probe.stdout + probe.stderr)
+            probe.check_returncode()
             time.sleep(1)
             subprocess.run(["grim", str(directory / "capture.png")], check=True, timeout=15)
             if (directory / "capture.png").read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
@@ -89,7 +92,7 @@ def inside(directory, interactive, renderer):
                     raise RuntimeError(f"Output {name} did not adopt the requested scale")
             if interactive:
                 (directory / "interactive-ready").touch()
-                # User can inspect popup/focus before creating this request file.
+                # User can inspect the bar before creating this request file.
                 while not (directory / "request-lock").exists():
                     if bar.poll() is not None:
                         raise RuntimeError("Bar exited during manual test")
@@ -124,7 +127,7 @@ def inside(directory, interactive, renderer):
             (directory / "result.json").write_text(json.dumps({
                 "status": "passed", "renderer_request": os.environ.get("ICED_BACKEND", "automatic"),
                 "adapters": adapters,
-                "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim",
+                "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action",
                 "scale-change-process-survival", "lock-confirmed", "lock-survives-bar-crash"],
                 "not_proven": ["popup-keyboard-focus", "focus-restoration", "multiple-outputs",
                 "PAM", "DRM-lock-security", "gamma", "suspend"],
@@ -146,7 +149,7 @@ def inside(directory, interactive, renderer):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--interactive", action="store_true", help="Wait for popup inspection and lock release")
+    parser.add_argument("--interactive", action="store_true", help="Wait for bar inspection and lock release")
     parser.add_argument("--renderer", choices=("gpu", "software"), default="gpu",
                         help="gpu requires hardware Vulkan; software explicitly selects tiny-skia")
     parser.add_argument("--inside", type=Path, help=argparse.SUPPRESS)
@@ -154,7 +157,7 @@ def main():
     if args.inside:
         inside(args.inside, args.interactive, args.renderer)
         return
-    for binary in ("cabby", "cabby-platform-spike", "lock-probe"):
+    for binary in ("cabby", "cabby-platform-spike", "lock-probe", "bar-ipc-probe"):
         if not (ROOT / "target/debug" / binary).is_file():
             parser.error("Run cargo build --workspace --locked first")
     parent_display = os.environ.get("WAYLAND_DISPLAY")
@@ -177,7 +180,7 @@ def main():
     for key in removed:
         env.pop(key, None)
     config = directory / "niri.kdl"
-    config.write_text('prefer-no-csd\nhotkey-overlay { skip-at-startup; }\nbinds { Mod+Shift+E { quit; }; }\n')
+    config.write_text('workspace "test-one"\nworkspace "test-two"\nprefer-no-csd\nhotkey-overlay { skip-at-startup; }\nbinds { Mod+Shift+E { quit; }; }\n')
     subprocess.run(["niri", "validate", "-c", config], check=True, env=env)
     unit = f"cabby-{directory.name}.scope"
     isolated_env = ["env", *[f"--unset={key}" for key in removed],
@@ -189,7 +192,7 @@ def main():
     if args.interactive:
         command.append("--interactive")
     print(f"Artifacts: {directory}", flush=True)
-    print("Interactive: inspect popup, then touch ARTIFACT_DIRECTORY/request-lock" if args.interactive
+    print("Interactive: inspect bar, then touch ARTIFACT_DIRECTORY/request-lock" if args.interactive
           else "Running bounded nested session smoke test", flush=True)
     with (directory / "session.log").open("w") as log:
         session = subprocess.Popen(command, stdout=log, stderr=log, start_new_session=True)

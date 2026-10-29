@@ -56,7 +56,7 @@ User configuration defaults to `$HOME/.config/cabby-shell`, with subfiles/direct
 
 See [PLAN.md](PLAN.md) for implementation phases, acceptance criteria, and testing strategy, and [AGENTS.md](AGENTS.md) for repository instructions and the branch/commit/merge workflow. Initial development uses validated feature branches merged into main without a required pull request.
 
-Phases 0 and 1 are complete: platform validation, configuration, service ownership, and control CLI. The UI is still a prototype; everyday desktop features begin in Phase 2.
+Phases 0 and 1 are complete: platform validation, configuration, service ownership, and control CLI. Phase 2 now includes an event-driven niri workspace/window bar with configurable styling. Launcher and wallpaper are next.
 
 Build prerequisites, the Fedora dependency installer, and isolated Phase 0 test commands are documented in [docs/development.md](docs/development.md).
 

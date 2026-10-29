@@ -22,3 +22,5 @@ pub fn renderer_diagnostics() {
         log::set_max_level(log::LevelFilter::Debug);
     }
 }
+
+pub mod niri;
