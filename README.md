@@ -35,7 +35,7 @@ These features define the required scope; whether each is implemented directly o
 
 Existing tools such as grim may provide backend functionality behind Cabby's Rust/Iced interface. Implementing every backend in Rust is not a requirement.
 
-Each addition should serve a frequent desktop interaction and fit the boundaries above. Configuration format, toolkit, and support for compositors beyond niri remain open decisions.
+Each addition should serve a frequent desktop interaction and fit the boundaries above. The validated baseline uses TOML configuration and Rust/Iced with Vulkan rendering; tiny-skia is an explicit software fallback. Support for compositors beyond niri remains an open decision.
 
 ## Process ownership and lifecycle
 
@@ -48,13 +48,15 @@ Cabby may comprise multiple cooperating services. A single process is not a requ
 - Ending or losing the compositor session must stop the associated Cabby components.
 - Shared system services such as BlueZ and PipeWire are dependencies, not Cabby-owned processes.
 
-The Linux implementation will use systemd user services with control-group cleanup and explicit dependencies on the compositor session. Restart policy and component boundaries remain to be finalized. The lock service needs a separate lifecycle from the ordinary UI so a UI crash cannot unlock the session or discard the active lock interface.
+The Linux implementation will use systemd user services with control-group cleanup and explicit dependencies on the compositor session. The initial coordinator and UI use bounded restart policies; see [service ownership and controls](docs/services.md). The lock service needs a separate lifecycle from the ordinary UI so a UI crash cannot unlock the session or discard the active lock interface.
 
 ## Development
 
 User configuration defaults to `$HOME/.config/cabby-shell`, with subfiles/directories as needed. See the [configuration reference](docs/configuration.md) and [example configuration directory](examples/config/README.md). Every feature or setting change must keep the reference and complete example set current in the same branch.
 
 See [PLAN.md](PLAN.md) for implementation phases, acceptance criteria, and testing strategy, and [AGENTS.md](AGENTS.md) for repository instructions and the branch/commit/merge workflow. Initial development uses validated feature branches merged into main without a required pull request.
+
+Phases 0 and 1 are complete: platform validation, configuration, service ownership, and control CLI. The UI is still a prototype; everyday desktop features begin in Phase 2.
 
 Build prerequisites, the Fedora dependency installer, and isolated Phase 0 test commands are documented in [docs/development.md](docs/development.md).
 

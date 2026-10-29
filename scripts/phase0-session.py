@@ -59,7 +59,7 @@ def inside(directory, interactive, renderer):
         config = directory / "cabby.toml"
         config.write_text(f'renderer = "{"vulkan" if renderer == "gpu" else "software"}"\nbar_height = 40\n')
         with (directory / "bar.log").open("w") as log:
-            bar = subprocess.Popen([ROOT / "target/debug/cabby-platform-spike", "--config", config], stdout=log, stderr=log)
+            bar = subprocess.Popen([ROOT / "target/debug/cabby", "ui", "--config", config], stdout=log, stderr=log)
             children.append(bar)
             deadline = time.monotonic() + 30
             while time.monotonic() < deadline:
@@ -154,7 +154,7 @@ def main():
     if args.inside:
         inside(args.inside, args.interactive, args.renderer)
         return
-    for binary in ("cabby-platform-spike", "lock-probe"):
+    for binary in ("cabby", "cabby-platform-spike", "lock-probe"):
         if not (ROOT / "target/debug" / binary).is_file():
             parser.error("Run cargo build --workspace --locked first")
     parent_display = os.environ.get("WAYLAND_DISPLAY")
