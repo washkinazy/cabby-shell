@@ -7,3 +7,17 @@ renderer = "vulkan"
 
 # Bar height and reserved area in logical pixels: integer, 32 through 128.
 bar_height = 40
+
+# Bar edge: "top" or "bottom". Reserved space follows the edge.
+bar_position = "top"
+# Horizontal outer padding and gaps between widgets, 0..32 logical pixels.
+bar_padding = 8
+bar_spacing = 8
+# Text size: 10..32 logical pixels, at least 8 smaller than bar_height.
+font_size = 14
+# Opaque RGB colors in #RRGGBB format.
+background = "#181b22"
+foreground = "#e5e9f0"
+accent = "#88c0d0"
+# Display the active window title on each output (false hides it).
+show_window_title = true

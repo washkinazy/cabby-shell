@@ -39,6 +39,37 @@ macro_rules! configuration {
 configuration! {
     renderer: Renderer = Renderer::Vulkan,
     bar_height: u16 = 40,
+    bar_position: BarPosition = BarPosition::Top,
+    bar_padding: u16 = 8,
+    bar_spacing: u16 = 8,
+    font_size: u16 = 14,
+    background: String = "#181b22".into(),
+    foreground: String = "#e5e9f0".into(),
+    accent: String = "#88c0d0".into(),
+    show_window_title: bool = true,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BarPosition {
+    #[default]
+    Top,
+    Bottom,
+}
+
+/// Validated RGB color, independent of the UI toolkit.
+pub fn rgb(value: &str) -> Option<[u8; 3]> {
+    if value.len() != 7
+        || !value.starts_with('#')
+        || !value[1..].bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    Some([
+        u8::from_str_radix(&value[1..3], 16).ok()?,
+        u8::from_str_radix(&value[3..5], 16).ok()?,
+        u8::from_str_radix(&value[5..7], 16).ok()?,
+    ])
 }
 
 impl Config {
@@ -49,6 +80,25 @@ impl Config {
         let config: Self = toml::from_str(source).map_err(|error| error.to_string())?;
         if !(32..=128).contains(&config.bar_height) {
             return Err("bar_height must be between 32 and 128 logical pixels".into());
+        }
+        if config.bar_padding > 32 || config.bar_spacing > 32 {
+            return Err(
+                "bar_padding and bar_spacing must be between 0 and 32 logical pixels".into(),
+            );
+        }
+        if !(10..=32).contains(&config.font_size) || config.font_size + 8 > config.bar_height {
+            return Err(
+                "font_size must be 10..32 and at least 8 pixels smaller than bar_height".into(),
+            );
+        }
+        for (key, value) in [
+            ("background", &config.background),
+            ("foreground", &config.foreground),
+            ("accent", &config.accent),
+        ] {
+            if rgb(value).is_none() {
+                return Err(format!("{key} must be #RRGGBB"));
+            }
         }
         Ok(config)
     }
@@ -161,6 +211,13 @@ mod tests {
             "bar_height = 500",
             "renderer = 'unknown'",
             "typo = true",
+            "background = '#xyz123'",
+            "accent = 'é00000'",
+            "bar_position = 'left'",
+            "bar_padding = 33",
+            "bar_spacing = 33",
+            "font_size = 33",
+            "bar_height = 32\nfont_size = 32",
             "[",
             "bar_height = 40\nbar_height = 60",
         ] {

@@ -8,7 +8,7 @@ The initial units are in `systemd/user/`. They target a niri session managed as 
 | --- | --- |
 | cabby.target | Starts/stops ordinary shell components; bound to niri.service |
 | cabby-session.service | Configuration snapshot, private control socket, readiness notification |
-| cabby-ui.service | Runs the current platform UI; later phases replace this with complete shell surfaces |
+| cabby-ui.service | Runs the workspace/window bar; later increments add launcher and other shell surfaces |
 
 The coordinator uses `Upholds=` to recover the UI after coordinator recovery. The UI waits for coordinator readiness, binds to it and niri, and belongs to cabby.target. Both services use cgroup cleanup, a five-second stop timeout, one-second restart delay, and at most three starts in thirty seconds. Crash loops eventually remain failed; status and journal output explain the failure. `systemctl --user reset-failed cabby-ui.service` permits retry after resolving the cause.
 

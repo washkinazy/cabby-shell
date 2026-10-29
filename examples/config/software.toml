@@ -2,3 +2,7 @@
 # This is not considered a successful GPU validation.
 renderer = "software"
 bar_height = 48
+
+# Alternative bottom bar with title hidden.
+bar_position = "bottom"
+show_window_title = false

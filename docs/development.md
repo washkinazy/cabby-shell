@@ -45,7 +45,7 @@ python3 scripts/phase0-session.py --renderer software
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
-Synthetic Rust tests cover duplicate popup opens, Escape dismissal/reopening, and delayed close events. Python tests check that renderer evidence comes from the selected adapter, not merely an enumeration of available devices. These tests do not prove real keyboard focus delivery. The production config parser now supplies renderer and bar-height settings to the UI prototype; see [configuration.md](configuration.md).
+Synthetic Rust tests cover duplicate popup opens, Escape dismissal/reopening, and delayed close events. Python tests check that renderer evidence comes from the selected adapter, not merely an enumeration of available devices. These tests do not prove real keyboard focus delivery. The production config parser supplies renderer, layout, and theme settings to the bar; see [configuration.md](configuration.md).
 
 ## Isolated runtime harness
 
@@ -61,7 +61,7 @@ Optional developer inspection (not a required test or user task):
 python3 scripts/phase0-session.py --interactive
 ```
 
-Click Open popup, type synthetic text, dismiss with Escape and by clicking outside, reopen, and check focus returns to another nested client. Then create `request-lock` in the printed artifact directory to continue to the lock probe. Click Release test lock to finish. The interactive run times out after five minutes; it does not automatically mark manual observations as passed.
+Optionally inspect the bar and its workspace buttons. The original popup experiment is retained separately as `target/debug/popup-probe`; it is no longer the production bar. Create `request-lock` in the printed artifact directory to continue to the lock probe. Click Release test lock to finish. The interactive run times out after five minutes; it does not automatically mark manual observations as passed.
 
 Phase 0 now prioritizes automated/synthetic checks. Manual popup acceptance and physical multi-monitor tests are waived for the available single-output setup. Test application state and geometry synthetically where useful and record unexercised focus/physical behavior as unverified. The existing grim capture satisfies the capture-path experiment; a Rust-native backend is not required. Hardware Vulkan rendering now passes; retain the documented limits on real input delivery and untested outputs. Real DRM lock security, PAM authentication, gamma, and suspend/resume remain distinct from nested-session evidence.
 
@@ -96,7 +96,7 @@ The inherited environment contains `WGPU_BACKEND=gl`. Consequently, the initial 
 
 Explicit Vulkan selection succeeds. Both bar and lock probe select **NVIDIA GeForce RTX 4070 / Vulkan / DiscreteGpu** and pass the nested smoke test, including buffer submission, capture, scale change, lock confirmation, bar-crash isolation, and inactive systemd scope after cleanup. This establishes a working GPU path on this machine, not universal driver compatibility. The explicit tiny-skia run also passes; no performance comparison has been made.
 
-The harness defaults to `--renderer gpu`, which sets `ICED_BACKEND=wgpu`, `WGPU_BACKEND=vulkan`, and `CABBY_RENDERER_DIAGNOSTICS=1` only for its probe children. It records the selected adapter for both clients and rejects CPU adapters or silent software fallback. `--renderer software` explicitly selects tiny-skia. Renderer flags are development harness options, not persistent Cabby configuration. The UI prototype reads config and re-execs with the selected backend when inherited renderer variables disagree. The standalone lock probe still uses upstream environment selection; the harness sets it explicitly.
+The harness defaults to `--renderer gpu`, which sets `ICED_BACKEND=wgpu`, `WGPU_BACKEND=vulkan`, and `CABBY_RENDERER_DIAGNOSTICS=1` only for its probe children. It records the selected adapter for both clients and rejects CPU adapters or silent software fallback. `--renderer software` explicitly selects tiny-skia. Renderer flags are development harness options, not persistent Cabby configuration. The bar reads config and re-execs with the selected backend when inherited renderer variables disagree. The standalone lock probe still uses upstream environment selection; the harness sets it explicitly.
 
 Diagnostics use the existing Rust log ecosystem and filter to Iced/wgpu renderer messages. `CABBY_RENDERER_DIAGNOSTICS` enables these messages when present; leave it unset to disable them for direct runs. The Fedora installer needs no new system packages for this change. The renderer setting now has a full entry and examples in the configuration reference.
 
@@ -105,3 +105,10 @@ COSMIC's [libcosmic documentation](https://github.com/pop-os/libcosmic#cargo-fea
 ## Coordinator lifecycle
 
 See [services.md](services.md) for systemd units, IPC, and the isolated lifecycle test. Run `python3 scripts/test_session_lifecycle.py` after building. Tests stage only uniquely named runtime units and remove them afterward; no production service is installed.
+
+
+## Bar integration
+
+The nested harness now runs the production bar (`cabby ui`, retaining the historical `cabby-platform-spike` executable name). It configures two named workspaces, then runs the guarded `bar-ipc-probe` using the same Rust IPC client as workspace buttons. The probe receives the snapshot, switches by stable workspace ID, and waits for focus confirmation. Vulkan tests the top edge; software tests the bottom edge. `capture.png` and `bar-ipc-probe.log` record rendering and action results. Rust tests cover multi-output reassignment, stale IDs, titles, disconnection/reset, future event types, rejected actions, socket closure, and oversized frames. No new Fedora system packages are needed; the lockfile pins the added Tokio socket support.
+
+Workspace/window data uses the [official niri JSON IPC protocol](https://github.com/niri-wm/niri/wiki/IPC). Cabby deserializes only consumed fields, ignores unrelated event types, and reconnects with fresh snapshots after invalid known events or disconnects. Socket tests require permission to bind local Unix sockets. Physical hotplug, multiple displays, actual pointer delivery, and real-window title rendering remain unverified; output/title behavior has synthetic coverage. No frame timer or periodic niri subprocess runs while connected; performance budgets await measurement.
