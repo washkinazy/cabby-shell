@@ -28,3 +28,10 @@ launcher_rows = 8
 # Literal terminal executable/argument prefix; [] shows a configuration error
 # for Terminal=true apps. Example: ["foot", "-e"] if foot is installed.
 launcher_terminal = []
+
+# Empty image means a solid color. Nonempty PNG/JPEG paths are relative to this file.
+wallpaper_image = ""
+# Color behind transparent images and outside fit/center images: #RRGGBB.
+wallpaper_color = "#181b22"
+# Image placement: "fill", "fit", "stretch", or "center".
+wallpaper_mode = "fill"

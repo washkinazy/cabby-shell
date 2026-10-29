@@ -76,6 +76,38 @@ def inside(directory, interactive, renderer):
             probe = subprocess.run([ROOT / "target/debug/bar-ipc-probe"], capture_output=True, text=True, timeout=15)
             (directory / "bar-ipc-probe.log").write_text(probe.stdout + probe.stderr)
             probe.check_returncode()
+            wallpaper = None
+            for mode in ("solid", "fill", "fit", "stretch", "center"):
+                if wallpaper is not None:
+                    wallpaper.terminate()
+                    wallpaper.wait(timeout=5)
+                wallpaper_config = directory / f"wallpaper-{mode}.toml"
+                wallpaper_config.write_text(config.read_text() + f'wallpaper_color = "#19334d"\nwallpaper_mode = "{"fill" if mode == "solid" else mode}"\n' +
+                                            ('' if mode == "solid" else f'wallpaper_image = "{ROOT / "examples/config/assets/sample.png"}"\n'))
+                wallpaper_log_path = directory / f"wallpaper-{mode}.log"
+                with wallpaper_log_path.open("w") as wallpaper_log:
+                    wallpaper = subprocess.Popen([ROOT / "target/debug/cabby", "wallpaper", "--config", wallpaper_config], stdout=wallpaper_log, stderr=wallpaper_log)
+                    children.append(wallpaper)
+                    deadline = time.monotonic() + 20
+                    while time.monotonic() < deadline:
+                        if wallpaper.poll() is not None:
+                            raise RuntimeError(f"Wallpaper {mode} exited")
+                        if "cabby-wallpaper" in run("niri", "msg", "--json", "layers") and ".attach(wl_buffer" in wallpaper_log_path.read_text():
+                            break
+                        time.sleep(0.1)
+                    else:
+                        raise RuntimeError(f"Wallpaper {mode} did not map")
+                    time.sleep(0.3)
+                    capture = directory / f"wallpaper-{mode}.png"
+                    subprocess.run(["grim", str(capture)], check=True, timeout=15)
+                    pixels = subprocess.run([ROOT / "target/debug/wallpaper-pixel-probe", capture, mode], capture_output=True, text=True, timeout=15)
+                    (directory / f"wallpaper-{mode}-pixels.txt").write_text(pixels.stdout + pixels.stderr)
+                    pixels.check_returncode()
+                    if renderer == "gpu":
+                        adapter = selected_adapter(wallpaper_log_path.read_text())
+                        if adapter["backend"] != "Vulkan" or adapter["device_type"] not in ("DiscreteGpu", "IntegratedGpu"):
+                            raise RuntimeError("Wallpaper did not select hardware Vulkan")
+            (directory / "wallpaper.log").write_text(wallpaper_log_path.read_text())
             time.sleep(1)
             subprocess.run(["grim", str(directory / "capture.png")], check=True, timeout=15)
             if (directory / "capture.png").read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
@@ -107,8 +139,11 @@ def inside(directory, interactive, renderer):
             for name in outputs:
                 run("niri", "msg", "output", name, "scale", "1.5")
             time.sleep(1)
-            if bar.poll() is not None:
-                raise RuntimeError("Bar exited after scale change")
+            if bar.poll() is not None or wallpaper.poll() is not None:
+                raise RuntimeError("Bar or wallpaper exited after scale change")
+            scaled_capture = directory / "wallpaper-scaled.png"
+            subprocess.run(["grim", str(scaled_capture)], check=True, timeout=15)
+            run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(scaled_capture), "center")
             scaled = run("niri", "msg", "--json", "outputs")
             (directory / "scaled-outputs.json").write_text(scaled)
             for name in outputs:
@@ -143,7 +178,7 @@ def inside(directory, interactive, renderer):
                     lock.wait(timeout=180)
             adapters = {}
             if renderer == "gpu":
-                for client in ("bar", "launcher", "lock"):
+                for client in ("bar", "launcher", "wallpaper", "lock"):
                     adapter = selected_adapter((directory / f"{client}.log").read_text())
                     if adapter["backend"] != "Vulkan" or adapter["device_type"] not in ("DiscreteGpu", "IntegratedGpu"):
                         raise RuntimeError(f"{client} did not use hardware Vulkan: {adapter}")
@@ -151,7 +186,7 @@ def inside(directory, interactive, renderer):
             (directory / "result.json").write_text(json.dumps({
                 "status": "passed", "renderer_request": os.environ.get("ICED_BACKEND", "automatic"),
                 "adapters": adapters,
-                "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action", "launcher-mapped-with-keyboard-focus",
+                "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action", "launcher-mapped-with-keyboard-focus", "wallpaper-solid-and-four-image-modes-pixels", "wallpaper-scaled-pixels",
                 "scale-change-process-survival", "lock-confirmed", "lock-survives-bar-crash"],
                 "not_proven": ["popup-keyboard-focus", "focus-restoration", "multiple-outputs",
                 "PAM", "DRM-lock-security", "gamma", "suspend"],
@@ -181,7 +216,7 @@ def main():
     if args.inside:
         inside(args.inside, args.interactive, args.renderer)
         return
-    for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe"):
+    for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe", "cabby-wallpaper", "wallpaper-pixel-probe"):
         if not (ROOT / "target/debug" / binary).is_file():
             parser.error("Run cargo build --workspace --locked first")
     parent_display = os.environ.get("WAYLAND_DISPLAY")

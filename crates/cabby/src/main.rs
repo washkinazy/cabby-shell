@@ -14,8 +14,8 @@ const HELP: &str = "Usage:
   cabby launcher-ui [--config PATH]
   cabby launch-app --desktop-id ID [--config PATH] [--session-unit UNIT]
   cabby launch [--session-unit UNIT] [--working-directory PATH] -- PROGRAM [ARG...]
-  cabby serve [--config PATH] [--runtime-dir PATH] [--ui-unit UNIT]
-  cabby ui [--config PATH]
+  cabby serve [--config PATH] [--runtime-dir PATH] [--ui-unit UNIT] [--wallpaper-unit UNIT]
+  cabby ui|wallpaper [--config PATH]
 
 Defaults: target=cabby.target, session-unit=niri.service, ui-unit=cabby-ui.service.
 No command installs or enables services. Paths and arguments are passed without shell evaluation.";
@@ -122,8 +122,8 @@ fn run() -> Result<()> {
     }
     let command = command.to_str().ok_or("command must be UTF-8")?;
     let allowed: &[&str] = match command {
-        "validate" | "ui" | "launcher-ui" => &["--config"],
-        "serve" => &["--config", "--runtime-dir", "--ui-unit"],
+        "validate" | "ui" | "launcher-ui" | "wallpaper" => &["--config"],
+        "serve" => &["--config", "--runtime-dir", "--ui-unit", "--wallpaper-unit"],
         "status" | "reload" => &["--runtime-dir"],
         "start" | "stop" | "restart" => &["--target", "--session-unit"],
         "restart-ui" => &["--ui-unit", "--session-unit"],
@@ -166,16 +166,25 @@ fn run() -> Result<()> {
     match command {
         "validate" => {
             let source = Source::from_env(config.as_deref())?;
+            let config = source.load(true)?;
+            cabby_config::wallpaper::revision(&config)?;
             println!(
                 "Valid configuration: {}\n{}",
                 source.path.display(),
-                source.load(true)?.to_toml()
+                config.to_toml()
             );
         }
         "serve" => runtime::serve(
             Source::from_env(config.as_deref())?,
             runtime::directory(directory)?,
             options.contains_key("--ui-unit").then_some(ui),
+            if options.contains_key("--wallpaper-unit") {
+                let name = text_option("--wallpaper-unit", "cabby-wallpaper.service")?;
+                unit(&name, ".service")?;
+                Some(name)
+            } else {
+                None
+            },
         )?,
         "status" | "reload" => {
             let result = runtime::request(&runtime::directory(directory)?, command)?;
@@ -183,19 +192,23 @@ fn run() -> Result<()> {
             if result["ok"] != true {
                 return Err("request failed".into());
             }
-            if result["ui_restart_queued"] == false {
-                return Err("configuration accepted, but UI restart could not be queued".into());
+            if result["ui_restart_queued"] == false || result["wallpaper_restart_queued"] == false {
+                return Err(
+                    "configuration accepted, but a component restart could not be queued".into(),
+                );
             }
         }
-        "ui" | "launcher-ui" => {
+        "ui" | "launcher-ui" | "wallpaper" => {
             let source = Source::from_env(config.as_deref())?;
             source.load(true)?;
             let executable = std::env::current_exe()
                 .map_err(|error| error.to_string())?
                 .with_file_name(if command == "ui" {
                     "cabby-platform-spike"
-                } else {
+                } else if command == "launcher-ui" {
                     "cabby-launcher"
+                } else {
+                    "cabby-wallpaper"
                 });
             let mut child = Command::new(executable);
             if source.explicit {

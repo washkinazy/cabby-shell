@@ -1,0 +1,5 @@
+# Copy the assets/ subdirectory alongside this file to keep the relative path valid.
+# This tiny two-color PNG is a test/example fixture, not a bundled wallpaper collection.
+wallpaper_image = "assets/sample.png"
+wallpaper_color = "#101820"
+wallpaper_mode = "fit"

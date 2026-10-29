@@ -106,16 +106,20 @@ COSMIC's [libcosmic documentation](https://github.com/pop-os/libcosmic#cargo-fea
 
 See [services.md](services.md) for systemd units, IPC, and the isolated lifecycle test. Run `python3 scripts/test_session_lifecycle.py` after building. Tests stage only uniquely named runtime units and remove them afterward; no production service is installed.
 
-
 ## Bar integration
 
 The nested harness now runs the production bar (`cabby ui`, retaining the historical `cabby-platform-spike` executable name). It configures two named workspaces, then runs the guarded `bar-ipc-probe` using the same Rust IPC client as workspace buttons. The probe receives the snapshot, switches by stable workspace ID, and waits for focus confirmation. Vulkan tests the top edge; software tests the bottom edge. `capture.png` and `bar-ipc-probe.log` record rendering and action results. Rust tests cover multi-output reassignment, stale IDs, titles, disconnection/reset, future event types, rejected actions, socket closure, and oversized frames. No new Fedora system packages are needed; the lockfile pins the added Tokio socket support.
 
 Workspace/window data uses the [official niri JSON IPC protocol](https://github.com/niri-wm/niri/wiki/IPC). Cabby deserializes only consumed fields, ignores unrelated event types, and reconnects with fresh snapshots after invalid known events or disconnects. Socket tests require permission to bind local Unix sockets. Physical hotplug, multiple displays, actual pointer delivery, and real-window title rendering remain unverified; output/title behavior has synthetic coverage. No frame timer or periodic niri subprocess runs while connected; performance budgets await measurement.
 
-
 ## Launcher validation
 
 See [launcher.md](launcher.md) for scope and controls. `cargo test --workspace --locked` includes desktop-entry fixtures and search/keyboard policies; `python3 scripts/test_session_lifecycle.py` also covers the shipped on-demand launcher unit and real desktop-entry app ownership. The nested renderer harness now captures `launcher.png` and `launcher.log`, observes `wl_keyboard.enter`, and requires hardware Vulkan selection for bar, launcher, and lock probe. XDG_DATA_DIRS is preserved for the graphical test because it also locates Vulkan driver manifests; fixture applications are added under the private data home and system application metadata may also appear. No installed application is launched by that graphical test. The lifecycle app fixture uses isolated discovery directories.
 
 Dependencies added are Rust crates only: pinned freedesktop-desktop-entry with gettext disabled and Tokio process support. The Fedora install script's system package set remains sufficient; optional terminal programs are user choices.
+
+## Wallpaper validation
+
+The Rust config crate pins image 0.25.10 with PNG/JPEG codecs only; Iced enables its image widget without default codecs. There are no new Fedora system packages, so the installer package list is unchanged. `cabby validate --config examples/config/wallpaper.toml` checks the bundled synthetic PNG and config-relative path resolution. The example coverage test now loads each example and validates its assets as well as its TOML.
+
+The nested harness starts `cabby wallpaper` on a private compositor, captures solid/fill/fit/stretch/center results, and uses `wallpaper-pixel-probe` to compare expected pixels. It also checks center placement after scale 1.5 and records the selected wallpaper GPU. Results are `wallpaper-*.png`, `wallpaper-*-pixels.txt`, and `wallpaper-*.log` under ignored artifacts. Runtime fixtures verify the shipped wallpaper unit alongside bar/launcher/session ownership. See [wallpaper.md](wallpaper.md) for limits; these tests do not establish physical multi-monitor behavior or performance budgets.

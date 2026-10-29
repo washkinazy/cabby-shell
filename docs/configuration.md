@@ -8,7 +8,7 @@ Cabby reads TOML from `$HOME/.config/cabby-shell/config.toml`. This is currently
 
 A missing default file at startup uses built-in defaults. A missing explicitly selected file is an error. Empty files and omitted settings use defaults. Invalid startup configuration fails startup. Invalid reloads (including a removed file) retain the entire previous valid snapshot. Unknown/duplicate keys, wrong types, unknown renderer names, and invalid ranges are errors. Files are limited to 64 KiB and must be UTF-8.
 
-The coordinator implements `cabby reload`: invalid input retains the previous active snapshot; changed valid input is published atomically and queues a managed UI restart. Bar settings require that restart; launcher settings take effect on its next opening. Direct UI invocation reads settings on startup only. See [services.md](services.md) for runtime ownership and restart results.
+The coordinator implements `cabby reload`: invalid input retains the previous active snapshot; changed valid input (including changed wallpaper image bytes) is published atomically and queues managed bar and wallpaper restarts. Bar and wallpaper settings require those restarts; launcher settings take effect on its next opening. Direct UI invocation reads settings on startup only. See [services.md](services.md) for runtime ownership and restart results.
 
 ## Validation and installation
 
@@ -150,6 +150,36 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Example:** `launcher_terminal = ["foot", "-e"]` in [software.toml](../examples/config/software.toml). For another terminal, supply its equivalent execute-command flag.
 - **Dependencies/interactions:** the selected terminal must be installed separately. No terminal package is mandatory for Cabby development. Ordinary GUI apps ignore this prefix. Desktop `Path` becomes the working directory. Shared terminal-server processes keep their own ownership.
 - **Application:** selection uses the launcher's startup snapshot for preliminary validation; the launch helper revalidates against the current config/snapshot. Close/reopen after managed reload for consistent UI behavior.
+- **Migration:** new optional setting.
+
+### `wallpaper_image`
+
+- **Purpose:** PNG/JPEG image shared by all output backgrounds. Empty means solid color.
+- **Type/default:** string; `""` when omitted; NUL is rejected.
+- **Values:** a UTF-8 file path, absolute or relative to the directory containing the selected config file. No tilde/environment expansion. The managed snapshot normalizes paths to absolute paths.
+- **Example:** `wallpaper_image = "assets/sample.png"` in [wallpaper.toml](../examples/config/wallpaper.toml); copy its `assets/` folder too.
+- **Dependencies/interactions:** static PNG/JPEG only; regular files at most 32 MiB, dimensions at most 8192×8192, decoder allocation limit 256 MiB. Transparent pixels reveal wallpaper_color. Image metadata orientation is not applied. No external wallpaper helper or GTK dependency.
+- **Application:** startup/reload validates and decodes images before publishing configuration. Invalid/missing images retain the current config on reload. Image content changes at the same path are detected by reload even when TOML is unchanged; successful changes restart wallpaper and bar. No file watcher. Concurrent file edits after validation can still fail component startup; replace image files atomically.
+- **Migration:** new optional setting; omission produces a solid background. No automatic import of another wallpaper tool's settings.
+
+### `wallpaper_color`
+
+- **Purpose:** solid background and letterbox/transparent-image fill.
+- **Type/default:** string; `"#181b22"` when omitted.
+- **Values:** opaque `#RRGGBB` RGB with case-insensitive hexadecimal digits, no units.
+- **Example:** `wallpaper_color = "#101820"` in [wallpaper.toml](../examples/config/wallpaper.toml).
+- **Dependencies/interactions:** independent of UI theme background; applies on every output with either renderer.
+- **Application:** wallpaper restart on managed reload; direct invocation reads at startup.
+- **Migration:** new optional setting.
+
+### `wallpaper_mode`
+
+- **Purpose:** place the same image independently within each output's logical bounds.
+- **Type/default:** string; `"fill"` when omitted.
+- **Values:** `"fill"` preserves aspect ratio and crops; `"fit"` preserves the complete image with color borders; `"stretch"` changes aspect ratio to fill; `"center"` centers at native image dimensions interpreted as logical pixels and clips overflow.
+- **Example:** `wallpaper_mode = "fit"`; [center](../examples/config/wallpaper-center.toml) and [stretch](../examples/config/wallpaper-stretch.toml) alternatives are provided.
+- **Dependencies/interactions:** ignored for an empty image. Output scaling determines physical pixel dimensions. Tiling, slideshows, and per-output image overrides are not implemented.
+- **Application:** wallpaper restart on managed reload; no changes to compositor output configuration.
 - **Migration:** new optional setting.
 
 ## Keeping this reference complete
