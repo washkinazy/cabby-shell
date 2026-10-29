@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -67,16 +68,28 @@ def main():
     def request(command, check=True):
         response = call(str(BIN), command, '--runtime-dir', str(runtime), check=check)
         return json.loads(response.stdout)
+    launched = []
+    def control(command):
+        return call(str(BIN), command, "--target", names["target"], "--session-unit", names["compositor"])
+    def launch(*argv):
+        result = json.loads(call(str(BIN), "launch", "--session-unit", names["compositor"], "--", *argv).stdout)
+        launched.append(result["unit"])
+        return result["unit"]
     results = []
     try:
         verify = call('systemd-analyze', '--user', 'verify', *units)
         (work / 'verify.txt').write_text(verify.stdout + verify.stderr)
         ctl('link', '--runtime', *units)
         ctl('daemon-reload')
-        ctl('start', names['target'])
+        denied = call(str(BIN), 'start', '--target', names['target'], '--session-unit', names['compositor'], check=False)
+        assert denied.returncode != 0 and not active('compositor')
+        assert call(str(BIN), 'launch', '--session-unit', names['compositor'], '--', '/usr/bin/true', check=False).returncode != 0
+        assert call(str(BIN), 'validate', '--ui-unit', names['ui'], check=False).returncode != 0
+        ctl('start', names['compositor'])
+        control('start')
         wait_for(lambda: active('session') and active('ui'), 'services start')
         initial = pid('session')
-        ctl('start', names['target'])
+        control('start')
         assert pid('session') == initial
         duplicate = call(str(BIN), 'serve', '--config', str(config), '--runtime-dir', str(runtime), check=False)
         assert duplicate.returncode != 0 and 'another Cabby' in duplicate.stderr
@@ -108,17 +121,29 @@ def main():
         wait_for(lambda: active('session') and pid('session') not in (0, initial) and active('ui'), 'coordinator restart')
         assert request('status')['config']['bar_height'] == 64
         results.append('coordinator crash rebuilds IPC and restarts UI')
+        ctl('reset-failed', names['ui'])
+        old_ui = pid('ui')
+        call(str(BIN), 'restart-ui', '--ui-unit', names['ui'], '--session-unit', names['compositor'])
+        assert active('ui') and pid('ui') != old_ui and pid('session') != 0
+        launched_app = launch('/usr/bin/sleep', '360')
+        argv_file = work / 'argv.json'
+        literal = ['a b', '$HOME', '$(echo must-stay-literal)']
+        launch(sys.executable, '-c', 'import sys,json; open(sys.argv[1], "w").write(json.dumps(sys.argv[2:]))', str(argv_file), *literal)
+        wait_for(argv_file.exists, 'launched application writes arguments')
+        assert json.loads(argv_file.read_text()) == literal
+        results.append('CLI rejects inactive sessions and invalid options; launch preserves literal arguments')
         ctl('start', names['lock'], names['app'])
         group = ctl('show', names['ui'], '-p', 'ControlGroup', '--value').stdout.strip()
         descendants = (Path('/sys/fs/cgroup') / group.lstrip('/') / 'cgroup.procs').read_text().split()
-        ctl('stop', names['target'])
+        control('stop')
         wait_for(lambda: not active('session') and not active('ui'), 'shell stop')
         assert all(not Path('/proc', child).exists() for child in descendants)
         assert active('lock') and active('app')
+        assert ctl('is-active', launched_app).stdout.strip() == 'active'
         assert not runtime.exists()
         results.append('shell stop cleans descendants/runtime; session-owned lock/app survive')
         ctl('reset-failed', names['session'], names['ui'], check=False)
-        ctl('start', names['target'])
+        control('start')
         wait_for(lambda: active('ui'), 'shell restart')
         ctl('reset-failed', names['ui'])
         for _ in range(4):
@@ -134,8 +159,14 @@ def main():
         results.append('repeated crashes hit restart limit without killing coordinator')
         ctl('reset-failed', names['ui'])
         ctl('start', names['ui'])
+        ctl('reset-failed', names['session'], names['ui'])
+        previous = pid('session')
+        control('restart')
+        wait_for(lambda: active('ui') and pid('session') not in (0, previous), 'CLI restart')
+        assert ctl('is-active', launched_app).stdout.strip() == 'active'
         ctl('kill', '--kill-whom=main', '--signal=KILL', names['compositor'])
         wait_for(lambda: all(not active(key) for key in ('target', 'session', 'ui', 'lock', 'app')), 'compositor loss')
+        wait_for(lambda: ctl('is-active', launched_app, check=False).stdout.strip() != 'active', 'launched app session cleanup')
         time.sleep(1.5)
         assert not active('session') and not active('ui') and not runtime.exists()
         results.append('compositor crash stops every dependent without restart loop')
@@ -145,7 +176,7 @@ def main():
         journal = call('journalctl', '--user', '--no-pager', '-n', '150',
                        *[arg for unit in names.values() for arg in ('-u', unit)], check=False)
         (work / 'journal.txt').write_text(journal.stdout + journal.stderr)
-        ctl('stop', *names.values(), check=False)
+        ctl('stop', *names.values(), *launched, check=False)
         ctl('reset-failed', *names.values(), check=False)
         for unit in names.values():
             link = links / unit
