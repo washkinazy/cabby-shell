@@ -21,3 +21,10 @@ foreground = "#e5e9f0"
 accent = "#88c0d0"
 # Display the active window title on each output (false hides it).
 show_window_title = true
+
+# Launcher width in logical pixels (320..1200), and visible result rows (4..12).
+launcher_width = 640
+launcher_rows = 8
+# Literal terminal executable/argument prefix; [] shows a configuration error
+# for Terminal=true apps. Example: ["foot", "-e"] if foot is installed.
+launcher_terminal = []

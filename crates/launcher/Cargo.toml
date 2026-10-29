@@ -1,0 +1,12 @@
+[package]
+name = "cabby-launcher"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+freedesktop-desktop-entry = { version = "=0.8.4", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"

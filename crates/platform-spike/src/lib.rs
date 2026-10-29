@@ -24,3 +24,5 @@ pub fn renderer_diagnostics() {
 }
 
 pub mod niri;
+
+pub mod ui;

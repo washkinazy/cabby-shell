@@ -1,0 +1,13 @@
+[Unit]
+Description=Cabby application launcher
+BindsTo=niri.service cabby-session.service
+After=niri.service cabby-session.service
+PartOf=cabby.target
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/usr/bin/cabby launcher-ui --config %t/cabby-shell/active.toml
+UMask=0077
+KillMode=control-group
+TimeoutStopSec=5
+Restart=no

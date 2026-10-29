@@ -80,6 +80,30 @@ def inside(directory, interactive, renderer):
             subprocess.run(["grim", str(directory / "capture.png")], check=True, timeout=15)
             if (directory / "capture.png").read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
                 raise RuntimeError("Capture did not produce a PNG")
+            applications = directory / "data/applications"
+            applications.mkdir(parents=True, exist_ok=True)
+            (applications / "cabby-notes.desktop").write_text('[Desktop Entry]\nType=Application\nName=Cabby Notes\nExec=/usr/bin/true\n')
+            (applications / "cabby-terminal.desktop").write_text('[Desktop Entry]\nType=Application\nName=Cabby Terminal\nExec=/usr/bin/true\nTerminal=true\n')
+            # XDG_DATA_DIRS also locates Vulkan ICD manifests; preserve it for graphics.
+            launcher_env = dict(os.environ)
+            with (directory / "launcher.log").open("w") as launcher_log:
+                launcher = subprocess.Popen([ROOT / "target/debug/cabby", "launcher-ui", "--config", config], env=launcher_env, stdout=launcher_log, stderr=launcher_log)
+                children.append(launcher)
+                deadline = time.monotonic() + 30
+                while time.monotonic() < deadline:
+                    if launcher.poll() is not None:
+                        raise RuntimeError("Launcher exited; see launcher.log")
+                    launcher_layers = json.loads(run("niri", "msg", "--json", "layers"))
+                    launcher_trace = (directory / "launcher.log").read_text()
+                    if "cabby-launcher" in json.dumps(launcher_layers) and ".attach(wl_buffer" in launcher_trace and re.search(r"wl_keyboard#\d+\.enter\(", launcher_trace):
+                        break
+                    time.sleep(0.2)
+                else:
+                    raise RuntimeError("Launcher did not map and receive keyboard focus")
+                time.sleep(0.5)
+                subprocess.run(["grim", str(directory / "launcher.png")], check=True, timeout=15)
+                launcher.terminate()
+                launcher.wait(timeout=5)
             for name in outputs:
                 run("niri", "msg", "output", name, "scale", "1.5")
             time.sleep(1)
@@ -119,7 +143,7 @@ def inside(directory, interactive, renderer):
                     lock.wait(timeout=180)
             adapters = {}
             if renderer == "gpu":
-                for client in ("bar", "lock"):
+                for client in ("bar", "launcher", "lock"):
                     adapter = selected_adapter((directory / f"{client}.log").read_text())
                     if adapter["backend"] != "Vulkan" or adapter["device_type"] not in ("DiscreteGpu", "IntegratedGpu"):
                         raise RuntimeError(f"{client} did not use hardware Vulkan: {adapter}")
@@ -127,7 +151,7 @@ def inside(directory, interactive, renderer):
             (directory / "result.json").write_text(json.dumps({
                 "status": "passed", "renderer_request": os.environ.get("ICED_BACKEND", "automatic"),
                 "adapters": adapters,
-                "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action",
+                "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action", "launcher-mapped-with-keyboard-focus",
                 "scale-change-process-survival", "lock-confirmed", "lock-survives-bar-crash"],
                 "not_proven": ["popup-keyboard-focus", "focus-restoration", "multiple-outputs",
                 "PAM", "DRM-lock-security", "gamma", "suspend"],
@@ -157,7 +181,7 @@ def main():
     if args.inside:
         inside(args.inside, args.interactive, args.renderer)
         return
-    for binary in ("cabby", "cabby-platform-spike", "lock-probe", "bar-ipc-probe"):
+    for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe"):
         if not (ROOT / "target/debug" / binary).is_file():
             parser.error("Run cargo build --workspace --locked first")
     parent_display = os.environ.get("WAYLAND_DISPLAY")

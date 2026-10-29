@@ -32,7 +32,7 @@ def wait_for(test, label):
 
 def main():
     prefix = f'cabby-test-{uuid.uuid4().hex[:10]}'
-    names = {key: f'{prefix}-{key}.service' for key in ('compositor', 'session', 'ui', 'lock', 'app')}
+    names = {key: f'{prefix}-{key}.service' for key in ('compositor', 'session', 'ui', 'lock', 'app', 'launcher')}
     names['target'] = f'{prefix}.target'
     runtime_root = Path(os.environ['XDG_RUNTIME_DIR'])
     runtime = runtime_root / prefix
@@ -43,7 +43,7 @@ def main():
     config = work / 'config.toml'
     config.write_text('renderer = "software"\nbar_height = 40\n')
     mappings = {'niri.service': names['compositor'], 'cabby-session.service': names['session'],
-                'cabby-ui.service': names['ui'], 'cabby.target': names['target']}
+                'cabby-ui.service': names['ui'], 'cabby-launcher.service': names['launcher'], 'cabby.target': names['target']}
     for source in (ROOT / 'systemd/user').iterdir():
         content = source.read_text()
         for old, new in mappings.items():
@@ -52,7 +52,7 @@ def main():
         content = content.replace(f'serve --ui-unit {names["ui"]}',
                                   f'serve --ui-unit {names["ui"]} --config {config} --runtime-dir {runtime}')
         content = content.replace('RuntimeDirectory=cabby-shell', f'RuntimeDirectory={prefix}')
-        if source.name == 'cabby-ui.service':
+        if source.name in ('cabby-ui.service', 'cabby-launcher.service'):
             # Synthetic UI launches a descendant in another process group. The
             # production bar/rendering is tested separately in nested niri.
             content = '\n'.join('ExecStart=/bin/sh -c "setsid sleep 360 & wait"' if line.startswith('ExecStart=') else line for line in content.splitlines())+'\n'
@@ -75,6 +75,8 @@ def main():
         result = json.loads(call(str(BIN), "launch", "--session-unit", names["compositor"], "--", *argv).stdout)
         launched.append(result["unit"])
         return result["unit"]
+    def open_launcher():
+        call(str(BIN), 'launcher', '--target', names['target'], '--session-unit', names['compositor'], '--launcher-unit', names['launcher'])
     results = []
     try:
         verify = call('systemd-analyze', '--user', 'verify', *units)
@@ -88,6 +90,12 @@ def main():
         ctl('start', names['compositor'])
         control('start')
         wait_for(lambda: active('session') and active('ui'), 'services start')
+        assert not active('launcher')
+        open_launcher()
+        first_launcher = pid('launcher')
+        open_launcher()
+        assert pid('launcher') == first_launcher and first_launcher != 0
+        results.append('launcher starts on demand and repeated opening preserves one instance')
         initial = pid('session')
         control('start')
         assert pid('session') == initial
@@ -120,12 +128,21 @@ def main():
         ctl('kill', '--kill-whom=main', '--signal=KILL', names['session'])
         wait_for(lambda: active('session') and pid('session') not in (0, initial) and active('ui'), 'coordinator restart')
         assert request('status')['config']['bar_height'] == 64
-        results.append('coordinator crash rebuilds IPC and restarts UI')
+        assert not active('launcher')
+        results.append('coordinator crash rebuilds IPC and restarts UI; launcher stays closed')
         ctl('reset-failed', names['ui'])
         old_ui = pid('ui')
         call(str(BIN), 'restart-ui', '--ui-unit', names['ui'], '--session-unit', names['compositor'])
         assert active('ui') and pid('ui') != old_ui and pid('session') != 0
-        launched_app = launch('/usr/bin/sleep', '360')
+        app_data = work / 'data'
+        (app_data / 'applications').mkdir(parents=True)
+        (app_data / 'applications/cabby-test.desktop').write_text(f'[Desktop Entry]\nType=Application\nName=Cabby Test\nExec=/usr/bin/sleep 360\nPath={work}\n')
+        app_env = dict(os.environ, XDG_DATA_HOME=str(app_data), XDG_DATA_DIRS=str(work / 'empty-data'))
+        response = subprocess.run([str(BIN), 'launch-app', '--desktop-id', 'cabby-test.desktop', '--config', str(config), '--session-unit', names['compositor']], env=app_env, capture_output=True, text=True, check=True, timeout=20)
+        launched_app = json.loads(response.stdout)['unit']
+        launched.append(launched_app)
+        assert ctl('show', launched_app, '-p', 'WorkingDirectory', '--value').stdout.strip() == str(work)
+        open_launcher()
         argv_file = work / 'argv.json'
         literal = ['a b', '$HOME', '$(echo must-stay-literal)']
         launch(sys.executable, '-c', 'import sys,json; open(sys.argv[1], "w").write(json.dumps(sys.argv[2:]))', str(argv_file), *literal)
@@ -136,7 +153,7 @@ def main():
         group = ctl('show', names['ui'], '-p', 'ControlGroup', '--value').stdout.strip()
         descendants = (Path('/sys/fs/cgroup') / group.lstrip('/') / 'cgroup.procs').read_text().split()
         control('stop')
-        wait_for(lambda: not active('session') and not active('ui'), 'shell stop')
+        wait_for(lambda: not active('session') and not active('ui') and not active('launcher'), 'shell stop')
         assert all(not Path('/proc', child).exists() for child in descendants)
         assert active('lock') and active('app')
         assert ctl('is-active', launched_app).stdout.strip() == 'active'
@@ -164,13 +181,14 @@ def main():
         control('restart')
         wait_for(lambda: active('ui') and pid('session') not in (0, previous), 'CLI restart')
         assert ctl('is-active', launched_app).stdout.strip() == 'active'
+        open_launcher()
         ctl('kill', '--kill-whom=main', '--signal=KILL', names['compositor'])
-        wait_for(lambda: all(not active(key) for key in ('target', 'session', 'ui', 'lock', 'app')), 'compositor loss')
+        wait_for(lambda: all(not active(key) for key in ('target', 'session', 'ui', 'lock', 'app', 'launcher')), 'compositor loss')
         wait_for(lambda: ctl('is-active', launched_app, check=False).stdout.strip() != 'active', 'launched app session cleanup')
         time.sleep(1.5)
         assert not active('session') and not active('ui') and not runtime.exists()
         results.append('compositor crash stops every dependent without restart loop')
-        (work / 'result.json').write_text(json.dumps({'passed': results, 'stand_ins': ['compositor', 'ui', 'lock', 'app']}, indent=2))
+        (work / 'result.json').write_text(json.dumps({'passed': results, 'stand_ins': ['compositor', 'ui', 'lock', 'app', 'launcher']}, indent=2))
         print(json.dumps(results, indent=2))
     finally:
         journal = call('journalctl', '--user', '--no-pager', '-n', '150',

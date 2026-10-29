@@ -1,52 +1,25 @@
 use cabby_config::{BarPosition, Config};
 use cabby_platform_spike::niri::{self, Model};
+use cabby_platform_spike::ui::{self, color};
 use iced::futures::SinkExt;
 use iced::widget::{button, container, row, scrollable, text};
-use iced::{Color, Element, Length, Subscription, Task, Theme, window};
+use iced::{Element, Length, Subscription, Task, Theme, window};
 use iced_exwlshell::reexport::{Anchor, KeyboardInteractivity, LayerSize};
 use iced_exwlshell::settings::{LayerShellSettings, Settings, StartMode};
 use iced_exwlshell::shell::{self, ShellEvent, ShellReceiver};
 use iced_exwlshell::{daemon, to_exwlshell_message};
 use std::collections::BTreeMap;
-use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::time::Duration;
 
-fn configuration() -> cabby_config::Result<Config> {
-    let mut args = std::env::args_os().skip(1);
-    let path = match args.next() {
-        None => None,
-        Some(flag) if flag == "--config" => Some(PathBuf::from(
-            args.next().ok_or("--config requires a path")?,
-        )),
-        _ => return Err("Usage: cabby-platform-spike [--config PATH]".into()),
-    };
-    if args.next().is_some() {
-        return Err("unexpected arguments".into());
-    }
-    cabby_config::Source::from_env(path.as_deref())?.load(true)
-}
-fn color(value: &str) -> Color {
-    let [r, g, b] = cabby_config::rgb(value).expect("validated color");
-    Color::from_rgb8(r, g, b)
-}
 fn main() -> iced_exwlshell::Result {
-    let config = configuration().unwrap_or_else(|error| {
-        eprintln!("{error}");
-        std::process::exit(1)
-    });
-    let environment = config.renderer.environment();
-    if environment
-        .iter()
-        .any(|(key, value)| std::env::var(key).as_deref() != Ok(*value))
-    {
-        let error = std::process::Command::new(std::env::current_exe().expect("executable path"))
-            .args(std::env::args_os().skip(1))
-            .envs(environment)
-            .exec();
-        eprintln!("cannot apply renderer environment: {error}");
-        std::process::exit(1);
-    }
+    let config = ui::configuration_source()
+        .and_then(|source| source.load(true))
+        .unwrap_or_else(|error| {
+            eprintln!("{error}");
+            std::process::exit(1)
+        });
+    ui::renderer(&config);
     cabby_platform_spike::renderer_diagnostics();
     iced_exwlshell::disable_clipboard();
     let (sender, receiver) = shell::channel();
@@ -101,6 +74,8 @@ enum Message {
     Disconnected,
     Shell(ShellEvent),
     Focus(u64),
+    Launcher,
+    LauncherResult(Result<(), String>),
     FocusResult(Result<(), String>),
 }
 fn events() -> impl iced::futures::Stream<Item = Message> {
@@ -136,20 +111,20 @@ impl Bar {
         ])
     }
     fn theme(&self, _: window::Id) -> Theme {
-        Theme::custom(
-            "Cabby",
-            iced::theme::Palette {
-                background: color(&self.config.background),
-                text: color(&self.config.foreground),
-                primary: color(&self.config.accent),
-                success: color(&self.config.accent),
-                danger: Color::from_rgb8(235, 110, 110),
-                warning: Color::from_rgb8(235, 190, 110),
-            },
-        )
+        ui::theme(&self.config)
     }
+
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Launcher => {
+                return Task::perform(
+                    ui::command(vec!["launcher".into()]),
+                    Message::LauncherResult,
+                );
+            }
+            Message::LauncherResult(result) => {
+                self.action_failed = result.is_err();
+            }
             Message::Niri(event) => self.model.apply(event),
             Message::Disconnected => {
                 self.model.disconnect();
@@ -218,7 +193,7 @@ impl Bar {
         let status = if !self.model.connected {
             "niri unavailable"
         } else if self.action_failed {
-            "Workspace switch failed"
+            "Action failed"
         } else if output.is_empty() {
             "Waiting for output"
         } else {
@@ -230,6 +205,7 @@ impl Bar {
             String::new()
         };
         let contents = row![
+            button("Apps").on_press(Message::Launcher),
             scrollable(workspaces)
                 .direction(scrollable::Direction::Horizontal(
                     scrollable::Scrollbar::new()
