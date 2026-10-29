@@ -4,6 +4,9 @@ Copy one example to `$HOME/.config/cabby-shell/config.toml` after creating the d
 
 | File | Purpose |
 | --- | --- |
+| [wallpaper.toml](wallpaper.toml) | Relative PNG path and fit mode; copy `assets/` too |
+| [wallpaper-center.toml](wallpaper-center.toml) | Centered image alternative |
+| [wallpaper-stretch.toml](wallpaper-stretch.toml) | Stretched image alternative |
 | [minimal.toml](minimal.toml) | All defaults, with every setting omitted |
 | [full.toml](full.toml) | Every supported setting, annotated and set to its default |
 | [software.toml](software.toml) | Software renderer, taller bottom bar, hidden window titles, and optional foot terminal integration |

@@ -3,14 +3,14 @@ Description=Cabby configuration and control coordinator
 BindsTo=niri.service
 After=niri.service
 PartOf=cabby.target
-Upholds=cabby-ui.service
+Upholds=cabby-ui.service cabby-wallpaper.service
 StartLimitIntervalSec=30
 StartLimitBurst=3
 
 [Service]
 Type=notify
 NotifyAccess=main
-ExecStart=/usr/bin/cabby serve --ui-unit cabby-ui.service
+ExecStart=/usr/bin/cabby serve --ui-unit cabby-ui.service --wallpaper-unit cabby-wallpaper.service
 RuntimeDirectory=cabby-shell
 RuntimeDirectoryMode=0700
 UMask=0077

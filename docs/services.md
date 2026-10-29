@@ -9,9 +9,10 @@ The initial units are in `systemd/user/`. They target a niri session managed as 
 | cabby.target | Starts/stops ordinary shell components; bound to niri.service |
 | cabby-session.service | Configuration snapshot, private control socket, readiness notification |
 | cabby-ui.service | Runs the workspace/window bar |
+| cabby-wallpaper.service | Static image or color on all output backgrounds |
 | cabby-launcher.service | On-demand application overlay; never auto-restarts after dismissal or failure |
 
-The coordinator uses `Upholds=` to recover the UI after coordinator recovery. The UI waits for coordinator readiness, binds to it and niri, and belongs to cabby.target. Both services use cgroup cleanup, a five-second stop timeout, one-second restart delay, and at most three starts in thirty seconds. Crash loops eventually remain failed; status and journal output explain the failure. `systemctl --user reset-failed cabby-ui.service` permits retry after resolving the cause.
+The coordinator uses `Upholds=` to recover the UI and wallpaper after coordinator recovery. The UI waits for coordinator readiness, binds to it and niri, and belongs to cabby.target. The coordinator, bar, and wallpaper use cgroup cleanup, a five-second stop timeout, one-second restart delay, and at most three starts in thirty seconds. Crash loops eventually remain failed; status and journal output explain the failure. `systemctl --user reset-failed cabby-ui.service` permits retry after resolving the cause.
 
 An active lock must be separate from cabby.target and bound to the compositor session. No production lock unit is shipped yet: Phase 5 supplies authenticated locking. The Phase 0 lock-probe must never be installed as a real locker. Lifecycle tests use an explicit sleep-process stand-in to validate this boundary.
 
@@ -23,7 +24,7 @@ The coordinator uses `$XDG_RUNTIME_DIR/cabby-shell` (0700), including `control.s
 
 A duplicate coordinator cannot acquire ownership or replace the existing socket. After a crash, the next owner can remove a stale socket. The systemd RuntimeDirectory removes runtime state on service stop. The coordinator sends READY only after validated config, snapshot, and IPC initialization.
 
-Reload parses and validates the whole source file, atomically publishes a temporary-file rename, then commits the in-memory state. Failed parsing, file deletion, or failed snapshot publication leaves the previous in-memory configuration active. A changed configuration queues a UI restart when `--ui-unit` is supplied; `ui_restart_queued` reports whether systemd accepted the job, not whether rendering subsequently succeeded. An unchanged reload does not restart the UI. A standalone coordinator has no UI restart unit and reports null for that field.
+Reload parses and validates the whole source file, atomically publishes a temporary-file rename, then commits the in-memory state. Failed parsing, file deletion, or failed snapshot publication leaves the previous in-memory configuration active. A changed configuration or wallpaper image queues component restarts when `--ui-unit`/`--wallpaper-unit` are supplied; `ui_restart_queued` and `wallpaper_restart_queued` report whether systemd accepted the job, not whether rendering subsequently succeeded. An unchanged config and image do not restart either component. A standalone coordinator reports null for each component restart unit that was not supplied. Image validation precedes snapshot publication; failed image decoding also preserves the active configuration.
 
 ## Commands available now
 
@@ -50,7 +51,7 @@ journalctl --user -u cabby-session.service -u cabby-ui.service
 
 For isolated development, `cabby serve --config /absolute/file.toml --runtime-dir /absolute/private/directory` runs the coordinator in the foreground. `--ui-unit NAME` queues restarts for an existing managed UI; it is not a command to execute arbitrary shell text. The default UI wrapper locates `cabby-platform-spike` alongside `cabby`; `launcher-ui` locates `cabby-launcher`. See [launcher.md](launcher.md) for discovery, keyboard controls, and launch semantics.
 
-The packaged unit paths currently expect `/usr/bin/cabby` and `/usr/bin/cabby-platform-spike`, and `/usr/bin/cabby-launcher`. No installer or package is provided at this phase, and nothing has been installed into the user's session. Use the test harness for current validation; packaging arrives later.
+The packaged unit paths currently expect `/usr/bin/cabby`, `/usr/bin/cabby-platform-spike`, `/usr/bin/cabby-launcher`, and `/usr/bin/cabby-wallpaper`. No installer or package is provided at this phase, and nothing has been installed into the user's session. Use the test harness for current validation; packaging arrives later.
 
 ## Automated lifecycle test
 
@@ -59,6 +60,8 @@ cargo build --workspace --locked
 python3 scripts/test_session_lifecycle.py
 ```
 
-Requires the Fedora development package set, an accessible systemd user manager, and `setsid` from util-linux. This script rewrites the shipped units to unique `cabby-test-*` names, links them under the user's runtime-only unit directory, and uses stand-ins for compositor, bar, launcher, and lock. The real CLI/coordinator/IPC run unchanged and launch actual sleep/Python application processes into separate transient units. It does not start, stop, or modify the real niri.service or any installed Cabby units. A finally block stops test units, removes only its own runtime symlinks, resets failures, and reloads the manager. Results/journal excerpts remain under ignored `.artifacts/lifecycle-*`.
+Requires the Fedora development package set, an accessible systemd user manager, and `setsid` from util-linux. This script rewrites the shipped units to unique `cabby-test-*` names, links them under the user's runtime-only unit directory, and uses stand-ins for compositor, bar, wallpaper, launcher, and lock. The real CLI/coordinator/IPC run unchanged and launch actual sleep/Python application processes into separate transient units. It does not start, stop, or modify the real niri.service or any installed Cabby units. A finally block stops test units, removes only its own runtime symlinks, resets failures, and reloads the manager. Results/journal excerpts remain under ignored `.artifacts/lifecycle-*`.
 
-Coverage includes unit verification, repeated starts, coordinator ownership, invalid/deleted reload, valid reload and UI restart, independent UI crash, coordinator crash/recovery, restart limits, cgroup descendant cleanup, lock/app lifetime boundaries, compositor loss, CLI shell/UI restart, inactive-session refusal, literal launch arguments, on-demand launcher ownership, and desktop-entry launch working directories. Actual UI graphics still use the separate nested-niri harness; stand-ins do not establish lock security or graphical application behavior.
+Coverage includes unit verification, repeated starts, coordinator ownership, invalid/deleted reload, valid reload and UI restart, independent UI crash, coordinator crash/recovery, restart limits, cgroup descendant cleanup, lock/app lifetime boundaries, compositor loss, CLI shell/UI restart, inactive-session refusal, literal launch arguments, on-demand launcher ownership, desktop-entry launch working directories, and wallpaper reload/independent crash recovery. Actual UI graphics still use the separate nested-niri harness; stand-ins do not establish lock security or graphical application behavior.
+
+See [wallpaper.md](wallpaper.md) for asset validation, relative paths, and image reload behavior.

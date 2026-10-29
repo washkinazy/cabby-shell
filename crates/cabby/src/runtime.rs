@@ -61,7 +61,12 @@ impl Drop for Ownership {
     }
 }
 
-pub fn serve(source: Source, path: PathBuf, ui_unit: Option<String>) -> Result<()> {
+pub fn serve(
+    source: Source,
+    path: PathBuf,
+    ui_unit: Option<String>,
+    wallpaper_unit: Option<String>,
+) -> Result<()> {
     fs::create_dir_all(&path).map_err(|error| error.to_string())?;
     if fs::symlink_metadata(&path)
         .map_err(|error| error.to_string())?
@@ -127,7 +132,17 @@ pub fn serve(source: Source, path: PathBuf, ui_unit: Option<String>) -> Result<(
                         } else {
                             None
                         };
-                        serde_json::json!({"ok": true, "changed": changed, "ui_restart_queued": restart, "config": store.active()})
+                        let wallpaper_restart = if changed {
+                            wallpaper_unit.as_ref().map(|unit| {
+                                std::process::Command::new("systemctl")
+                                    .args(["--user", "--no-block", "try-restart", unit])
+                                    .status()
+                                    .is_ok_and(|s| s.success())
+                            })
+                        } else {
+                            None
+                        };
+                        serde_json::json!({"ok": true, "changed": changed, "ui_restart_queued": restart, "wallpaper_restart_queued": wallpaper_restart, "config": store.active()})
                     }
                     Err(error) => serde_json::json!({"ok": false, "error": error}),
                 },

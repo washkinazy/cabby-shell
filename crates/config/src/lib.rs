@@ -1,3 +1,4 @@
+pub mod wallpaper;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -50,6 +51,9 @@ configuration! {
     launcher_width: u16 = 640,
     launcher_rows: u16 = 8,
     launcher_terminal: Vec<String> = Vec::new(),
+    wallpaper_image: String = String::new(),
+    wallpaper_color: String = "#181b22".into(),
+    wallpaper_mode: WallpaperMode = WallpaperMode::Fill,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,6 +62,16 @@ pub enum BarPosition {
     #[default]
     Top,
     Bottom,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WallpaperMode {
+    #[default]
+    Fill,
+    Fit,
+    Stretch,
+    Center,
 }
 
 /// Validated RGB color, independent of the UI toolkit.
@@ -98,6 +112,7 @@ impl Config {
             ("background", &config.background),
             ("foreground", &config.foreground),
             ("accent", &config.accent),
+            ("wallpaper_color", &config.wallpaper_color),
         ] {
             if rgb(value).is_none() {
                 return Err(format!("{key} must be #RRGGBB"));
@@ -117,6 +132,9 @@ impl Config {
             return Err(
                 "launcher_terminal must contain at most 32 nonempty, NUL-free arguments".into(),
             );
+        }
+        if config.wallpaper_image.contains('\0') {
+            return Err("wallpaper_image cannot contain NUL".into());
         }
         Ok(config)
     }
@@ -175,19 +193,40 @@ impl Source {
         file.take(MAX_CONFIG_BYTES + 1)
             .read_to_string(&mut text)
             .map_err(|error| format!("{}: {error}", self.path.display()))?;
-        Config::parse(&text).map_err(|error| format!("{}: {error}", self.path.display()))
+        let mut config =
+            Config::parse(&text).map_err(|error| format!("{}: {error}", self.path.display()))?;
+        if !config.wallpaper_image.is_empty() {
+            let path = Path::new(&config.wallpaper_image);
+            if path.is_relative() {
+                config.wallpaper_image = self
+                    .path
+                    .parent()
+                    .ok_or("config has no parent directory")?
+                    .join(path)
+                    .to_str()
+                    .ok_or("wallpaper path must be UTF-8")?
+                    .to_owned();
+            }
+        }
+        Ok(config)
     }
 }
 
 pub struct Store {
     pub source: Source,
     active: Config,
+    asset_revision: Option<u64>,
 }
 
 impl Store {
     pub fn open(source: Source) -> Result<Self> {
         let active = source.load(true)?;
-        Ok(Self { source, active })
+        let asset_revision = wallpaper::revision(&active)?;
+        Ok(Self {
+            source,
+            active,
+            asset_revision,
+        })
     }
 
     pub fn active(&self) -> &Config {
@@ -201,11 +240,13 @@ impl Store {
 
     pub fn reload_with(&mut self, publish: impl FnOnce(&Config) -> Result<()>) -> Result<bool> {
         let candidate = self.source.load(false)?;
-        let changed = candidate != self.active;
+        let asset_revision = wallpaper::revision(&candidate)?;
+        let changed = candidate != self.active || asset_revision != self.asset_revision;
         if changed {
             publish(&candidate)?;
         }
         self.active = candidate;
+        self.asset_revision = asset_revision;
         Ok(changed)
     }
 }
@@ -229,6 +270,8 @@ mod tests {
             "bar_height = 500",
             "renderer = 'unknown'",
             "typo = true",
+            "wallpaper_color = '#xx1122'",
+            "wallpaper_mode = 'tile'",
             "launcher_width = 0",
             "launcher_rows = 13",
             "launcher_terminal = ['']",
@@ -293,15 +336,32 @@ mod tests {
             );
         }
         let mut variants = Vec::new();
+        let mut modes = Vec::new();
         for entry in std::fs::read_dir(root.join("examples/config")).unwrap() {
             let path = entry.unwrap().path();
             if path.extension().is_some_and(|ext| ext == "toml") {
+                let config = Source {
+                    path: path.clone(),
+                    explicit: true,
+                }
+                .load(true)
+                .unwrap();
+                wallpaper::revision(&config).unwrap();
+                modes.push(config.wallpaper_mode);
                 variants.push(
                     Config::parse(&std::fs::read_to_string(path).unwrap())
                         .unwrap()
                         .renderer,
                 );
             }
+        }
+        for mode in [
+            WallpaperMode::Fill,
+            WallpaperMode::Fit,
+            WallpaperMode::Stretch,
+            WallpaperMode::Center,
+        ] {
+            assert!(modes.contains(&mode));
         }
         assert!(variants.contains(&Renderer::Vulkan));
         assert!(variants.contains(&Renderer::Software));
