@@ -4,7 +4,7 @@ set -euo pipefail
 packages=(
     cargo rust rustfmt clippy gcc pkgconf-pkg-config
     wayland-devel libxkbcommon-devel
-    niri wayland-utils grim dbus-daemon systemd python3
+    niri wayland-utils grim dbus-daemon systemd python3 util-linux
     mesa-dri-drivers mesa-vulkan-drivers
 )
 if [[ "${1:-}" == --print ]]; then

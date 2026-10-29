@@ -128,8 +128,15 @@ impl Store {
 
     /// Parse and validate the entire candidate before replacing the snapshot.
     pub fn reload(&mut self) -> Result<bool> {
+        self.reload_with(|_| Ok(()))
+    }
+
+    pub fn reload_with(&mut self, publish: impl FnOnce(&Config) -> Result<()>) -> Result<bool> {
         let candidate = self.source.load(false)?;
         let changed = candidate != self.active;
+        if changed {
+            publish(&candidate)?;
+        }
         self.active = candidate;
         Ok(changed)
     }
@@ -165,6 +172,12 @@ mod tests {
         assert!(store.reload().is_err());
         assert_eq!(store.active().bar_height, 64);
         std::fs::write(&path, "renderer = 'software'\nbar_height = 48").unwrap();
+        assert!(
+            store
+                .reload_with(|_| Err("disk unavailable".into()))
+                .is_err()
+        );
+        assert_eq!(store.active().bar_height, 64);
         assert!(store.reload().unwrap());
         assert_eq!(store.active().renderer, Renderer::Software);
         assert_eq!(store.active().bar_height, 48);
