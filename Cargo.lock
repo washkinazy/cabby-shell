@@ -233,6 +233,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "cabby-notifications"
+version = "0.1.0"
+
+[[package]]
 name = "cabby-platform-spike"
 version = "0.0.0"
 dependencies = [

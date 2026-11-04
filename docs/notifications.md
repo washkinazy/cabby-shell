@@ -1,6 +1,6 @@
 # Phase 3 notification design
 
-Status: design accepted for the first Phase 3 feature; not implemented. No notification service, configuration keys, or activation files are shipped by this increment. Audio and Bluetooth follow as separate features. This design narrows the initial implementation and defines its acceptance evidence; it does not mark Phase 3 complete.
+Status: the transport-independent policy library is implemented in `crates/notifications`; D-Bus transport and Iced presentation remain planned. No notification service, configuration keys, or activation files are shipped by this increment. Audio and Bluetooth follow as separate features. This design narrows the initial implementation and defines its acceptance evidence; it does not mark Phase 3 complete.
 
 ## Scope and presentation
 
@@ -26,7 +26,7 @@ Implement the standard methods and closure/action signals from the [freedesktop 
 
 Plain text is the initial rendering contract. Do not advertise `body-markup`; display supplied tags literally rather than interpreting them. The [capability contract](https://specifications.freedesktop.org/notification/latest/protocol.html) requires clients to strip markup for servers without that capability. This chooses literal display despite the [markup chapter's recommendation](https://specifications.freedesktop.org/notification/latest/markup.html) to filter unsupported tags. Preserve newlines, normalize other control characters for display, and never fetch links or files named in content.
 
-Consume correctly typed urgency and resident hints. Unknown or wrongly typed optional hints are ignored. A resident entry remains after an action; other actions dismiss the card after emitting the action event. Transient entries already receive the no-history policy. Critical expiry follows the [urgency guidance](https://specifications.freedesktop.org/notification/latest/urgency-levels.html); hint interpretation follows the [hint reference](https://specifications.freedesktop.org/notification/latest/hints.html). These choices do not promise application activation or focus transfer.
+Consume correctly typed urgency and resident hints. Unknown or wrongly typed optional hints are ignored. A resident entry remains after an action and its expiry deadline is cleared; other actions dismiss the card after emitting the action event. Transient entries already receive the no-history policy. Critical expiry follows the [urgency guidance](https://specifications.freedesktop.org/notification/latest/urgency-levels.html); hint interpretation follows the [hint reference](https://specifications.freedesktop.org/notification/latest/hints.html). These choices do not promise application activation or focus transfer.
 
 ## Ownership and recovery
 
@@ -38,8 +38,20 @@ On session-bus loss, stop accepting requests, discard sensitive model state, and
 
 ## Implementation increments and acceptance
 
-1. **Policy library:** typed requests/events, bounded active set, deterministic IDs, replacement, expiry, actions, and plain-text policy. Test with injected time: timeout boundaries, critical/zero timeouts, queued presentation, replacement with an old timer in flight, malformed/oversize requests, capacity with replacements, stale action keys, ID exhaustion/wrap, and exactly-once closure.
+1. **Policy library (implemented):** typed requests/events, bounded active set, deterministic IDs, replacement, expiry, actions, and plain-text policy. Test with injected time: timeout boundaries, critical/zero timeouts, queued presentation, replacement with an old timer in flight, malformed/oversize requests, capacity with replacements, stale action keys, ID exhaustion/wrap, and exactly-once closure.
 2. **Private D-Bus service:** implement and pin the chosen Rust transport dependency. Test real method signatures, introspection, capabilities, errors and signals, ownership conflict, bus loss, and bounds under a private `dbus-run-session`. Require explicit readiness and bounded client waits; capture no real notifications. The normal session bus must never be the integration-test target.
 3. **Iced UI and lifecycle:** wire snapshots/commands into passive surfaces and ship the supervised unit. Extend isolated lifecycle fixtures for bar independence, notification crash/restart limits, name release, shell stop and compositor loss. Use nested niri with synthetic notifications for mapping, replacement without duplicate surfaces, action/dismiss state, scaling, and cleanup. Verify selected RTX 4070 Vulkan separately from tiny-skia. Synthetic output tests cover removal/reassignment; label unexercised input/hardware behavior.
 
 Each code increment requires the standard fmt/check/Clippy/test commands. Unit changes require staged systemd verification and isolated lifecycle tests. Dependency changes must keep the Fedora installer and development reference current. Do not call the notification feature complete until protocol, UI, and lifecycle evidence all pass; do not call Phase 3 complete until audio and Bluetooth also meet their acceptance criteria.
+
+## Policy library integration contract
+
+`Store` is owned by one event loop. `notify` validates a complete request before changing state and returns an opaque revision-qualified `Token`. Active replacements retain their queue position; a nonzero absent replacement ID creates an entry with that same ID. Automatic IDs advance independently of client-supplied IDs, skip active IDs, and wrap past zero. Revision exhaustion rejects requests without changing state rather than permitting stale callbacks to match again.
+
+The first three entries are presentation candidates. The future UI calls `presented(token, now)` only after rendering on an available output; repeated acknowledgements do not extend expiry. Pending entries have no deadlines. After each mutation, schedule the earliest `next_deadline` as a one-shot timer and call `expire(token, now)` when due, draining additional due timers before rescheduling. No clock reads, timers, threads, or services run inside the library. The caller supplies monotonic `Instant` values from one clock domain.
+
+UI dismissal and actions use the token from the displayed revision; protocol close uses the current numeric ID. A stale timer is a no-op, while stale UI commands return a content-free error. Emit returned action/closure events in order. Drop the store and all associated callbacks on service loss; tokens must not cross store lifetimes. Deleted strings are released, not securely zeroized; active content and caller-held snapshots remain sensitive memory.
+
+Text limits count UTF-8 bytes before normalization. Newlines and literal markup survive; other Unicode control characters become spaces. Action keys are preserved exactly, must be nonempty and NUL-free, and cannot repeat within a request. Display labels use the same text normalization. Request, entry, action, and event debug implementations redact payloads. No unsupported hint or image data enters this library; transport parsing and message/queue bounds remain the next increment's responsibility.
+
+Fourteen deterministic tests cover time boundaries, presentation and queueing, replacement/callback races, atomic rejection, byte/action limits, capacity, resident and default actions, ID wrap, revision exhaustion, deadline ordering, and redacted diagnostics. These establish policy behavior only, not D-Bus conformance or visible notifications.
