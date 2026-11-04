@@ -5,7 +5,7 @@ Cabby Shell is a personal, simplified alternative to Noctalia and Dank shells. I
 ## Design principles
 
 1. **Configuration lives in files.** There is no settings app. Persistent preferences, layout, and styling are configured through documented text files.
-2. **Use Qt or the implementation language's native styling.** The shell does not use GTK for its interface or theming. Rust with Iced is the working direction, pending the platform validation in PLAN.md.
+2. **Use Rust/Iced styling.** The shell does not use GTK for its interface or theming. Phase 0 validated the pinned Rust/Iced stack documented in PLAN.md.
 3. **Provide the essentials around the window manager.** Combine the basic desktop interactions into one coherent shell without taking ownership of unrelated system services.
 
 ## Scope boundaries
@@ -56,7 +56,7 @@ User configuration defaults to `$HOME/.config/cabby-shell`, with subfiles/direct
 
 See [PLAN.md](PLAN.md) for implementation phases, acceptance criteria, and testing strategy, and [AGENTS.md](AGENTS.md) for repository instructions and the branch/commit/merge workflow. Initial development uses validated feature branches merged into main without a required pull request.
 
-Phases 0 and 1 are complete: platform validation, configuration, service ownership, and control CLI. Phase 2 now includes an event-driven niri workspace/window bar with configurable styling. An on-demand [application launcher](docs/launcher.md) is also implemented. Static [wallpaper](docs/wallpaper.md) completes the Phase 2 surfaces.
+Phases 0 through 2 are complete under the documented automated/synthetic acceptance scope: platform validation, configuration, service ownership, and control CLI. Phase 2 now includes an event-driven niri workspace/window bar with configurable styling. An on-demand [application launcher](docs/launcher.md) is also implemented. Static [wallpaper](docs/wallpaper.md) completes the Phase 2 surfaces. Phase 3 adds notifications, audio, and Bluetooth controls; these are not implemented yet.
 
 Build prerequisites, the Fedora dependency installer, and isolated Phase 0 test commands are documented in [docs/development.md](docs/development.md).
 

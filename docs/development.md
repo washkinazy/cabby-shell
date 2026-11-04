@@ -1,4 +1,4 @@
-# Development and Phase 0 experiments
+# Development and validation
 
 ## Fedora prerequisites
 
@@ -32,7 +32,7 @@ Initial environment: Fedora 45, Rust/Cargo 1.98.1, niri 26.04, systemd 262, Wayl
 
 ## Rust baseline
 
-The workspace currently contains only a platform experiment, not the production shell. Direct dependencies are pinned to Iced 0.14.0 and iced_exwlshell 0.20.1; Cargo.lock fixes transitive dependencies. This is a selected validation baseline, not a claim that these are the newest versions. The declared Rust floor is 1.98; only 1.98.1 has been exercised. Iced's wgpu and tiny-skia software backends are compiled with Wayland enabled; GTK and automatic desktop-theme detection are not used.
+The workspace contains configuration, the control coordinator/CLI, launcher discovery, and the bar/launcher/wallpaper interfaces. UI executables retain the historical platform-spike crate name; guarded popup/lock probes remain test-only. Phases 0–2 are complete under the recorded acceptance scope; the full daily-use feature set is not yet implemented. Direct dependencies are pinned to Iced 0.14.0 and iced_exwlshell 0.20.1; Cargo.lock fixes transitive dependencies. This is a selected validation baseline, not a claim that these are the newest versions. The declared Rust floor is 1.98; only 1.98.1 has been exercised. Iced's wgpu and tiny-skia software backends are compiled with Wayland enabled; GTK and automatic desktop-theme detection are not used.
 
 ```sh
 cargo fmt --all -- --check
@@ -88,7 +88,7 @@ References: [niri screenshot actions](https://niri-wm.github.io/niri/Configurati
 - [iced_exwlshell 0.20.1 API and examples](https://docs.rs/iced_exwlshell/0.20.1/iced_exwlshell/)
 - [niri nesting and CLI options](https://niri-wm.github.io/niri/Getting-Started.html)
 
-The validated platform baseline is Rust/Iced with hardware Vulkan, an explicit software fallback, and systemd-owned component lifecycles. Production configuration and services follow in Phase 1.
+The validated platform baseline is Rust/Iced with hardware Vulkan, an explicit software fallback, and systemd-owned component lifecycles. Phase 1 added production configuration and supervised services; Phase 2 added the bar, launcher, and wallpaper.
 
 ## Renderer diagnosis and results (2026-10-28)
 

@@ -2,7 +2,7 @@
 
 ## Direction and status
 
-The required feature set and exclusions are in README.md. Working direction: Rust application code, Iced UI, niri first, file-driven configuration, and systemd user supervision. Phase 0 must validate the Iced/Wayland combination before this becomes a committed technical baseline.
+The required feature set and exclusions are in README.md. Validated baseline: Rust application code, Iced UI, niri first, file-driven configuration, and systemd user supervision. Phase 0 established the pinned Iced/Wayland combination and renderer baseline; see docs/development.md for tested versions and limitations.
 
 Multiple cooperating services are acceptable. A UI crash may leave healthy components running under systemd; a shell shutdown must clean up ordinary components, and compositor-session loss must clean up all Cabby components. An active lock is session-owned and survives an ordinary UI stop/restart. This exception must be explicit in commands and units.
 
@@ -10,9 +10,9 @@ Phase 0 is complete under the revised automated/synthetic acceptance scope: pinn
 
 ## Decisions to settle at the relevant phase
 
-- Phase 0: minimum Rust/niri/systemd versions; exact Iced and shell-binding revisions; renderer; development environment; supported hardware test environment.
+- Phase 0 (settled): pinned dependencies and tested Rust/niri/systemd baseline, hardware Vulkan on RTX 4070, explicit tiny-skia fallback, and nested Fedora test environment. Older runtime compatibility remains unclaimed.
 - Phase 1 (settled): TOML config format; validation and reload semantics; component/process split; service dependencies; restart limits; CLI/IPC contract; launcher application ownership outside Cabby's cgroups.
-- Phase 2: bar layout and monitor selection, launcher matching/launch behavior, wallpaper fit modes. System tray support is not yet a committed requirement.
+- Phase 2 (settled): all-output top/bottom bar with fixed section order; active-output launcher with token/substring matching and independent application ownership; shared static wallpaper with fill/fit/stretch/center modes. Font-family selection, arbitrary module placement, and per-output wallpaper overrides are deferred. System tray support is not a committed requirement.
 - Phase 3: notification history retention and markup policy; Bluetooth pairing scope; audio profiles, ports, and per-application routing scope.
 - Phase 4: clipboard MIME types, size/history bounds, disk persistence and deletion. Proposed default is bounded in-memory history; persistence is opt-in.
 - Phase 5: PAM integration, failed-lock recovery, manual and application inhibitor semantics, suspend/resume sequencing, night-light schedules and unsupported-output behavior.
@@ -177,3 +177,5 @@ For each feature, add a brief record containing scope, branch, checks and outcom
 - Phase 2 launcher (`feat/launcher`): XDG desktop-entry discovery and visibility/precedence rules, localized-name/token search, keyboard paging, launch errors, shared Iced styling, Apps button and CLI opening. A separate on-demand service provides one instance, session/shell cleanup, and no automatic reopening. App execution uses independent session-bound units with literal arguments and desktop working directories. Width/rows/terminal settings are documented and covered by examples. Rust checks and fixtures, ten isolated systemd scenarios, and nested Vulkan/software launcher rendering/focus probes pass. The graphical test initially hid Vulkan ICD data by replacing XDG_DATA_DIRS; preserving that environment fixes the harness without changing renderer policy. No new Fedora system packages. No history, fuzzy matching, icons, D-Bus activation, or desktop actions; typing/click delivery, focus restoration, and physical multi-output behavior remain unverified. Wallpaper remains before Phase 2 completion.
 
 - Phase 2 wallpaper/completion (`feat/wallpaper`): Rust/Iced background surfaces on all outputs, PNG/JPEG and solid-color support, four fit modes, config-relative paths normalized for runtime snapshots, bounded decoding, and image-content-aware reload. Invalid images and failed publication preserve the previous config; successful changes restart bar and wallpaper. Separate session-bound wallpaper service passes reload, crash, and cleanup fixtures. Required Rust checks, image/path/geometry tests, all example validation, nested pixel comparisons for every mode and scale 1.5, and strict hardware Vulkan/software runs pass. Pixel tests caught and fixed native-size centering and stale software image placement after scale changes; an output-resize subscription rebuilds the static view without polling. No new Fedora packages or external wallpaper daemon. Shared per-output image only; physical hotplug/multiple outputs, real keyboard/pointer delivery, and measured idle budgets remain documented gaps. Code uses event subscriptions/static surfaces without an application polling/render timer; Phase 7 will measure actual resource use. Phase 3 (notifications/audio/Bluetooth) is next.
+
+- Status documentation correction (`docs/current-phase-status`): aligned README, plan introductions, and development baseline with completed Phases 0–2. Preserved historical evidence and unverified coverage. Documentation consistency, local Markdown links, and whitespace checks pass; no runtime changes.
