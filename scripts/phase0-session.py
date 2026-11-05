@@ -117,6 +117,70 @@ def inside(directory, interactive, renderer):
             (applications / "cabby-notes.desktop").write_text('[Desktop Entry]\nType=Application\nName=Cabby Notes\nExec=/usr/bin/true\n')
             (applications / "cabby-terminal.desktop").write_text('[Desktop Entry]\nType=Application\nName=Cabby Terminal\nExec=/usr/bin/true\nTerminal=true\n')
             # XDG_DATA_DIRS also locates Vulkan ICD manifests; preserve it for graphics.
+            with (directory / "notifications.log").open("w") as notifications_log:
+                notifications = subprocess.Popen([ROOT / "target/debug/cabby", "notifications", "--config", config], stdout=notifications_log, stderr=notifications_log)
+                children.append(notifications)
+                probe_bin = str(ROOT / "target/debug/notification-probe")
+                deadline = time.monotonic() + 15
+                while True:
+                    seeded = subprocess.run([probe_bin, "notify"], capture_output=True, text=True, timeout=12)
+                    if seeded.returncode == 0:
+                        notice_id = seeded.stdout.strip()
+                        break
+                    if notifications.poll() is not None or time.monotonic() > deadline:
+                        raise RuntimeError("Notification service did not become ready")
+                    time.sleep(0.1)
+                def notification_layers():
+                    return sum(layer.get("namespace") == "cabby-notifications" for layer in json.loads(run("niri", "msg", "--json", "layers")))
+                def wait_notices(count):
+                    deadline = time.monotonic() + 10
+                    while time.monotonic() < deadline:
+                        if notification_layers() == count:
+                            return
+                        if notifications.poll() is not None:
+                            raise RuntimeError("Notification UI exited")
+                        time.sleep(0.1)
+                    raise RuntimeError(f"Expected {count} notification surfaces")
+                wait_notices(1)
+                deadline = time.monotonic() + 15
+                while ".attach(wl_buffer" not in (directory / "notifications.log").read_text():
+                    if time.monotonic() > deadline:
+                        raise RuntimeError("Notification buffer not attached")
+                    time.sleep(0.1)
+                run(probe_bin, "notify", notice_id)
+                wait_notices(1)
+                extra = [run(probe_bin, "notify").strip() for _ in range(3)]
+                wait_notices(3)
+                deadline = time.monotonic() + 10
+                while len(set(re.findall(r"wl_surface#(\d+)\.attach\(wl_buffer", (directory / "notifications.log").read_text()))) < 3:
+                    if time.monotonic() > deadline:
+                        raise RuntimeError("Three notification buffers did not render")
+                    time.sleep(0.1)
+                time.sleep(0.2)
+                run("grim", str(directory / "notifications.png"))
+                edge = "top" if renderer == "gpu" else "bottom"
+                run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(directory / "notifications.png"), f"notifications-{edge}")
+                for name in outputs:
+                    run("niri", "msg", "output", name, "scale", "1.5")
+                time.sleep(0.5)
+                assert notifications.poll() is None
+                run("grim", str(directory / "notifications-scaled.png"))
+                run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(directory / "notifications-scaled.png"), f"notifications-scaled-{edge}")
+                duplicate = subprocess.run([ROOT / "target/debug/cabby", "notifications", "--config", config], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                assert duplicate.returncode == 73, "notification owner conflict must exit 73"
+                run(probe_bin, "close", notice_id)
+                wait_notices(3)
+                for notice in extra:
+                    run(probe_bin, "close", notice)
+                wait_notices(0)
+                run(probe_bin, "expire")
+                wait_notices(0)
+                trace = (directory / "notifications.log").read_text()
+                assert not re.search(r"wl_keyboard#\d+\.enter\(", trace), "passive notifications took keyboard focus"
+                assert "set_keyboard_interactivity(0)" in trace
+                notifications.terminate()
+                notifications.wait(timeout=5)
+
             launcher_env = dict(os.environ)
             with (directory / "launcher.log").open("w") as launcher_log:
                 launcher = subprocess.Popen([ROOT / "target/debug/cabby", "launcher-ui", "--config", config], env=launcher_env, stdout=launcher_log, stderr=launcher_log)
@@ -178,7 +242,7 @@ def inside(directory, interactive, renderer):
                     lock.wait(timeout=180)
             adapters = {}
             if renderer == "gpu":
-                for client in ("bar", "launcher", "wallpaper", "lock"):
+                for client in ("bar", "launcher", "wallpaper", "notifications", "lock"):
                     adapter = selected_adapter((directory / f"{client}.log").read_text())
                     if adapter["backend"] != "Vulkan" or adapter["device_type"] not in ("DiscreteGpu", "IntegratedGpu"):
                         raise RuntimeError(f"{client} did not use hardware Vulkan: {adapter}")
@@ -186,7 +250,7 @@ def inside(directory, interactive, renderer):
             (directory / "result.json").write_text(json.dumps({
                 "status": "passed", "renderer_request": os.environ.get("ICED_BACKEND", "automatic"),
                 "adapters": adapters,
-                "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action", "launcher-mapped-with-keyboard-focus", "wallpaper-solid-and-four-image-modes-pixels", "wallpaper-scaled-pixels",
+                "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action", "launcher-mapped-with-keyboard-focus", "notifications-render-replace-queue-expire-conflict-passive", "wallpaper-solid-and-four-image-modes-pixels", "wallpaper-scaled-pixels",
                 "scale-change-process-survival", "lock-confirmed", "lock-survives-bar-crash"],
                 "not_proven": ["popup-keyboard-focus", "focus-restoration", "multiple-outputs",
                 "PAM", "DRM-lock-security", "gamma", "suspend"],
@@ -216,7 +280,7 @@ def main():
     if args.inside:
         inside(args.inside, args.interactive, args.renderer)
         return
-    for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe", "cabby-wallpaper", "wallpaper-pixel-probe"):
+    for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe", "cabby-wallpaper", "wallpaper-pixel-probe", "cabby-notifications", "notification-probe"):
         if not (ROOT / "target/debug" / binary).is_file():
             parser.error("Run cargo build --workspace --locked first")
     parent_display = os.environ.get("WAYLAND_DISPLAY")

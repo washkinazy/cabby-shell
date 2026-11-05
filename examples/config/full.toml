@@ -1,3 +1,4 @@
+# Notifications share renderer/theme settings; changed managed reloads restart cards and discard active notices.
 # All settings at their defaults. Install as ~/.config/cabby-shell/config.toml.
 # Reference: docs/configuration.md. Changes require restarting the UI.
 

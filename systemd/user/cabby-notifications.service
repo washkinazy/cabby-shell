@@ -1,0 +1,16 @@
+[Unit]
+Description=Cabby notification cards and D-Bus owner
+BindsTo=niri.service cabby-session.service
+After=niri.service cabby-session.service
+PartOf=cabby.target
+StartLimitIntervalSec=30
+StartLimitBurst=3
+
+[Service]
+ExecStart=/usr/bin/cabby notifications --config %t/cabby-shell/active.toml
+UMask=0077
+KillMode=control-group
+TimeoutStopSec=5
+Restart=on-failure
+RestartSec=1
+RestartPreventExitStatus=73

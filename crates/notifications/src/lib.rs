@@ -68,7 +68,7 @@ impl fmt::Debug for Action {
 }
 
 /// Revision-qualified handle for UI events and timer callbacks.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Token {
     id: u32,
     revision: u64,

@@ -1,3 +1,4 @@
+# Notifications share renderer/theme settings; changed managed reloads restart cards and discard active notices.
 # Explicit alternative for systems without a working hardware Vulkan path.
 # This is not considered a successful GPU validation.
 renderer = "software"

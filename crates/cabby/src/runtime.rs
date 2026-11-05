@@ -66,6 +66,7 @@ pub fn serve(
     path: PathBuf,
     ui_unit: Option<String>,
     wallpaper_unit: Option<String>,
+    notifications_unit: Option<String>,
 ) -> Result<()> {
     fs::create_dir_all(&path).map_err(|error| error.to_string())?;
     if fs::symlink_metadata(&path)
@@ -142,7 +143,17 @@ pub fn serve(
                         } else {
                             None
                         };
-                        serde_json::json!({"ok": true, "changed": changed, "ui_restart_queued": restart, "wallpaper_restart_queued": wallpaper_restart, "config": store.active()})
+                        let notifications_restart = if changed {
+                            notifications_unit.as_ref().map(|unit| {
+                                std::process::Command::new("systemctl")
+                                    .args(["--user", "--no-block", "try-restart", unit])
+                                    .status()
+                                    .is_ok_and(|s| s.success())
+                            })
+                        } else {
+                            None
+                        };
+                        serde_json::json!({"ok": true, "changed": changed, "ui_restart_queued": restart, "wallpaper_restart_queued": wallpaper_restart, "notifications_restart_queued": notifications_restart, "config": store.active()})
                     }
                     Err(error) => serde_json::json!({"ok": false, "error": error}),
                 },
