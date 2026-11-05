@@ -3,7 +3,7 @@ Description=Cabby configuration and control coordinator
 BindsTo=niri.service
 After=niri.service
 PartOf=cabby.target
-Upholds=cabby-ui.service cabby-wallpaper.service
+Wants=cabby-ui.service cabby-wallpaper.service
 StartLimitIntervalSec=30
 StartLimitBurst=3
 

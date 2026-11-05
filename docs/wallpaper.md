@@ -18,7 +18,7 @@ Run `cabby validate` before `cabby reload`. The coordinator fully decodes a cand
 
 Wallpaper pixels stay in memory while running. There is no file watcher or recurring rendering timer in Cabby's wallpaper component. Replace files atomically before reload; modification/deletion after validation can still make a restarted component fail. An old image is not persisted as a recovery copy. Diagnostics report errors without logging image contents. Resource limits, defaults, and examples are in the [configuration reference](configuration.md).
 
-The target starts wallpaper automatically; the coordinator upholds it after coordinator recovery. It has bounded on-failure restarts and cgroup cleanup, stops with the shell or compositor, and stays independent of ordinary bar crashes. Do not run a competing background owner on the same outputs when installing Cabby. Nothing in this branch installs or enables services on the live session.
+The target starts wallpaper automatically; the coordinator starts it on coordinator recovery. It has bounded on-failure restarts and cgroup cleanup, stops with the shell or compositor, and stays independent of ordinary bar crashes. Do not run a competing background owner on the same outputs when installing Cabby. Nothing in this branch installs or enables services on the live session.
 
 For supervised development, `cabby wallpaper --config PATH` runs the wallpaper executable in the foreground. The packaged paths expect `cabby-wallpaper` alongside `cabby`. Managed status and recovery use:
 
