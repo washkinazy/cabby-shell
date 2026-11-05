@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+cabby-bluetooth = { path = "../bluetooth" }
 cabby-audio = { path = "../audio" }
 cabby-notifications = { path = "../notifications" }
 cabby-notification-service = { path = "../notification-service" }

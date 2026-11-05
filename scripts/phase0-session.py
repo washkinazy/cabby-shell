@@ -287,6 +287,49 @@ def inside(directory, interactive, renderer):
                     time.sleep(0.05)
                 if bar.poll() is not None:
                     raise RuntimeError("Panel dismissal stopped desktop")
+            # Exercise discovery + a pending pairing prompt against private BlueZ.
+            bar.terminate()
+            bar.wait(timeout=5)
+            bluetooth_env = dict(os.environ, CABBY_TEST_BLUEZ_BUS=os.environ["DBUS_SESSION_BUS_ADDRESS"])
+            with (directory / "bluez-fixture.log").open("w") as fixture_log, (directory / "bluetooth.log").open("w") as bluetooth_log:
+                fixture = subprocess.Popen([ROOT / "target/debug/examples/bluez-fixture"], env=bluetooth_env, stdout=fixture_log, stderr=fixture_log)
+                children.append(fixture)
+                deadline = time.monotonic() + 10
+                while "fixture-ready" not in (directory / "bluez-fixture.log").read_text():
+                    if fixture.poll() is not None or time.monotonic() > deadline:
+                        raise RuntimeError("Private BlueZ fixture did not start")
+                    time.sleep(0.05)
+                bar = subprocess.Popen([ROOT / "target/debug/bluetooth-panel-probe", "--config", wallpaper_config], env=bluetooth_env, stdout=bluetooth_log, stderr=bluetooth_log)
+                children.append(bar)
+                deadline = time.monotonic() + 20
+                while True:
+                    trace = (directory / "bluetooth.log").read_text()
+                    if "bluetooth-probe-prompt" in trace and re.search(r"wl_keyboard#\d+\.enter\(", trace):
+                        break
+                    if bar.poll() is not None or time.monotonic() > deadline:
+                        raise RuntimeError("Bluetooth panel did not show pairing prompt with focus")
+                    time.sleep(0.05)
+                status_args = ("busctl", "--address=" + bluetooth_env["CABBY_TEST_BLUEZ_BUS"], "call", "org.bluez", "/test", "org.cabby.Test", "Status")
+                if run(*status_args).strip() != "bu true 1":
+                    raise RuntimeError("Bluetooth fixture has no owned discovery session")
+                time.sleep(0.5)
+                capture = directory / "bluetooth.png"
+                subprocess.run(["grim", str(capture)], check=True, timeout=15)
+                run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(capture), "audio-top" if renderer == "gpu" else "audio-bottom")
+                deadline = time.monotonic() + 15
+                while any(layer.get("namespace") == "cabby-bluetooth" for layer in json.loads(run("niri", "msg", "--json", "layers"))):
+                    if time.monotonic() > deadline:
+                        raise RuntimeError("Bluetooth panel did not dismiss")
+                    time.sleep(0.1)
+                deadline = time.monotonic() + 5
+                while run(*status_args).strip() != "bu false 0":
+                    if time.monotonic() > deadline:
+                        raise RuntimeError("Bluetooth discovery or agent survived dismissal")
+                    time.sleep(0.05)
+                if bar.poll() is not None:
+                    raise RuntimeError("Bluetooth dismissal stopped desktop")
+                fixture.terminate()
+                fixture.wait(timeout=5)
             if interactive:
                 (directory / "interactive-ready").touch()
                 # User can inspect the bar before creating this request file.
@@ -316,7 +359,7 @@ def inside(directory, interactive, renderer):
                     lock.wait(timeout=180)
             adapters = {}
             if renderer == "gpu":
-                for client in ("bar", "launcher", "wallpaper", "notifications", "composition", "audio", "lock"):
+                for client in ("bar", "launcher", "wallpaper", "notifications", "composition", "audio", "bluetooth", "lock"):
                     adapter = selected_adapter((directory / f"{client}.log").read_text())
                     if adapter["backend"] != "Vulkan" or adapter["device_type"] not in ("DiscreteGpu", "IntegratedGpu"):
                         raise RuntimeError(f"{client} did not use hardware Vulkan: {adapter}")
@@ -325,7 +368,7 @@ def inside(directory, interactive, renderer):
                 "status": "passed", "renderer_request": os.environ.get("ICED_BACKEND", "automatic"),
                 "adapters": adapters,
                 "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action", "launcher-mapped-with-keyboard-focus", "notifications-render-replace-queue-expire-conflict-passive", "wallpaper-solid-and-four-image-modes-pixels", "wallpaper-scaled-pixels",
-                "scale-change-process-survival", "composed-bar-wallpaper-pixels-scales", "audio-panel-fixture-focus-render-close-cleanup", "lock-confirmed", "lock-survives-bar-crash"],
+                "scale-change-process-survival", "composed-bar-wallpaper-pixels-scales", "audio-panel-fixture-focus-render-close-cleanup", "bluetooth-panel-pairing-discovery-close-cleanup", "lock-confirmed", "lock-survives-bar-crash"],
                 "not_proven": ["popup-keyboard-focus", "focus-restoration", "multiple-outputs",
                 "PAM", "DRM-lock-security", "gamma", "suspend"],
             }, indent=2))
@@ -354,9 +397,9 @@ def main():
     if args.inside:
         inside(args.inside, args.interactive, args.renderer)
         return
-    for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe", "cabby-wallpaper", "wallpaper-pixel-probe", "cabby-notifications", "notification-probe", "cabby-desktop", "audio-panel-probe"):
+    for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe", "cabby-wallpaper", "wallpaper-pixel-probe", "cabby-notifications", "notification-probe", "cabby-desktop", "audio-panel-probe", "bluetooth-panel-probe", "examples/bluez-fixture"):
         if not (ROOT / "target/debug" / binary).is_file():
-            parser.error("Run cargo build --workspace --locked first")
+            parser.error("Run cargo build --workspace --locked and cargo build -p cabby-bluetooth --example bluez-fixture --locked first")
     parent_display = os.environ.get("WAYLAND_DISPLAY")
     if not parent_display:
         parser.error("Run inside an existing Wayland session")

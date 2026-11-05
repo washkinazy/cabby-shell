@@ -6,3 +6,5 @@ pub(crate) mod notifications;
 pub(crate) mod wallpaper;
 
 pub(crate) mod audio;
+
+pub(crate) mod bluetooth;

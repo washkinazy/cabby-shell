@@ -259,6 +259,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cabby-bluetooth"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "tempfile",
+ "tokio",
+ "zbus",
+]
+
+[[package]]
 name = "cabby-config"
 version = "0.1.0"
 dependencies = [
@@ -308,6 +318,7 @@ name = "cabby-shell"
 version = "0.1.0"
 dependencies = [
  "cabby-audio",
+ "cabby-bluetooth",
  "cabby-config",
  "cabby-launcher",
  "cabby-notification-service",

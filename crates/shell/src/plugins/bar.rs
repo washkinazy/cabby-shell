@@ -20,6 +20,7 @@ pub(crate) enum Message {
     Focus(u64),
     Launcher,
     Audio,
+    Bluetooth,
     LauncherResult(Result<(), String>),
     FocusResult(Result<(), String>),
 }
@@ -139,6 +140,7 @@ impl Bar {
         let contents = row![
             button("Apps").on_press(Message::Launcher),
             button("Audio").on_press(Message::Audio),
+            button("Bluetooth").on_press(Message::Bluetooth),
             scrollable(workspaces)
                 .direction(scrollable::Direction::Horizontal(
                     scrollable::Scrollbar::new()
