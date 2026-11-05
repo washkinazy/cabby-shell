@@ -1,3 +1,4 @@
+mod idle;
 mod power;
 mod runtime;
 mod watch;
@@ -9,7 +10,7 @@ use std::process::Command;
 
 const HELP: &str = "Usage:
   cabby validate [--config PATH]
-  cabby status|reload [--runtime-dir PATH]
+  cabby status|reload|idle-status|idle-inhibit-on|idle-inhibit-off|idle-inhibit-toggle [--runtime-dir PATH]
   cabby start|stop|restart [--target UNIT] [--session-unit UNIT]
   cabby restart-ui [--ui-unit UNIT] [--session-unit UNIT]
   cabby launcher [--launcher-unit UNIT] [--target UNIT] [--session-unit UNIT]
@@ -135,7 +136,12 @@ fn run() -> Result<()> {
             "--wallpaper-unit",
             "--notifications-unit",
         ],
-        "status" | "reload" => &["--runtime-dir"],
+        "status"
+        | "reload"
+        | "idle-status"
+        | "idle-inhibit-on"
+        | "idle-inhibit-off"
+        | "idle-inhibit-toggle" => &["--runtime-dir"],
         "start" | "stop" | "restart" => &["--target", "--session-unit"],
         "restart-ui" => &["--ui-unit", "--session-unit"],
         "lock" | "suspend" => &["--lock-unit", "--session-unit"],
@@ -205,7 +211,12 @@ fn run() -> Result<()> {
                 None
             },
         )?,
-        "status" | "reload" => {
+        "status"
+        | "reload"
+        | "idle-status"
+        | "idle-inhibit-on"
+        | "idle-inhibit-off"
+        | "idle-inhibit-toggle" => {
             let result = runtime::request(&runtime::directory(directory)?, command)?;
             println!("{result}");
             if result["ok"] != true {

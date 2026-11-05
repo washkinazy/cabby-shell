@@ -114,6 +114,7 @@ pub fn serve(
     ))
     .map_err(|e| e.to_string())?;
     let mut deadline = Some(Instant::now() + watch::DEBOUNCE);
+    let idle = crate::idle::Idle::new(store.active().idle_lock_seconds);
     notify_ready()?;
     loop {
         let incoming = watcher
@@ -155,6 +156,7 @@ pub fn serve(
                 deadline = Some(Instant::now() + watch::DEBOUNCE);
             }
         }
+        idle.configure(store.active().idle_lock_seconds);
         if !incoming {
             continue;
         }
@@ -172,7 +174,16 @@ pub fn serve(
         } else {
             match command.trim() {
                 "status" => {
-                    serde_json::json!({"ok": true, "source": store.source.path, "config": store.active(), "pid": std::process::id()})
+                    serde_json::json!({"ok": true, "source": store.source.path, "config": store.active(), "pid": std::process::id(), "idle": idle.status()})
+                }
+                "idle-status" | "idle-inhibit-on" | "idle-inhibit-off" | "idle-inhibit-toggle" => {
+                    match command.trim() {
+                        "idle-inhibit-on" => idle.inhibit(Some(true)),
+                        "idle-inhibit-off" => idle.inhibit(Some(false)),
+                        "idle-inhibit-toggle" => idle.inhibit(None),
+                        _ => (),
+                    }
+                    serde_json::json!({"ok": true, "idle": idle.status()})
                 }
                 "reload" => {
                     let response = reload(
@@ -191,6 +202,7 @@ pub fn serve(
                     {
                         deadline = Some(Instant::now() + watch::DEBOUNCE);
                     }
+                    idle.configure(store.active().idle_lock_seconds);
                     response
                 }
                 _ => serde_json::json!({"ok": false, "error": "unknown request"}),

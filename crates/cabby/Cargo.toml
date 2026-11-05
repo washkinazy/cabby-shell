@@ -6,6 +6,8 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+wayland-client = "=0.31.15"
+wayland-protocols = { version = "=0.32.13", features = ["client", "staging"] }
 libc = "=0.2.191"
 cabby-launcher.workspace = true
 cabby-config.workspace = true

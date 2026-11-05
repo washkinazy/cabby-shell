@@ -17,3 +17,5 @@ See the [configuration reference](../../docs/configuration.md) for types, defaul
 The managed desktop hosts bar and wallpaper together. `cabby restart-ui` restarts both; ordinary accepted reloads update the desktop and notifications in place; renderer changes restart them. No configuration keys change. See the service migration linked from the configuration reference when updating manually installed units.
 
 The lock UI uses shared `renderer`, `font_size`, `background`, `foreground` and `accent` settings only when a new lock starts. Reload never restarts an active locker; invalid styling uses built-in defaults. No lock-specific settings or automatic idle activation are present. See [locking](../../docs/locking.md).
+
+[idle.toml](idle.toml) enables a ten-minute idle lock after installing lock support; other examples leave automatic locking disabled.

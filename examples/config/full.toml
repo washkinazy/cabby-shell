@@ -50,3 +50,6 @@ wallpaper_image = ""
 wallpaper_color = "#181b22"
 # Image placement: "fill", "fit", "stretch", or "center".
 wallpaper_mode = "fill"
+
+# Automatic lock after 600 idle seconds; 0 disables. Requires lock support.
+idle_lock_seconds = 0
