@@ -3,64 +3,11 @@ use cabby_config::Config;
 use cabby_launcher::{Catalog, Picker};
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Element, Event, Length, Task, event, keyboard, window};
-use iced_exwlshell::reexport::{Anchor, KeyboardInteractivity, Layer, LayerSize};
-use iced_exwlshell::settings::{LayerShellSettings, Settings, StartMode};
-use iced_exwlshell::{daemon, to_exwlshell_message};
 use std::path::PathBuf;
 
-pub(crate) fn run(context: crate::host::Context) -> iced_exwlshell::Result {
-    let crate::host::Context { config, source } = context;
-    let settings = Settings {
-        default_text_size: iced::Pixels(f32::from(config.font_size)),
-        layer_settings: LayerShellSettings {
-            anchor: Anchor::empty(),
-            layer: Layer::Overlay,
-            size: LayerSize::px(
-                u32::from(config.launcher_width),
-                u32::from(config.launcher_rows + 3) * u32::from(config.font_size + 20) + 64,
-            ),
-            exclusive_zone: 0,
-            keyboard_interactivity: KeyboardInteractivity::Exclusive,
-            start_mode: StartMode::Active,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    daemon(
-        move || {
-            (
-                Launcher {
-                    config: config.clone(),
-                    source: source.explicit.then(|| source.path.clone()),
-                    picker: Picker::default(),
-                    loading: true,
-                },
-                Task::batch([
-                    Task::perform(
-                        async {
-                            tokio::task::spawn_blocking(cabby_launcher::discover)
-                                .await
-                                .unwrap_or_default()
-                        },
-                        Message::Loaded,
-                    ),
-                    iced::widget::operation::focus("launcher-query"),
-                ]),
-            )
-        },
-        || "cabby-launcher".into(),
-        Launcher::update,
-        Launcher::view,
-    )
-    .on_new_shell(|_| Some(Message::Ready))
-    .subscription(|_| event::listen_with(launcher_event))
-    .theme(|state: &Launcher, _| ui::theme(&state.config))
-    .settings(settings)
-    .run()
-}
 // Escape is captured by text_input when it releases widget focus. Still close
 // the launcher on the first press; Enter stays exclusively on on_submit.
-fn launcher_event(event: Event, _: event::Status, _: window::Id) -> Option<Message> {
+pub(crate) fn launcher_event(event: Event, _: event::Status, _: window::Id) -> Option<Message> {
     match &event {
         Event::Keyboard(keyboard::Event::KeyPressed {
             key:
@@ -75,16 +22,14 @@ fn launcher_event(event: Event, _: event::Status, _: window::Id) -> Option<Messa
         _ => None,
     }
 }
-struct Launcher {
+pub(crate) struct Launcher {
     config: Config,
     source: Option<PathBuf>,
     picker: Picker,
     loading: bool,
 }
-#[to_exwlshell_message]
 #[derive(Debug, Clone)]
-enum Message {
-    Ready,
+pub(crate) enum Message {
     Loaded(Catalog),
     Query(String),
     Choose(usize),
@@ -93,10 +38,31 @@ enum Message {
     Event(Event),
     Close,
 }
+pub(crate) enum Action {
+    Update(Task<Message>),
+    Close,
+}
 impl Launcher {
-    fn update(&mut self, message: Message) -> Task<Message> {
+    pub(crate) fn new(config: Config, source: Option<PathBuf>) -> (Self, Task<Message>) {
+        (
+            Self {
+                config,
+                source,
+                picker: Picker::default(),
+                loading: true,
+            },
+            Task::perform(
+                async {
+                    tokio::task::spawn_blocking(cabby_launcher::discover)
+                        .await
+                        .unwrap_or_default()
+                },
+                Message::Loaded,
+            ),
+        )
+    }
+    pub(crate) fn update(&mut self, message: Message) -> Action {
         match message {
-            Message::Ready => return iced::widget::operation::focus("launcher-query"),
             Message::Loaded(catalog) => {
                 let query = self.picker.query.clone();
                 self.picker = Picker::loaded(catalog);
@@ -106,25 +72,25 @@ impl Launcher {
             Message::Query(query) => self.picker.filter(query),
             Message::Choose(index) if !self.picker.pending && index < self.picker.matches.len() => {
                 self.picker.selected = index;
-                return self.submit();
+                return Action::Update(self.submit());
             }
-            Message::Submit => return self.submit(),
-            Message::Close => return iced::exit(),
-            Message::LaunchResult(Ok(())) => return iced::exit(),
+            Message::Submit => return Action::Update(self.submit()),
+            Message::Close => return Action::Close,
+            Message::LaunchResult(Ok(())) => return Action::Close,
             Message::LaunchResult(Err(error)) => self.picker.failed(error),
             Message::Event(Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Named(key),
                 ..
             })) => match key {
-                keyboard::key::Named::Escape => return iced::exit(),
+                keyboard::key::Named::Escape => return Action::Close,
                 keyboard::key::Named::ArrowUp => self.picker.step(true),
                 keyboard::key::Named::ArrowDown => self.picker.step(false),
                 _ => (),
             },
-            Message::Event(Event::Window(window::Event::Closed)) => return iced::exit(),
+            Message::Event(Event::Window(window::Event::Closed)) => return Action::Close,
             _ => (),
         }
-        Task::none()
+        Action::Update(Task::none())
     }
     fn submit(&mut self) -> Task<Message> {
         let Some(app) = self.picker.begin() else {
@@ -141,7 +107,7 @@ impl Launcher {
         Task::perform(ui::command(args), Message::LaunchResult)
     }
 
-    fn view(&self, _: window::Id) -> Element<'_, Message> {
+    pub(crate) fn view(&self) -> Element<'_, Message> {
         let mut input = text_input("Search applications", &self.picker.query)
             .id("launcher-query")
             .on_submit(Message::Submit);
@@ -227,6 +193,23 @@ mod tests {
             text: None,
             repeat: false,
         })
+    }
+    #[test]
+    fn dismissals_request_host_close_and_launch_errors_keep_overlay_open() {
+        let (mut launcher, _) = Launcher::new(Config::default(), None);
+        for message in [
+            Message::Close,
+            Message::LaunchResult(Ok(())),
+            Message::Event(key(keyboard::key::Named::Escape)),
+            Message::Event(Event::Window(window::Event::Closed)),
+        ] {
+            assert!(matches!(launcher.update(message), Action::Close));
+        }
+        assert!(matches!(
+            launcher.update(Message::LaunchResult(Err("fixture failure".into()))),
+            Action::Update(_)
+        ));
+        assert_eq!(launcher.picker.error.as_deref(), Some("fixture failure"));
     }
     #[test]
     fn captured_escape_closes_but_enter_cannot_submit_twice() {
