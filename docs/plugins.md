@@ -1,6 +1,6 @@
 # Internal plugin design intent
 
-Status: intent recorded on 2026-11-04; the user subsequently authorized starting the refactor. Built-in feature modules share startup, and a common surface host now runs bar and wallpaper. They now share the production desktop process. Launcher and notification plugins have separate host adapters; shared control panels remain future work.
+Status: intent recorded on 2026-11-04; the user subsequently authorized starting the refactor. Built-in feature modules share startup, and a common surface host now runs bar and wallpaper. They now share the production desktop process. Launcher and notification plugins have separate host adapters; audio contributes the first on-demand device panel in the desktop host.
 
 ## Purpose and scope
 
@@ -21,7 +21,7 @@ The intended separation is that a plugin owns feature behavior and the shell own
 | Feature configuration schema and validation | Configuration discovery, complete validation, and coordinated reload |
 | Release of feature-owned tasks and helpers | Supervised process lifetime and coordinated shutdown |
 
-Keep backend logic testable independently of Iced widgets. Features may contribute different kinds of UI: audio could provide a bar indicator and device panel; wallpaper needs background surfaces. This does not commit to configurable bar composition, new settings, a generic event bus, or any particular registry or trait design.
+Keep backend logic testable independently of Iced widgets. Features may contribute different kinds of UI: audio provides a bar control and device panel; wallpaper needs background surfaces. This does not commit to configurable bar composition, new settings, a generic event bus, or any particular registry or trait design.
 
 ## Plugins and services are separate decisions
 
@@ -39,7 +39,7 @@ Feature modules under `crates/shell/src/plugins/` own typed feature messages, st
 
 The production binaries in `crates/shell/src/bin` are thin selectors for the built-in plugins. `crates/platform-spike` now contains test probes only. Their names remain stable for the CLI, units, and test harness; guarded probes remain test-only. The `cabby-desktop` executable selects both bar and wallpaper plugins. Standalone plugin executables remain available for isolated development. The earlier composition probe has been replaced by testing the production `cabby desktop` wrapper.
 
-To add a built-in feature at this stage, keep backend policy independently testable, add its UI module, and register a typed entry point with the host when a standalone surface is appropriate. A bar indicator or shared panel should motivate the next composition interface; this convention does not require a new executable/service for every future feature. Extend configuration through the existing production schema, reference, examples, and coverage checks.
+To add a built-in feature at this stage, keep backend policy independently testable, add its UI module, and register a typed entry point with the host when a standalone surface is appropriate. The audio panel provides the first concrete shared-panel integration; this convention does not require a new executable/service for every future feature. Extend configuration through the existing production schema, reference, examples, and coverage checks.
 
 ## Shared passive-surface host
 
@@ -70,7 +70,7 @@ Before subsequent increments, settle the affected decisions:
 - How feature state, UI contributions, configuration reload, and task cleanup fit the existing Rust/Iced implementation.
 - The next migration and its acceptance checks, preserving established behavior and evidence.
 
-The first migration covers the existing bar, launcher, wallpaper, and notification frontends. The initial plugin refactor now covers all implemented UI features and the combined desktop service. Audio/Bluetooth backend choices and shared device panels remain open. Each later increment must preserve existing behavioral acceptance checks or explicitly document an agreed behavior change. Phase 3 remains incomplete.
+The first migration covers the existing bar, launcher, wallpaper, and notification frontends. The initial plugin refactor now covers all implemented UI features and the combined desktop service. Audio now uses a bounded pactl backend and a shared device panel; Bluetooth remains the next feature. Each later increment must preserve existing behavioral acceptance checks or explicitly document an agreed behavior change. Phase 3 remains incomplete.
 
 ## Adding a feature consistently
 
@@ -81,3 +81,5 @@ The first migration covers the existing bar, launcher, wallpaper, and notificati
 5. Cover feature behavior independently, then add host/protocol integration and isolated graphical checks as appropriate. Keep helper tasks/processes supervised, and cancellation bounded.
 
 The current feature entry points are statically selected by `host::Plugin`; they are not an external API. Production UI binaries build from the `cabby-shell` package. The historical standalone bar executable name `cabby-platform-spike` remains for CLI compatibility, but its source belongs to the shell package. Experimental lock/popup and graphical/IPC probes remain in the separate prototype package and are never production plugins.
+
+The audio plugin is the first device-control contribution: the desktop host maps its typed events to a single on-demand panel, while the plugin subscription owns backend helpers. No audio service or executable is added for production. Device panels can follow this pattern without changing the lifecycle of passive desktop surfaces.

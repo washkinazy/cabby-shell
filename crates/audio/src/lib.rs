@@ -219,7 +219,7 @@ pub fn parse(info: &[u8], sinks: &[u8], sources: &[u8]) -> Result<Snapshot> {
     })
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Client {
     executable: PathBuf,
 }

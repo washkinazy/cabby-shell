@@ -20,6 +20,29 @@ fn main() {
     let left = [40, 90, 130];
     let right = [180, 130, 60];
     match args[2].as_str() {
+        mode if mode.starts_with("audio-") => {
+            // The nested audio probe runs after scale 1.5 is established.
+            let scale = 1.5f32;
+            let top = if mode == "audio-top" { 48.0 } else { 8.0 };
+            let left_x = w.saturating_sub((448.0 * scale) as u32);
+            let mut text_pixels = 0;
+            for y in ((top + 12.0) * scale) as u32..((top + 300.0) * scale).min(h as f32) as u32 {
+                for x in left_x + 20..w.saturating_sub(24) {
+                    let offset = ((y * w + x) * 4) as usize;
+                    if asset.rgba[offset..offset + 3]
+                        .iter()
+                        .zip([229u8, 233, 240])
+                        .all(|(a, b)| a.abs_diff(b) < 20)
+                    {
+                        text_pixels += 1;
+                    }
+                }
+            }
+            assert!(
+                text_pixels > 300,
+                "audio panel content missing: {text_pixels} text pixels"
+            );
+        }
         "bar-top" => check(w / 2, 1, [24, 27, 34]),
         "bar-bottom" => check(w / 2, h - 2, [24, 27, 34]),
         mode if mode.starts_with("notifications-") => {
