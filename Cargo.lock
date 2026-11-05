@@ -332,13 +332,16 @@ dependencies = [
  "cabby-notification-service",
  "cabby-notifications",
  "cabby-tray",
+ "futures-util",
  "iced",
  "iced_exwlshell",
+ "libc",
  "log",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
+ "zbus",
 ]
 
 [[package]]

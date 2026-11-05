@@ -8,6 +8,7 @@ Copy one example to `$HOME/.config/cabby-shell/config.toml` after creating the d
 | [wallpaper-center.toml](wallpaper-center.toml) | Centered image alternative |
 | [wallpaper-stretch.toml](wallpaper-stretch.toml) | Stretched image alternative |
 | [minimal.toml](minimal.toml) | All defaults, with every setting omitted |
+| [custom-layout.toml](custom-layout.toml) | Optional Apps, active-window title, and diagnostics; clock omitted |
 | [full.toml](full.toml) | Every supported setting, annotated and set to its default |
 | [software.toml](software.toml) | Software renderer, taller bottom bar, hidden window titles, and optional foot terminal integration |
 

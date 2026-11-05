@@ -6,6 +6,9 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+futures-util = "=0.3.34"
+libc = "=0.2.191"
+zbus = { version = "=5.19.0", default-features = false, features = ["tokio"] }
 cabby-tray = { path = "../tray" }
 cabby-bluetooth = { path = "../bluetooth" }
 cabby-audio = { path = "../audio" }

@@ -76,6 +76,30 @@ def inside(directory, interactive, renderer):
             probe = subprocess.run([ROOT / "target/debug/bar-ipc-probe"], capture_output=True, text=True, timeout=15)
             (directory / "bar-ipc-probe.log").write_text(probe.stdout + probe.stderr)
             probe.check_returncode()
+            # Isolate one widget to check actual left/middle/right alignment.
+            base_config = config.read_text()
+            for region in ("left", "middle", "right"):
+                bar.terminate()
+                bar.wait(timeout=5)
+                layout_config = directory / f"layout-{region}.toml"
+                layout_config.write_text(base_config + ''.join(f'bar_{slot} = {json.dumps(["clock"] if slot == region else [])}\n' for slot in ("left", "middle", "right")))
+                layout_log = directory / f"layout-{region}.log"
+                with layout_log.open("w") as layout_output:
+                    bar = subprocess.Popen([ROOT / "target/debug/cabby", "ui", "--config", layout_config], stdout=layout_output, stderr=layout_output)
+                    children.append(bar)
+                    deadline = time.monotonic() + 20
+                    while ".attach(wl_buffer" not in layout_log.read_text():
+                        if bar.poll() is not None or time.monotonic() > deadline:
+                            raise RuntimeError(f"Bar {region} layout did not render")
+                        time.sleep(0.05)
+                    time.sleep(0.3)
+                    capture = directory / f"layout-{region}.png"
+                    subprocess.run(["grim", str(capture)],check=True,timeout=15)
+                    run(str(ROOT / "target/debug/wallpaper-pixel-probe"),str(capture),f"clock-{region}-{'top' if renderer == 'gpu' else 'bottom'}")
+            bar.terminate()
+            bar.wait(timeout=5)
+            bar = subprocess.Popen([ROOT / "target/debug/cabby", "ui", "--config", config], stdout=log, stderr=log)
+            children.append(bar)
             wallpaper = None
             for mode in ("solid", "fill", "fit", "stretch", "center"):
                 if wallpaper is not None:
@@ -401,7 +425,7 @@ def inside(directory, interactive, renderer):
             (directory / "result.json").write_text(json.dumps({
                 "status": "passed", "renderer_request": os.environ.get("ICED_BACKEND", "automatic"),
                 "adapters": adapters,
-                "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action", "launcher-mapped-with-keyboard-focus", "notifications-render-replace-queue-expire-conflict-passive", "wallpaper-solid-and-four-image-modes-pixels", "wallpaper-scaled-pixels",
+                "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action", "bar-region-clock-pixel-alignment", "launcher-mapped-with-keyboard-focus", "notifications-render-replace-queue-expire-conflict-passive", "wallpaper-solid-and-four-image-modes-pixels", "wallpaper-scaled-pixels",
                 "scale-change-process-survival", "composed-bar-wallpaper-pixels-scales", "audio-panel-fixture-focus-render-close-cleanup", "bluetooth-panel-pairing-discovery-close-cleanup", "tray-item-menu-focus-render-close", "lock-confirmed", "lock-survives-bar-crash"],
                 "not_proven": ["popup-keyboard-focus", "focus-restoration", "multiple-outputs",
                 "PAM", "DRM-lock-security", "gamma", "suspend"],

@@ -1,0 +1,49 @@
+# Default regions: workspaces left; clock/date middle; audio, network, Bluetooth, tray right.
+# Tray icons and menus share desktop styling; changed reloads close menus and reconnect tray ownership.
+# The coordinator automatically reloads valid saves (300 ms debounce); invalid edits retain the old config.
+# Bluetooth shares theme/layout settings; reload closes the panel and its discovery/pairing.
+# Audio panel shares renderer/font/theme and bar clearance; reload closes the panel.
+# Managed desktop hosts bar + wallpaper together; restart-ui restarts both.
+# Notifications share renderer/theme settings; changed managed reloads restart cards and discard active notices.
+# Alternative layout with Apps, window title, and diagnostics; clock is omitted.
+# Reference: docs/configuration.md. Changes require restarting the UI.
+
+# UI renderer: "vulkan" (hardware path) or "software" (tiny-skia).
+# Vulkan explicitly overrides an inherited WGPU_BACKEND=gl for the UI child.
+renderer = "vulkan"
+
+# Bar height and reserved area in logical pixels: integer, 32 through 128.
+bar_height = 40
+# Widget order within each independent region. [] leaves a region empty.
+# A widget may occur only once across all three lists.
+bar_left = ["apps", "workspaces"]
+bar_middle = ["title"]
+bar_right = ["audio", "network", "bluetooth", "tray", "status"]
+
+# Bar edge: "top" or "bottom". Reserved space follows the edge.
+bar_position = "top"
+# Horizontal outer padding and gaps between widgets, 0..32 logical pixels.
+bar_padding = 8
+bar_spacing = 8
+# Text size: 10..32 logical pixels, at least 8 smaller than bar_height.
+font_size = 14
+# Opaque RGB colors in #RRGGBB format.
+background = "#181b22"
+foreground = "#e5e9f0"
+accent = "#88c0d0"
+# Show the title when the optional "title" widget is included in a region.
+show_window_title = true
+
+# Launcher width in logical pixels (320..1200), and visible result rows (4..12).
+launcher_width = 640
+launcher_rows = 8
+# Literal terminal executable/argument prefix; [] shows a configuration error
+# for Terminal=true apps. Example: ["foot", "-e"] if foot is installed.
+launcher_terminal = []
+
+# Empty image means a solid color. Nonempty PNG/JPEG paths are relative to this file.
+wallpaper_image = ""
+# Color behind transparent images and outside fit/center images: #RRGGBB.
+wallpaper_color = "#181b22"
+# Image placement: "fill", "fit", "stretch", or "center".
+wallpaper_mode = "fill"

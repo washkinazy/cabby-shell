@@ -32,6 +32,40 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Application:** UI restart required. No silent fallback when Vulkan is selected.
 - **Migration:** first schema; no prior setting to migrate.
 
+### `bar_left`
+
+- **File/purpose:** `config.toml`; ordered widgets aligned to the left of the bar.
+- **Type/default:** array of strings; `["workspaces"]` when omitted. No units.
+- **Values:** any subset of `"workspaces"`, `"clock"`, `"audio"`, `"network"`, `"bluetooth"`, `"tray"`, `"apps"`, `"title"`, `"status"`, in the desired order. Unknown names and duplicate widgets anywhere across the three regions are errors. `[]` leaves this region empty.
+- **Example:** `bar_left = ["workspaces"]`; optional Apps/title/status placement is demonstrated in [custom-layout.toml](../examples/config/custom-layout.toml).
+- **Dependencies/interactions:** the three regions occupy equal widths. Overflow scrolls horizontally within its region; it cannot shift or cover another region. Each array replaces that region's default, while omitted regions still use their defaults. Widgets omitted from all regions disappear; omitted clock/network/tray widgets do not start their background subscriptions. See the widget behavior below.
+- **Application:** automatic or explicit valid reload restarts the desktop with the new layout; direct UI invocation requires restart.
+- **Migration:** defaults change from the former fixed Apps/device/workspace/title/status row to the user-requested three-region layout. Existing files inherit these defaults without adding keys. Include `apps`, `title` or `status` explicitly to restore those optional contributions; the launcher command/keybinding remains available.
+
+### `bar_middle`
+
+- **File/purpose:** `config.toml`; ordered widgets centered on the output, independent of left/right content widths.
+- **Type/default:** array of strings; `["clock"]` when omitted. No units.
+- **Values:** the same widget names and uniqueness rules as `bar_left`; `[]` leaves this region empty.
+- **Example:** `bar_middle = ["clock"]` in [full.toml](../examples/config/full.toml).
+- **Dependencies/interactions:** uses the middle third of the content area; oversized contents scroll within that region. To move the clock elsewhere, explicitly remove it from this list as well as adding it to the destination.
+- **Application:** automatic/explicit valid reload restarts the desktop; standalone UI requires restart.
+- **Migration:** omitted values now show local clock/date in the middle.
+
+### `bar_right`
+
+- **File/purpose:** `config.toml`; ordered widgets aligned to the right of the bar.
+- **Type/default:** array of strings; `["audio", "network", "bluetooth", "tray"]` when omitted. No units.
+- **Values:** the same widget names and uniqueness rules as `bar_left`; `[]` leaves this region empty.
+- **Example:** `bar_right = ["audio", "network", "bluetooth", "tray"]` in [full.toml](../examples/config/full.toml).
+- **Dependencies/interactions:** uses the right third; a large tray or long status scrolls within the region. Audio/Bluetooth keep their existing on-demand panels. Network is read-only status; it does not change connections or radio state.
+- **Application:** automatic/explicit valid reload restarts the desktop; standalone UI requires restart.
+- **Migration:** the default order is audio, network, Bluetooth, system tray.
+
+#### Widget behavior
+
+`workspaces` follows niri and shows an unavailable label if disconnected. `clock` shows local date and 24-hour time (for example `Thu 05 Nov  09:07`) and updates at minute boundaries; wall-clock jumps are reflected within a minute. Timezone/format configuration is not exposed; restart after changing the process timezone. `audio` and `bluetooth` open their existing device panels. `network` reads NetworkManager's connection type/state and connectivity events on the system bus, including offline, connecting, local-only, limited and captive-portal states. Missing NetworkManager shows `Network ?`; owner/bus loss clears status and reconnects after two seconds. No network scan or connectivity-check command is issued. `tray` hosts [StatusNotifier items and menus](tray.md). `apps` opens the launcher. `title` shows the output's active window title when `show_window_title` is true. `status` shows niri connection/action errors. Shared typography, colors, spacing and the bar's top/bottom placement apply to every region.
+
 ### `bar_height`
 
 - **Purpose:** sets the bar's logical height and matching reserved screen area.
@@ -48,7 +82,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Type/default:** string; `"top"` when omitted.
 - **Values:** "top" or "bottom".
 - **Example:** `bar_position = "top"` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, connection/action status, and the system tray. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
@@ -58,7 +92,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Type/default:** integer; `8` when omitted.
 - **Values:** 0..32 logical pixels.
 - **Example:** `bar_padding = 8` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, connection/action status, and the system tray. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
@@ -68,7 +102,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Type/default:** integer; `8` when omitted.
 - **Values:** 0..32 logical pixels.
 - **Example:** `bar_spacing = 8` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, connection/action status, and the system tray. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
@@ -78,7 +112,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Type/default:** integer; `14` when omitted.
 - **Values:** 10..32 logical pixels; at least 8 smaller than bar_height.
 - **Example:** `font_size = 14` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, connection/action status, and the system tray. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
@@ -88,7 +122,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Type/default:** string; `"#181b22"` when omitted.
 - **Values:** Opaque #RRGGBB hexadecimal RGB, case-insensitive digits.
 - **Example:** `background = "#181b22"` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, connection/action status, and the system tray. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
@@ -98,7 +132,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Type/default:** string; `"#e5e9f0"` when omitted.
 - **Values:** Opaque #RRGGBB hexadecimal RGB, case-insensitive digits.
 - **Example:** `foreground = "#e5e9f0"` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, connection/action status, and the system tray. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
@@ -108,19 +142,19 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Type/default:** string; `"#88c0d0"` when omitted.
 - **Values:** Opaque #RRGGBB hexadecimal RGB, case-insensitive digits.
 - **Example:** `accent = "#88c0d0"` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, connection/action status, and the system tray. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
 ### `show_window_title`
 
-- **Purpose:** Show the active window title for each output; hide it with false. Falls back to app ID when the title is absent.
+- **Purpose:** Show the active window title when the `"title"` widget is included in a bar region; hide it with false. Falls back to app ID when the title is absent.
 - **Type/default:** boolean; `true` when omitted.
 - **Values:** true or false; no units.
 - **Example:** `show_window_title = true` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, connection/action status, and the system tray. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
-- **Migration:** new optional setting; existing configurations retain defaults.
+- **Migration:** the boolean default remains true, but title display now also requires `"title"` in one region. It is omitted from the new default layout.
 
 ### `launcher_width`
 
@@ -198,7 +232,7 @@ The managed desktop now runs bar and wallpaper together in `cabby-ui.service`. A
 
 ## Audio panel interactions
 
-The built-in Audio button opens an on-demand panel in the desktop host. It shares `config.toml` keys `renderer`, `font_size`, `background`, `foreground`, and `accent`; `bar_height` and `bar_position` determine clearance at the top/bottom edge. No audio-specific TOML keys or defaults are added. Panel headings use fixed sizes; its scrollable area is bounded to 440×500 logical pixels and available output dimensions. These layout/theme changes apply after desktop restart, including managed reload; an open panel closes on that restart. Device defaults, volume, and mute are runtime actions delegated to the audio server, whose persistence policy applies. See [audio.md](audio.md) for ranges, interactions, and lifecycle. Existing configuration files need no migration.
+The `"audio"` widget (included by default) opens an on-demand panel in the desktop host. It shares `config.toml` keys `renderer`, `font_size`, `background`, `foreground`, and `accent`; `bar_height` and `bar_position` determine clearance at the top/bottom edge. No audio-specific TOML keys or defaults are added. Panel headings use fixed sizes; its scrollable area is bounded to 440×500 logical pixels and available output dimensions. These layout/theme changes apply after desktop restart, including managed reload; an open panel closes on that restart. Device defaults, volume, and mute are runtime actions delegated to the audio server, whose persistence policy applies. See [audio.md](audio.md) for ranges, interactions, and lifecycle. Existing configuration files need no migration.
 
 
 ## Bluetooth panel interactions

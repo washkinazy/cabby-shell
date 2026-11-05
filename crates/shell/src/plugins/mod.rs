@@ -10,3 +10,5 @@ pub(crate) mod audio;
 pub(crate) mod bluetooth;
 
 pub(crate) mod tray;
+
+mod clock;

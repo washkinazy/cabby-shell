@@ -1,8 +1,8 @@
 use crate::niri::{self, Model};
 use crate::ui::{self, color};
-use cabby_config::Config;
+use cabby_config::{BarWidget, Config};
 use iced::futures::SinkExt;
-use iced::widget::{button, container, row, scrollable, text};
+use iced::widget::{button, container, row, scrollable, text, tooltip};
 use iced::{Element, Length, Subscription, Task};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -11,6 +11,8 @@ pub(crate) struct Bar {
     config: Config,
     pub(crate) tray: super::tray::Tray,
     model: Model,
+    clock: String,
+    network: crate::network::Status,
     action_pending: bool,
     action_failed: bool,
 }
@@ -19,6 +21,8 @@ pub(crate) enum Message {
     Niri(niri::Event),
     Tray(super::tray::Message),
     Disconnected,
+    Clock(String),
+    Network(crate::network::Status),
     Focus(u64),
     Launcher,
     Audio,
@@ -57,19 +61,36 @@ impl Bar {
             config,
             tray: super::tray::Tray::default(),
             model: Model::default(),
+            clock: super::clock::now(),
+            network: crate::network::Status::default(),
             action_pending: false,
             action_failed: false,
         }
     }
     pub(crate) fn subscription(&self) -> Subscription<Message> {
-        Subscription::batch([
-            Subscription::run(events),
-            self.tray.subscription().map(Message::Tray),
-        ])
+        let mut subscriptions = Vec::new();
+        if [BarWidget::Workspaces, BarWidget::Title, BarWidget::Status]
+            .iter()
+            .any(|w| self.config.has_widget(*w))
+        {
+            subscriptions.push(Subscription::run(events));
+        }
+        if self.config.has_widget(BarWidget::Tray) {
+            subscriptions.push(self.tray.subscription().map(Message::Tray));
+        }
+        if self.config.has_widget(BarWidget::Clock) {
+            subscriptions.push(Subscription::run(clock_events));
+        }
+        if self.config.has_widget(BarWidget::Network) {
+            subscriptions.push(Subscription::run(network_events));
+        }
+        Subscription::batch(subscriptions)
     }
 
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Clock(clock) => self.clock = clock,
+            Message::Network(network) => self.network = network,
             Message::Tray(message) => self.tray.update(message),
             Message::Launcher => {
                 return Task::perform(
@@ -107,7 +128,12 @@ impl Bar {
         }
         Task::none()
     }
-    pub(crate) fn view(&self, output: &str) -> Element<'_, Message> {
+    fn workspaces(&self, output: &str) -> Element<'_, Message> {
+        if !self.model.connected {
+            return text("niri unavailable")
+                .wrapping(iced::widget::text::Wrapping::None)
+                .into();
+        }
         let mut workspaces = row![].spacing(f32::from(self.config.bar_spacing));
         for workspace in self.model.on_output(output) {
             let name = workspace
@@ -130,41 +156,97 @@ impl Bar {
             };
             workspaces = workspaces.push(item);
         }
-        let status = if !self.model.connected {
-            "niri unavailable"
-        } else if self.action_failed {
-            "Action failed"
-        } else if output.is_empty() {
-            "Waiting for output"
-        } else {
-            ""
+        if self.action_failed {
+            workspaces = workspaces.push(text("Action failed"));
+        }
+        workspaces.into()
+    }
+    fn widget(&self, widget: BarWidget, output: &str) -> Element<'_, Message> {
+        let label = |value: String| {
+            text(value)
+                .wrapping(iced::widget::text::Wrapping::None)
+                .line_height(1.0)
         };
-        let title = if self.config.show_window_title {
-            self.model.title(output)
-        } else {
-            String::new()
-        };
-        let contents = row![
-            button("Apps").on_press(Message::Launcher),
-            button("Audio").on_press(Message::Audio),
-            button("Bluetooth").on_press(Message::Bluetooth),
-            scrollable(workspaces)
-                .direction(scrollable::Direction::Horizontal(
-                    scrollable::Scrollbar::new()
-                ))
-                .width(Length::FillPortion(1)),
-            container(
-                text(title)
-                    .wrapping(iced::widget::text::Wrapping::None)
-                    .line_height(1.0)
+        match widget {
+            BarWidget::Workspaces => self.workspaces(output),
+            BarWidget::Clock => label(self.clock.clone()).into(),
+            BarWidget::Audio => button("Audio").on_press(Message::Audio).into(),
+            BarWidget::Bluetooth => button("Bluetooth").on_press(Message::Bluetooth).into(),
+            BarWidget::Apps => button(if self.action_failed {
+                "Action failed"
+            } else {
+                "Apps"
+            })
+            .on_press(Message::Launcher)
+            .into(),
+            BarWidget::Network => tooltip(
+                label(self.network.label.clone()),
+                text(self.network.detail),
+                tooltip::Position::Bottom,
             )
+            .into(),
+            BarWidget::Tray => self.tray.view().map(Message::Tray),
+            BarWidget::Title => label(if self.config.show_window_title {
+                self.model.title(output)
+            } else {
+                String::new()
+            })
+            .into(),
+            BarWidget::Status => label(
+                if !self.model.connected {
+                    "niri unavailable"
+                } else if self.action_failed {
+                    "Action failed"
+                } else if output.is_empty() {
+                    "Waiting for output"
+                } else {
+                    ""
+                }
+                .into(),
+            )
+            .into(),
+        }
+    }
+    fn region(
+        &self,
+        widgets: &[BarWidget],
+        output: &str,
+        alignment: iced::alignment::Horizontal,
+    ) -> Element<'_, Message> {
+        let contents = row(widgets.iter().map(|w| self.widget(*w, output)))
+            .spacing(f32::from(self.config.bar_spacing))
+            .align_y(iced::Alignment::Center);
+        // Shrink to contents when there is room; scrolling bounds overflow to its region.
+        let scroll = scrollable(contents).direction(scrollable::Direction::Horizontal(
+            scrollable::Scrollbar::new().width(3).scroller_width(3),
+        ));
+        container(scroll)
+            .width(Length::FillPortion(1))
+            .align_x(alignment)
+            .center_y(Length::Fill)
             .clip(true)
-            .width(Length::FillPortion(2)),
-            text(status).line_height(1.0),
-            self.tray.view().map(Message::Tray)
+            .into()
+    }
+    pub(crate) fn view(&self, output: &str) -> Element<'_, Message> {
+        let contents = row![
+            self.region(
+                &self.config.bar_left,
+                output,
+                iced::alignment::Horizontal::Left
+            ),
+            self.region(
+                &self.config.bar_middle,
+                output,
+                iced::alignment::Horizontal::Center
+            ),
+            self.region(
+                &self.config.bar_right,
+                output,
+                iced::alignment::Horizontal::Right
+            )
         ]
         .spacing(f32::from(self.config.bar_spacing))
-        .align_y(iced::Alignment::Center);
+        .height(Length::Fill);
         container(contents)
             .padding([0, self.config.bar_padding])
             .width(Length::Fill)
@@ -177,4 +259,59 @@ impl Bar {
             })
             .into()
     }
+}
+
+fn clock_events() -> impl iced::futures::Stream<Item = Message> {
+    iced::stream::channel(
+        1,
+        |mut output: iced::futures::channel::mpsc::Sender<Message>| async move {
+            loop {
+                if output
+                    .send(Message::Clock(super::clock::now()))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+                let elapsed = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default();
+                tokio::time::sleep(super::clock::until_next_minute(elapsed)).await;
+            }
+        },
+    )
+}
+fn network_events() -> impl iced::futures::Stream<Item = Message> {
+    iced::stream::channel(
+        1,
+        |mut output: iced::futures::channel::mpsc::Sender<Message>| async move {
+            let mut previous = None;
+            loop {
+                if let Ok(mut client) = crate::network::Client::connect(None).await
+                    && let Ok(mut status) = client.snapshot().await
+                {
+                    loop {
+                        if previous.as_ref() != Some(&status) {
+                            previous = Some(status.clone());
+                            if output.send(Message::Network(status)).await.is_err() {
+                                return;
+                            }
+                        }
+                        match client.next().await {
+                            Ok(next) => status = next,
+                            Err(_) => break,
+                        }
+                    }
+                }
+                let unavailable = crate::network::Status::default();
+                if previous.as_ref() != Some(&unavailable) {
+                    previous = Some(unavailable.clone());
+                    if output.send(Message::Network(unavailable)).await.is_err() {
+                        return;
+                    }
+                }
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        },
+    )
 }
