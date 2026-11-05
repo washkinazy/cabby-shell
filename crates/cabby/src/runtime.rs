@@ -114,7 +114,7 @@ pub fn serve(
     ))
     .map_err(|e| e.to_string())?;
     let mut deadline = Some(Instant::now() + watch::DEBOUNCE);
-    let idle = crate::idle::Idle::new(store.active().idle_lock_seconds);
+    let idle = crate::idle::Idle::new(store.active().idle_lock_seconds, &path);
     notify_ready()?;
     loop {
         let incoming = watcher

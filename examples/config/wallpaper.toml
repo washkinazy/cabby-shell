@@ -15,3 +15,4 @@ wallpaper_color = "#101820"
 wallpaper_mode = "fit"
 
 # idle_lock_seconds is omitted: automatic locking stays disabled (0).
+# Optional "idle" bar widget toggles the manual idle inhibitor; not in defaults.

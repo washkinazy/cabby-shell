@@ -25,6 +25,32 @@ struct Desired {
     inhibited: bool,
     stop: bool,
     status: &'static str,
+    path: std::path::PathBuf,
+    published: String,
+}
+impl Desired {
+    fn publish(&mut self) {
+        use std::os::unix::fs::OpenOptionsExt;
+        let value = serde_json::json!({"state": self.status, "inhibited": self.inhibited, "lock_seconds": self.seconds}).to_string();
+        if value == self.published {
+            return;
+        }
+        let temporary = self.path.with_extension("tmp");
+        let result = (|| -> std::io::Result<()> {
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(&temporary)?;
+            file.write_all(value.as_bytes())?;
+            std::fs::rename(&temporary, &self.path)
+        })();
+        if result.is_ok() {
+            self.published = value;
+        }
+    }
 }
 pub struct Idle {
     desired: Arc<Mutex<Desired>>,
@@ -32,12 +58,13 @@ pub struct Idle {
     thread: Option<JoinHandle<()>>,
 }
 impl Idle {
-    pub fn new(seconds: u32) -> Self {
+    pub fn new(seconds: u32, root: &std::path::Path) -> Self {
         let (wake, reader) = UnixStream::pair().expect("idle wake socket");
         wake.set_nonblocking(true).expect("idle wake nonblocking");
         reader.set_nonblocking(true).expect("idle wake nonblocking");
         let desired = Arc::new(Mutex::new(Desired {
             seconds,
+            path: root.join("idle.json"),
             status: "starting",
             ..Desired::default()
         }));
@@ -59,12 +86,14 @@ impl Idle {
             return;
         }
         state.seconds = seconds;
+        state.publish();
         drop(state);
         self.wake();
     }
     pub fn inhibit(&self, value: Option<bool>) {
         let mut state = self.desired.lock().unwrap();
         state.inhibited = value.unwrap_or(!state.inhibited);
+        state.publish();
         drop(state);
         self.wake();
     }
@@ -262,15 +291,21 @@ fn worker(desired: Arc<Mutex<Desired>>, wake: UnixStream, executable: std::path:
             }
             if d.seconds == 0 || d.inhibited {
                 d.status = if d.inhibited { "inhibited" } else { "disabled" };
+                d.publish();
                 drop(d);
                 let _ = wait(&wake, -1, -1);
                 continue;
             }
             d.status = "connecting";
+            d.publish();
             d.seconds
         };
         if connected(&desired, &wake, seconds, &executable).is_err() {
-            desired.lock().unwrap().status = "unavailable";
+            {
+                let mut d = desired.lock().unwrap();
+                d.status = "unavailable";
+                d.publish();
+            }
             let _ = wait(&wake, -1, 2000);
         }
     }
@@ -304,7 +339,8 @@ fn connected(
             state.error = !status.success();
             state.action = None;
         }
-        desired.lock().unwrap().status = if state.error {
+        let mut d = desired.lock().unwrap();
+        d.status = if state.error {
             "lock-failed"
         } else if state.action.is_some() {
             "locking"
@@ -313,6 +349,8 @@ fn connected(
         } else {
             "watching"
         };
+        d.publish();
+        drop(d);
         connection.flush()?;
         let Some(reader) = queue.prepare_read() else {
             continue;
@@ -332,7 +370,8 @@ mod tests {
     use super::*;
     #[test]
     fn disabled_worker_inhibition_and_shutdown_are_owned() {
-        let idle = Idle::new(0);
+        let root = tempfile::tempdir().unwrap();
+        let idle = Idle::new(0, root.path());
         idle.inhibit(Some(true));
         assert_eq!(idle.status()["inhibited"], true);
         idle.configure(0);

@@ -100,6 +100,33 @@ def inside(directory, interactive, renderer):
                     run(str(ROOT / "target/debug/wallpaper-pixel-probe"),str(capture),f"clock-{region}-{'top' if renderer == 'gpu' else 'bottom'}")
             bar.terminate()
             bar.wait(timeout=5)
+            # The coordinator owns inhibition; the bar watches atomic status.
+            idle_config = directory / "idle-bar.toml"
+            idle_config.write_text(base_config + 'bar_left = ["idle"]\nbar_middle = []\nbar_right = []\n')
+            idle_root = runtime / "cabby-shell"
+            with (directory / "idle-coordinator.log").open("w") as idle_coordinator_log, (directory / "idle.log").open("w") as idle_log:
+                coordinator = subprocess.Popen([ROOT / "target/debug/cabby", "serve", "--config", idle_config, "--runtime-dir", idle_root], stdout=idle_coordinator_log, stderr=idle_coordinator_log)
+                children.append(coordinator)
+                deadline = time.monotonic() + 10
+                while not (idle_root / "idle.json").exists():
+                    if time.monotonic() > deadline: raise TimeoutError("idle snapshot unavailable")
+                    time.sleep(.05)
+                bar = subprocess.Popen([ROOT / "target/debug/cabby", "ui", "--config", idle_config], stdout=idle_log, stderr=idle_log)
+                children.append(bar)
+                deadline = time.monotonic() + 25
+                while ".attach(wl_buffer" not in (directory / "idle.log").read_text():
+                    if time.monotonic() > deadline: raise TimeoutError("idle widget did not render")
+                    time.sleep(.05)
+                time.sleep(.5)
+                subprocess.run(["grim", str(directory / "idle-disabled.png")], check=True, timeout=15)
+                run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(directory / "idle-disabled.png"), f"idle-{'top' if renderer == 'gpu' else 'bottom'}")
+                run(str(ROOT / "target/debug/cabby"), "idle-inhibit-on")
+                assert json.loads((idle_root / "idle.json").read_text())["inhibited"]
+                time.sleep(1)
+                subprocess.run(["grim", str(directory / "idle-inhibited.png")], check=True, timeout=15)
+                run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(directory / "idle-inhibited.png"), f"idle-{'top' if renderer == 'gpu' else 'bottom'}")
+                bar.terminate(); bar.wait(timeout=5)
+                coordinator.terminate(); coordinator.wait(timeout=5)
             bar = subprocess.Popen([ROOT / "target/debug/cabby", "ui", "--config", config], stdout=log, stderr=log)
             children.append(bar)
             wallpaper = None
@@ -462,7 +489,7 @@ def inside(directory, interactive, renderer):
                     lock.wait(timeout=180)
             adapters = {}
             if renderer == "gpu":
-                for client in ("bar", "launcher", "wallpaper", "notifications", "composition", "audio", "bluetooth", "tray", "lock"):
+                for client in ("bar", "launcher", "wallpaper", "notifications", "composition", "audio", "bluetooth", "tray", "idle", "lock"):
                     adapter = selected_adapter((directory / f"{client}.log").read_text())
                     if adapter["backend"] != "Vulkan" or adapter["device_type"] not in ("DiscreteGpu", "IntegratedGpu"):
                         raise RuntimeError(f"{client} did not use hardware Vulkan: {adapter}")

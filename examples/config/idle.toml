@@ -1,2 +1,4 @@
 # Requires installed Cabby lock support; applies live on valid reload.
 idle_lock_seconds = 600
+# Optional manual inhibitor control after the default device widgets.
+bar_right = ["audio", "network", "bluetooth", "tray", "idle"]

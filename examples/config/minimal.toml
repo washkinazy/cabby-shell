@@ -11,3 +11,4 @@
 # Empty configuration uses all built-in defaults: Vulkan and a 40px bar.
 
 # idle_lock_seconds is omitted: automatic locking stays disabled (0).
+# Optional "idle" bar widget toggles the manual idle inhibitor; not in defaults.
