@@ -64,6 +64,12 @@ fn ready() -> std::io::Result<()> {
 impl Host {
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Shell(ShellEvent::KeyboardIndicators { caps_lock, layout }) => {
+                if self.probe.is_some() && layout.as_deref() == Some("German") {
+                    eprintln!("lock-probe: alternate layout observed");
+                }
+                return self.update(Message::Lock(lock::Message::Indicators(caps_lock, layout)));
+            }
             Message::Shell(ShellEvent::Locked) => {
                 if self.lock.confirmed() == Effect::Ready {
                     if ready().is_err() {

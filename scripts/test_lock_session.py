@@ -55,6 +55,10 @@ def inside(directory, renderer):
     try:
         first, path = launch('hold', 'hold')
         confirmed(first, path)
+        phase0.run('niri', 'msg', 'action', 'switch-layout', 'next')
+        wait_for(lambda: 'lock-probe: alternate layout observed' in path.read_text(), 10)
+        subprocess.run(['grim', str(directory / 'keyboard-layout.png')], check=True, timeout=15)
+        phase0.run('niri', 'msg', 'action', 'switch-layout', 'prev')
         contender, denied = launch('contender', 'hold')
         assert contender.wait(timeout=15) == 73
         assert '.unlock_and_destroy()' not in denied.read_text()
@@ -94,7 +98,7 @@ def inside(directory, renderer):
                 assert adapter['backend'] == 'Vulkan' and adapter['device_type'] in ('DiscreteGpu', 'IntegratedGpu')
                 adapters[name] = adapter
         (directory / 'result.json').write_text(json.dumps({'passed': True, 'renderer': renderer, 'adapters': adapters,
-            'checks': ['locked-before-READY', 'buffer-presented', 'competing-lock-denied', 'scale-change', 'kill-without-unlock', 'niri-orphan-replacement', 'denied-auth-stays-locked', 'success-unlocks-once', 'fatal-without-unlock', 'SIGTERM-without-unlock'],
+            'checks': ['compositor-keyboard-layout-indicator', 'locked-before-READY', 'buffer-presented', 'competing-lock-denied', 'scale-change', 'kill-without-unlock', 'niri-orphan-replacement', 'denied-auth-stays-locked', 'success-unlocks-once', 'fatal-without-unlock', 'SIGTERM-without-unlock'],
             'unverified': ['real-user-PAM', 'physical-input/multiple-outputs', 'DRM-lock-security', 'suspend']}, indent=2))
     except Exception as error:
         (directory / 'error.txt').write_text(repr(error))
@@ -129,7 +133,7 @@ def main():
     env['WAYLAND_DISPLAY'] = str(parent)
     removed = ('NIRI_SOCKET', 'NIRI_CONFIG', 'DISPLAY', 'WAYLAND_DEBUG', 'CABBY_TEST_WAYLAND', 'NOTIFY_SOCKET')
     config = directory / 'niri.kdl'
-    config.write_text('prefer-no-csd\nhotkey-overlay { skip-at-startup; }\n')
+    config.write_text('prefer-no-csd\nhotkey-overlay { skip-at-startup; }\ninput { keyboard { xkb { layout "us,de"; }; }; }\n')
     unit = f'cabby-{directory.name}.scope'
     command = ['systemd-run', '--user', '--scope', '--quiet', '--collect', f'--unit={unit}', '--property=RuntimeMaxSec=120', '--', 'env', *[f'--unset={key}' for key in removed], *[f'{key}={env[key]}' for key in (*keys, 'WAYLAND_DISPLAY')], 'dbus-run-session', '--', 'niri', '-c', str(config), '--', sys.executable, str(Path(__file__).resolve()), '--inside', str(directory), '--renderer', args.renderer]
     print(f'Artifacts: {directory}', flush=True)
