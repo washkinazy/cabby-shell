@@ -69,6 +69,7 @@ impl std::fmt::Debug for Device {
 }
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Snapshot {
+    pub active: bool,
     pub devices: Vec<Device>,
     pub default_output: Option<String>,
     pub default_input: Option<String>,
@@ -147,6 +148,7 @@ struct RawDevice {
     mute: bool,
     volume: BTreeMap<String, RawVolume>,
     monitor_source: Option<String>,
+    state: Option<String>,
 }
 #[derive(Deserialize)]
 struct RawVolume {
@@ -166,6 +168,7 @@ fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T> {
 pub fn parse(info: &[u8], sinks: &[u8], sources: &[u8]) -> Result<Snapshot> {
     let info: Info = decode(info)?;
     let mut devices = Vec::new();
+    let mut active = false;
     for (kind, bytes) in [(Kind::Output, sinks), (Kind::Input, sources)] {
         let raw: Vec<RawDevice> = decode(bytes)?;
         if raw.len() > 256 {
@@ -194,6 +197,10 @@ pub fn parse(info: &[u8], sinks: &[u8], sources: &[u8]) -> Result<Snapshot> {
             if description.len() > 4096 {
                 return Err(Error::InvalidData);
             }
+            active |= item
+                .state
+                .as_deref()
+                .is_some_and(|s| s.eq_ignore_ascii_case("running"));
             devices.push(Device {
                 kind,
                 name: item.name,
@@ -213,6 +220,7 @@ pub fn parse(info: &[u8], sinks: &[u8], sources: &[u8]) -> Result<Snapshot> {
     let default_output = present(Kind::Output, info.default_sink_name);
     let default_input = present(Kind::Input, info.default_source_name);
     Ok(Snapshot {
+        active,
         devices,
         default_output,
         default_input,
@@ -305,14 +313,14 @@ impl Client {
             .map_err(|_| Error::Unavailable)?;
         let stdout = child.stdout.take().ok_or(Error::Unavailable)?;
         Ok(Events {
-            child,
+            child: Some(child),
             reader: BufReader::new(stdout),
             line: Vec::new(),
         })
     }
 }
 pub struct Events {
-    child: Child,
+    child: Option<Child>,
     reader: BufReader<ChildStdout>,
     line: Vec<u8>,
 }
@@ -343,7 +351,58 @@ impl Events {
         }
     }
     pub async fn close(mut self) {
-        let _ = self.child.kill().await;
-        let _ = self.child.wait().await;
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+        }
+    }
+}
+impl Drop for Events {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.start_kill();
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                // Actively reap after subscription cancellation, even when no new
+                // process operation wakes Tokio's best-effort orphan reaper.
+                runtime.spawn(async move {
+                    let _ = child.wait().await;
+                });
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod activity_tests {
+    use super::*;
+    #[test]
+    fn activity_counts_muted_playback_and_recording_but_excludes_monitors() {
+        let info = br#"{}"#;
+        let device = |state: &str, monitor: bool| {
+            serde_json::to_vec(&serde_json::json!([{
+                "name":"fixture", "mute":true, "volume":{"mono":{"value":0}},
+                "state":state, "monitor_source":if monitor {Some("sink")} else {None}
+            }]))
+            .unwrap()
+        };
+        let empty = b"[]";
+        assert!(
+            parse(info, &device("RUNNING", false), empty)
+                .unwrap()
+                .active
+        );
+        assert!(
+            parse(info, empty, &device("running", false))
+                .unwrap()
+                .active
+        );
+        assert!(!parse(info, empty, &device("RUNNING", true)).unwrap().active);
+        for state in ["IDLE", "SUSPENDED", "unknown", ""] {
+            assert!(
+                !parse(info, &device(state, false), &device(state, false))
+                    .unwrap()
+                    .active
+            );
+        }
     }
 }

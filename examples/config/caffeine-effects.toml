@@ -1,0 +1,9 @@
+# Alternative effects: manual night-light pause without idle/sleep inhibition.
+[caffeine]
+audio = false
+fullscreen = true
+fullscreen_requires_focus = true
+inhibit_idle = false
+inhibit_sleep = false
+manual_pause_nightlight = true
+fullscreen_pause_nightlight = false

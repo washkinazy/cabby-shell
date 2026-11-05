@@ -143,6 +143,24 @@ def inside(directory, interactive, renderer):
                 run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(directory / "nightlight-unavailable.png"), f"idle-{'top' if renderer == 'gpu' else 'bottom'}")
                 run(str(ROOT / "target/debug/cabby"), "nightlight-disable")
                 bar.terminate(); bar.wait(timeout=5)
+                idle_config.write_text(base_config + 'bar_left = ["caffeine"]\nbar_middle = []\nbar_right = []\n')
+                time.sleep(1)
+                with (directory / "caffeine.log").open("w") as caffeine_log:
+                    bar = subprocess.Popen([ROOT / "target/debug/cabby", "ui", "--config", idle_config], stdout=caffeine_log, stderr=caffeine_log)
+                    children.append(bar)
+                    deadline = time.monotonic() + 25
+                    while ".attach(wl_buffer" not in (directory / "caffeine.log").read_text():
+                        if time.monotonic() > deadline: raise TimeoutError("caffeine widget did not render")
+                        time.sleep(.05)
+                    for mode in ("off", "on"):
+                        run(str(ROOT / "target/debug/cabby"), "caffeine-" + mode)
+                        assert json.loads((idle_root / "caffeine.json").read_text())["manual"] == (mode == "on")
+                        time.sleep(1)
+                        capture = directory / f"caffeine-{mode}.png"
+                        subprocess.run(["grim", str(capture)], check=True, timeout=15)
+                        run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(capture), f"caffeine-{mode}-{'top' if renderer == 'gpu' else 'bottom'}")
+                    run(str(ROOT / "target/debug/cabby"), "caffeine-off")
+                    bar.terminate(); bar.wait(timeout=5)
                 coordinator.terminate(); coordinator.wait(timeout=5)
             bar = subprocess.Popen([ROOT / "target/debug/cabby", "ui", "--config", config], stdout=log, stderr=log)
             children.append(bar)
@@ -391,6 +409,11 @@ def inside(directory, interactive, renderer):
             deadline = time.monotonic() + 5
             while any(Path("/proc", pid).exists() for pid in pids):
                 if time.monotonic() > deadline:
+                    diagnostics = {}
+                    for pid in pids:
+                        status = Path("/proc", pid, "status")
+                        if status.exists(): diagnostics[pid] = status.read_text()
+                    (directory / "audio-survivors.json").write_text(json.dumps(diagnostics, indent=2))
                     raise RuntimeError("Audio helpers survived contribution removal")
                 time.sleep(.05)
             assert bar.poll() is None
@@ -506,7 +529,7 @@ def inside(directory, interactive, renderer):
                     lock.wait(timeout=180)
             adapters = {}
             if renderer == "gpu":
-                for client in ("bar", "launcher", "wallpaper", "notifications", "composition", "audio", "bluetooth", "tray", "idle", "lock"):
+                for client in ("bar", "launcher", "wallpaper", "notifications", "composition", "audio", "bluetooth", "tray", "idle", "caffeine", "lock"):
                     adapter = selected_adapter((directory / f"{client}.log").read_text())
                     if adapter["backend"] != "Vulkan" or adapter["device_type"] not in ("DiscreteGpu", "IntegratedGpu"):
                         raise RuntimeError(f"{client} did not use hardware Vulkan: {adapter}")
@@ -514,7 +537,7 @@ def inside(directory, interactive, renderer):
             (directory / "result.json").write_text(json.dumps({
                 "status": "passed", "renderer_request": os.environ.get("ICED_BACKEND", "automatic"),
                 "adapters": adapters,
-                "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action", "bar-region-clock-pixel-alignment", "launcher-mapped-with-keyboard-focus", "notifications-render-replace-queue-expire-conflict-passive", "wallpaper-solid-and-four-image-modes-pixels", "wallpaper-scaled-pixels",
+                "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action", "bar-region-clock-pixel-alignment", "caffeine-manual-off-on-render-and-status", "launcher-mapped-with-keyboard-focus", "notifications-render-replace-queue-expire-conflict-passive", "wallpaper-solid-and-four-image-modes-pixels", "wallpaper-scaled-pixels",
                 "scale-change-process-survival", "composed-bar-wallpaper-pixels-scales", "audio-panel-fixture-focus-render-close-cleanup", "bluetooth-panel-pairing-discovery-close-cleanup", "tray-item-menu-focus-render-close", "lock-confirmed", "lock-survives-bar-crash"],
                 "not_proven": ["popup-keyboard-focus", "focus-restoration", "multiple-outputs",
                 "PAM", "DRM-lock-security", "gamma", "suspend"],

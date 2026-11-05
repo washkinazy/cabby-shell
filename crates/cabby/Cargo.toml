@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+cabby-audio = { path = "../audio" }
 wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
 futures-util = "=0.3.34"
 zbus = { version = "=5.19.0", default-features = false, features = ["tokio"] }

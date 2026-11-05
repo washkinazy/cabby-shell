@@ -130,6 +130,12 @@ pub fn serve(
             night_resume.resume();
         },
     );
+    let caffeine = crate::caffeine::Caffeine::new(
+        &store.active().caffeine,
+        &path,
+        idle.policy_handle(),
+        night.policy_handle(),
+    );
     notify_ready()?;
     loop {
         let incoming = watcher
@@ -171,6 +177,7 @@ pub fn serve(
                 deadline = Some(Instant::now() + watch::DEBOUNCE);
             }
         }
+        caffeine.configure(&store.active().caffeine);
         night.configure(store.active());
         sleep.configure(store.active().lock_before_sleep, night.observing());
         idle.configure(
@@ -194,7 +201,7 @@ pub fn serve(
         } else {
             match command.trim() {
                 "status" => {
-                    serde_json::json!({"ok": true, "source": store.source.path, "config": store.active(), "pid": std::process::id(), "idle": idle.status(), "sleep": sleep.status(), "night_light": night.status()})
+                    serde_json::json!({"ok": true, "source": store.source.path, "config": store.active(), "pid": std::process::id(), "caffeine":caffeine.status(), "idle": idle.status(), "sleep": sleep.status(), "night_light": night.status()})
                 }
                 "nightlight-status"
                 | "nightlight-enable"
@@ -205,14 +212,16 @@ pub fn serve(
                     sleep.configure(store.active().lock_before_sleep, night.observing());
                     serde_json::json!({"ok":true,"night_light":night.status()})
                 }
-                "idle-status" | "idle-inhibit-on" | "idle-inhibit-off" | "idle-inhibit-toggle" => {
-                    match command.trim() {
-                        "idle-inhibit-on" => idle.inhibit(Some(true)),
-                        "idle-inhibit-off" => idle.inhibit(Some(false)),
-                        "idle-inhibit-toggle" => idle.inhibit(None),
-                        _ => (),
-                    }
-                    serde_json::json!({"ok": true, "idle": idle.status(), "sleep": sleep.status(), "night_light": night.status()})
+                "caffeine-status"
+                | "caffeine-on"
+                | "caffeine-off"
+                | "caffeine-toggle"
+                | "idle-status"
+                | "idle-inhibit-on"
+                | "idle-inhibit-off"
+                | "idle-inhibit-toggle" => {
+                    caffeine.control(command.trim());
+                    serde_json::json!({"ok": true, "caffeine":caffeine.status(), "idle": idle.status(), "sleep": sleep.status(), "night_light": night.status()})
                 }
                 "reload" => {
                     let response = reload(
@@ -231,6 +240,7 @@ pub fn serve(
                     {
                         deadline = Some(Instant::now() + watch::DEBOUNCE);
                     }
+                    caffeine.configure(&store.active().caffeine);
                     night.configure(store.active());
                     sleep.configure(store.active().lock_before_sleep, night.observing());
                     idle.configure(

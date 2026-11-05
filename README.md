@@ -23,7 +23,7 @@ The baseline is a niri environment without Noctalia or DMS. Cabby Shell should p
 
 - Bar.
 - Application launcher.
-- Idle management, including idle inhibitors.
+- Idle management, including configurable Caffeine inhibition for manual/audio/fullscreen activity.
 - Night light through color-temperature/gamma adjustment (Redshift-style functionality).
 - Notifications.
 - Wallpaper.
@@ -92,4 +92,6 @@ The coordinator automatically reloads valid config and active wallpaper-file cha
 
 A [system tray](docs/tray.md) now hosts StatusNotifier items and application menus in the desktop process.
 
-The default bar places workspaces left, local clock/date in the middle, and Audio, NetworkManager status, Bluetooth, night light and system tray on the right. Configure their order and placement with `bar_left`, `bar_middle` and `bar_right`; Apps, window title and diagnostic status are optional widgets.
+The default bar places workspaces left, local clock/date in the middle, and Audio, NetworkManager status, Bluetooth, Caffeine, night light and system tray on the right. Configure their order and placement with `bar_left`, `bar_middle` and `bar_right`; Apps, window title and diagnostic status are optional widgets.
+
+[Caffeine](docs/caffeine.md) combines manual, audio and fullscreen inhibition in the coordinator. Configurable effects cover idle, sleep and temporary night-light pause; the bar toggles the manual reason.

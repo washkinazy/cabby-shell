@@ -8,10 +8,14 @@ pub(crate) struct Status {
     force: bool,
     temperature: Option<u16>,
     outputs: usize,
+    inhibited_outputs: usize,
     failed: usize,
 }
 impl Status {
     pub fn label(&self) -> &'static str {
+        if self.inhibited_outputs > 0 {
+            return "Night paused";
+        }
         if !self.enabled && !self.force && self.phase == "off" {
             "Night off"
         } else if ["unsupported", "unavailable", "output-failed", "starting"]

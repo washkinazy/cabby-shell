@@ -40,6 +40,7 @@ pub enum BarWidget {
     Status,
     Idle,
     Nightlight,
+    Caffeine,
 }
 pub const BAR_WIDGETS: &[BarWidget] = &[
     BarWidget::Workspaces,
@@ -53,6 +54,7 @@ pub const BAR_WIDGETS: &[BarWidget] = &[
     BarWidget::Status,
     BarWidget::Idle,
     BarWidget::Nightlight,
+    BarWidget::Caffeine,
 ];
 
 // Field names for coverage are generated from the same declaration as the
@@ -94,7 +96,18 @@ section!(Location, LOCATION_KEYS, {
     longitude: Option<f64> = None,
 });
 
+section!(Caffeine, CAFFEINE_KEYS, {
+    audio: bool = false,
+    fullscreen: bool = false,
+    fullscreen_requires_focus: bool = true,
+    inhibit_idle: bool = true,
+    inhibit_sleep: bool = true,
+    manual_pause_nightlight: bool = false,
+    fullscreen_pause_nightlight: bool = true,
+});
+
 configuration! {
+    caffeine: Caffeine = Caffeine::default(),
     nightlight: Nightlight = Nightlight::default(),
     location: Location = Location::default(),
     lock_before_sleep: bool = false,
@@ -104,7 +117,7 @@ configuration! {
     bar_height: u16 = 40,
     bar_left: Vec<BarWidget> = vec![BarWidget::Workspaces],
     bar_middle: Vec<BarWidget> = vec![BarWidget::Clock],
-    bar_right: Vec<BarWidget> = vec![BarWidget::Audio, BarWidget::Network, BarWidget::Bluetooth, BarWidget::Nightlight, BarWidget::Tray],
+    bar_right: Vec<BarWidget> = vec![BarWidget::Audio, BarWidget::Network, BarWidget::Bluetooth, BarWidget::Caffeine, BarWidget::Nightlight, BarWidget::Tray],
     bar_position: BarPosition = BarPosition::Top,
     bar_padding: u16 = 8,
     bar_spacing: u16 = 8,
@@ -411,7 +424,7 @@ mod tests {
         assert_eq!(defaults.bar_middle, vec![Clock]);
         assert_eq!(
             defaults.bar_right,
-            vec![Audio, Network, Bluetooth, Nightlight, Tray]
+            vec![Audio, Network, Bluetooth, Caffeine, Nightlight, Tray]
         );
         let custom = Config::parse(
             "bar_left=['tray','audio']\nbar_middle=[]\nbar_right=['clock','workspaces']",
@@ -521,7 +534,11 @@ mod tests {
                 "missing reference: {key}"
             );
         }
-        for (section, keys) in [("nightlight", NIGHTLIGHT_KEYS), ("location", LOCATION_KEYS)] {
+        for (section, keys) in [
+            ("nightlight", NIGHTLIGHT_KEYS),
+            ("location", LOCATION_KEYS),
+            ("caffeine", CAFFEINE_KEYS),
+        ] {
             let values = table[section].as_table().unwrap();
             assert!(values.len() <= keys.len());
             for key in keys {

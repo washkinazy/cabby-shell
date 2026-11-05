@@ -20,6 +20,27 @@ fn main() {
     let left = [40, 90, 130];
     let right = [180, 130, 60];
     match args[2].as_str() {
+        mode if mode.starts_with("caffeine-") => {
+            let start = if mode.ends_with("top") { 0 } else { h - 40 };
+            let mut icon = 0;
+            let mut active = 0;
+            for y in start + 4..start + 36 {
+                for x in 8..40 {
+                    let offset = ((y * w + x) * 4) as usize;
+                    let rgb = &asset.rgba[offset..offset + 3];
+                    if rgb.iter().all(|a| *a > 180) {
+                        icon += 1;
+                    }
+                    if rgb[0] > 100 && rgb[1] > 80 && rgb[2] > 80 {
+                        active += 1;
+                    }
+                }
+            }
+            assert!(icon > 20, "caffeine vector missing: {icon}");
+            if mode.contains("-on-") {
+                assert!(active > 150, "caffeine active state missing: {active}");
+            }
+        }
         mode if mode.starts_with("idle-") => {
             let start = if mode.ends_with("top") { 0 } else { h - 40 };
             let mut accent = 0;

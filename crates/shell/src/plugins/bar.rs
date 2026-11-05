@@ -15,6 +15,9 @@ pub(crate) struct Bar {
     pub(crate) audio_label: String,
     pub(crate) bluetooth_label: String,
     network: crate::network::Status,
+    caffeine: super::caffeine::Status,
+    caffeine_pending: bool,
+    caffeine_failed: bool,
     nightlight: super::nightlight::Status,
     nightlight_pending: bool,
     nightlight_failed: bool,
@@ -31,6 +34,9 @@ pub(crate) enum Message {
     Disconnected,
     Clock(String),
     IdleState(super::idle::Status),
+    CaffeineState(super::caffeine::Status),
+    CaffeineToggle,
+    CaffeineResult(Result<(), String>),
     NightlightState(super::nightlight::Status),
     NightlightToggle,
     NightlightResult(Result<(), String>),
@@ -79,6 +85,9 @@ impl Bar {
             audio_label: "Audio ?".into(),
             bluetooth_label: "Bluetooth ?".into(),
             network: crate::network::Status::default(),
+            caffeine: Default::default(),
+            caffeine_pending: false,
+            caffeine_failed: false,
             nightlight: super::nightlight::Status::default(),
             nightlight_pending: false,
             nightlight_failed: false,
@@ -116,11 +125,27 @@ impl Bar {
             subscriptions
                 .push(Subscription::run(super::nightlight::events).map(Message::NightlightState));
         }
+        if self.config.has_widget(BarWidget::Caffeine) {
+            subscriptions
+                .push(Subscription::run(super::caffeine::events).map(Message::CaffeineState));
+        }
         Subscription::batch(subscriptions)
     }
 
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::CaffeineState(status) => self.caffeine = status,
+            Message::CaffeineToggle if !self.caffeine_pending => {
+                self.caffeine_pending = true;
+                return Task::perform(
+                    ui::command(vec!["caffeine-toggle".into()]),
+                    Message::CaffeineResult,
+                );
+            }
+            Message::CaffeineResult(result) => {
+                self.caffeine_pending = false;
+                self.caffeine_failed = result.is_err();
+            }
             Message::NightlightState(status) => self.nightlight = status,
             Message::NightlightToggle if !self.nightlight_pending => {
                 self.nightlight_pending = true;
@@ -231,6 +256,28 @@ impl Bar {
         };
         match widget {
             BarWidget::Workspaces => self.workspaces(output),
+            BarWidget::Caffeine => {
+                let icon = iced::widget::svg(self.caffeine.icon())
+                    .width(18)
+                    .height(18)
+                    .style(|theme: &iced::Theme, _| iced::widget::svg::Style {
+                        color: Some(theme.palette().text),
+                    });
+                let control = button(icon)
+                    .padding([2, 3])
+                    .style(self.caffeine.style(self.caffeine_failed));
+                let control = if self.caffeine_pending {
+                    control
+                } else {
+                    control.on_press(Message::CaffeineToggle)
+                };
+                tooltip(
+                    control,
+                    text(self.caffeine.detail()),
+                    tooltip::Position::Bottom,
+                )
+                .into()
+            }
             BarWidget::Nightlight => {
                 let control = button(ui::body(
                     &self.config,
@@ -321,7 +368,11 @@ impl Bar {
             scrollable::Scrollbar::new().width(3).scroller_width(3),
         ));
         container(scroll)
-            .width(Length::FillPortion(1))
+            .width(if alignment == iced::alignment::Horizontal::Center {
+                Length::Shrink
+            } else {
+                Length::FillPortion(1)
+            })
             .align_x(alignment)
             .center_y(Length::Fill)
             .clip(true)

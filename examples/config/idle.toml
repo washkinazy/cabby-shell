@@ -1,7 +1,7 @@
 # Requires installed Cabby lock support; applies live on valid reload.
 idle_lock_seconds = 600
 # Optional manual inhibitor control after the default device widgets.
-bar_right = ["audio", "network", "bluetooth", "nightlight", "tray", "idle"]
+bar_right = ["audio", "network", "bluetooth", "caffeine", "nightlight", "tray", "idle"]
 # idle_display_off_seconds defaults to 0: no automatic display power change.
 idle_display_off_seconds = 660
 # lock_before_sleep defaults to false; opt-in sleep coordination needs lock support.
