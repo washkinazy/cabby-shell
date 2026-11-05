@@ -35,7 +35,7 @@ Existing ownership requirements continue to apply: every Cabby process and helpe
 
 `crates/shell` now owns the production UI implementation. Its `host::Plugin` enum registers Bar, Launcher, Wallpaper, and Notifications; `host::run` validates configuration once, applies renderer selection before worker threads start, initializes diagnostics, and applies the existing clipboard policy. The launcher retains text-input clipboard support; other migrated features disable it. A typed startup context carries configuration and its source to the selected plugin.
 
-Feature modules under `crates/shell/src/plugins/` own typed feature messages, state, subscriptions, and views. Bar and wallpaper surface settings/output ownership have moved into the shared surface host; launcher and notifications retain their specialized surface management for now. Existing notification policy/transport and launcher discovery crates remain separate from UI widgets. Shared theme and helper invocation live in `ui`; the niri client remains separately testable. There is no universal plugin trait or untyped command bus.
+Feature modules under `crates/shell/src/plugins/` own typed feature messages, state, subscriptions, and views. Bar and wallpaper surface settings/output ownership have moved into the shared surface host; the launcher host owns its overlay and focus lifecycle, while notifications still retain specialized surface management for now. Existing notification policy/transport and launcher discovery crates remain separate from UI widgets. Shared theme and helper invocation live in `ui`; the niri client remains separately testable. There is no universal plugin trait or untyped command bus.
 
 The production binaries in `crates/platform-spike` are now thin selectors for the built-in plugins. Their names remain stable for the CLI, units, and test harness; guarded probes remain test-only. Production executables still select one plugin per existing process. A guarded composition probe runs bar and wallpaper together through the same surface host. No production service has yet been consolidated.
 
@@ -49,7 +49,11 @@ On output arrival the host creates one surface per selected plugin, addressed by
 
 `composition-probe` is test-only and requires the existing disposable-session guard. It selects both plugins in one process and event loop. The nested harness checks both layer namespaces and attached buffers, wallpaper and bar pixels at scale 1 and 1.5, workspace IPC, selected hardware Vulkan or explicit software rendering, and lock independence after host termination. Synthetic tests cover multiple output identities and late cleanup events. These tests do not establish physical hotplug behavior or a production service migration.
 
-The existing `cabby ui` and `cabby wallpaper` wrappers each use this same host with a single plugin selected. Configuration, reload behavior, CLI paths, and systemd ownership remain unchanged. Bringing them into one production service would intentionally change restart/failure coupling and needs its own documented lifecycle increment. Notifications and launcher can be adapted later using the behavior their different surfaces require.
+The existing `cabby ui` and `cabby wallpaper` wrappers each use this same host with a single plugin selected. Configuration, reload behavior, CLI paths, and systemd ownership remain unchanged. Bringing them into one production service would intentionally change restart/failure coupling and needs its own documented lifecycle increment. Notifications can be adapted later using the behavior their different surfaces require.
+
+## Launcher overlay host
+
+`host/launcher.rs` owns active-output placement, exclusive keyboard policy, initial/refocused search input, theme, and the on-demand event loop. The launcher plugin owns discovery, selection, keyboard semantics, launch requests, errors, and its view. It returns a typed `Action::Close` for dismissal or successful launch; it does not exit the application itself. The current standalone host interprets that as process exit, leaving a future composed host free to close only the overlay. Failed launches keep the picker open. Existing helper supervision, single-instance service behavior, source-config forwarding, and application ownership are preserved.
 
 ## Remaining design work
 

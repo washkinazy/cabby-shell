@@ -3,6 +3,7 @@
 //! Each existing executable selects one built-in plugin. This registry defines
 //! code ownership, not process isolation or a dynamic loading interface.
 use crate::{plugins, ui};
+mod launcher;
 mod surfaces;
 use cabby_config::{Config, Source};
 
@@ -52,7 +53,7 @@ pub fn run(plugin: Plugin) -> iced_exwlshell::Result {
     let context = prepare(plugin);
     match plugin {
         Plugin::Bar => surfaces::run(context, true, false),
-        Plugin::Launcher => plugins::launcher::run(context),
+        Plugin::Launcher => launcher::run(context),
         Plugin::Wallpaper => surfaces::run(context, false, true),
         Plugin::Notifications => plugins::notifications::run(context),
     }
