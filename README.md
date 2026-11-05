@@ -58,7 +58,7 @@ User configuration defaults to `$HOME/.config/cabby-shell`, with subfiles/direct
 
 See [PLAN.md](PLAN.md) for implementation phases, acceptance criteria, and testing strategy, and [AGENTS.md](AGENTS.md) for repository instructions and the branch/commit/merge workflow. Initial development uses validated feature branches merged into main without a required pull request.
 
-Phases 0 through 2 are complete under the documented automated/synthetic acceptance scope: platform validation, configuration, service ownership, and control CLI. Phase 2 now includes an event-driven niri workspace/window bar with configurable styling. An on-demand [application launcher](docs/launcher.md) is also implemented. Static [wallpaper](docs/wallpaper.md) completes the Phase 2 surfaces. Phase 3 includes [notifications](docs/notifications.md): bounded in-memory policy, D-Bus service, passive Iced cards, and supervised ownership. Audio and Bluetooth controls remain to be implemented.
+Phases 0 through 2 are complete under the documented automated/synthetic acceptance scope: platform validation, configuration, service ownership, and control CLI. Phase 2 now includes an event-driven niri workspace/window bar with configurable styling. An on-demand [application launcher](docs/launcher.md) is also implemented. Static [wallpaper](docs/wallpaper.md) completes the Phase 2 surfaces. Phase 3 includes [notifications](docs/notifications.md): bounded in-memory policy, D-Bus service, passive Iced cards, and supervised ownership. The [audio backend](docs/audio.md) is underway; its UI and Bluetooth controls remain to be implemented.
 
 Build prerequisites, the Fedora dependency installer, and isolated Phase 0 test commands are documented in [docs/development.md](docs/development.md).
 

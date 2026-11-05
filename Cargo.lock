@@ -249,6 +249,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cabby-audio"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "cabby-config"
 version = "0.1.0"
 dependencies = [
