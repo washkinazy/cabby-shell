@@ -91,6 +91,9 @@ pub struct Entry {
     lifetime: Option<Duration>,
     presented: bool,
     deadline: Option<Instant>,
+    hovered: bool,
+    hover_sequence: u64,
+    remaining: Option<Duration>,
 }
 impl Entry {
     pub fn token(&self) -> Token {
@@ -222,6 +225,9 @@ impl Request {
             lifetime,
             presented: false,
             deadline: None,
+            hovered: false,
+            hover_sequence: 0,
+            remaining: lifetime,
         }
     }
 }
@@ -301,9 +307,44 @@ impl Store {
         if !entry.presented {
             entry.deadline = entry
                 .lifetime
+                .filter(|_| !entry.hovered)
                 .map(|duration| now.checked_add(duration).ok_or(Error::ClockOverflow))
                 .transpose()?;
             entry.presented = true;
+        }
+        Ok(())
+    }
+
+    /// Revision and sequence guards protect replacement and asynchronously delivered UI events.
+    pub fn hover(
+        &mut self,
+        token: Token,
+        hovered: bool,
+        sequence: u64,
+        now: Instant,
+    ) -> Result<(), Error> {
+        let position = self.position(token)?;
+        if position >= MAX_VISIBLE {
+            return Err(Error::NotVisible);
+        }
+        let entry = &mut self.entries[position];
+        if sequence <= entry.hover_sequence {
+            return Ok(());
+        }
+        entry.hover_sequence = sequence;
+        if entry.hovered == hovered {
+            return Ok(());
+        }
+        entry.hovered = hovered;
+        if hovered {
+            if let Some(deadline) = entry.deadline.take() {
+                entry.remaining = Some(deadline.saturating_duration_since(now));
+            }
+        } else if entry.presented {
+            entry.deadline = entry
+                .remaining
+                .map(|duration| now.checked_add(duration).ok_or(Error::ClockOverflow))
+                .transpose()?;
         }
         Ok(())
     }
@@ -361,6 +402,7 @@ impl Store {
             events.push(self.remove(position, CloseReason::Dismissed));
         } else {
             self.entries[position].deadline = None;
+            self.entries[position].remaining = None;
         }
         Ok(events)
     }

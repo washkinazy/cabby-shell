@@ -422,3 +422,45 @@ fn supplied_id_after_closure_cannot_revive_an_old_callback() {
     assert_eq!(store.dismiss(old), Err(Error::StaleToken));
     assert_eq!(store.entries()[0].token(), new);
 }
+
+#[test]
+fn hover_preserves_remaining_time_and_rejects_stale_events() {
+    let mut store = Store::default();
+    let token = store.notify(request()).unwrap();
+    let now = Instant::now();
+    store.presented(token, now).unwrap();
+    store
+        .hover(token, true, 1, now + Duration::from_secs(2))
+        .unwrap();
+    assert!(store.next_deadline().is_none());
+    assert!(
+        store
+            .expire(token, now + Duration::from_secs(100))
+            .is_none()
+    );
+    store
+        .hover(token, false, 3, now + Duration::from_secs(100))
+        .unwrap();
+    store
+        .hover(token, true, 2, now + Duration::from_secs(101))
+        .unwrap();
+    assert_eq!(
+        store.next_deadline(),
+        Some((token, now + Duration::from_secs(103)))
+    );
+    let replacement = store
+        .notify(Request {
+            replaces_id: token.id(),
+            ..request()
+        })
+        .unwrap();
+    assert_eq!(store.hover(token, true, 4, now), Err(Error::StaleToken));
+    store.hover(replacement, true, 5, now).unwrap();
+    store.presented(replacement, now).unwrap();
+    assert!(store.next_deadline().is_none());
+    store.hover(replacement, false, 6, now).unwrap();
+    assert_eq!(
+        store.next_deadline(),
+        Some((replacement, now + Duration::from_secs(5)))
+    );
+}

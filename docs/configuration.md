@@ -222,7 +222,7 @@ The configuration type and its setting-key metadata come from the same Rust decl
 
 ## Notification component interactions
 
-The notification UI uses `config.toml` and the existing `renderer`, `font_size`, `background`, `foreground`, and `accent` settings with their documented types, defaults, ranges, and examples. `bar_position` and `bar_height` also determine notification top clearance and available vertical space. No separate notification settings are supported. All outputs share the theme; card placement and retention limits are fixed policies documented in [notifications.md](notifications.md).
+The notification UI uses `config.toml` and the existing `renderer`, `font_size`, `background`, `foreground`, and `accent` settings with their documented types, defaults, ranges, and examples. `bar_position` and `bar_height` also determine notification top clearance and available vertical space. No separate notification settings are supported. All outputs share the theme; card placement and retention limits are fixed policies documented in [notifications.md](notifications.md). Cards retain their slots as others close; hover pauses remaining expiry. Geometry edits move the existing slots without resetting notification lifetimes.
 
 Notification colors, body typography and geometry update in place. Ordinary config or wallpaper changes preserve active/queued notifications and D-Bus ownership. Renderer changes require a restart and discard in-memory notifications. Direct invocation watches its config file. Existing configurations require no key migration; an existing notification owner still causes a reported conflict rather than replacement.
 

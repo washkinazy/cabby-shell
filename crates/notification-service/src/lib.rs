@@ -40,6 +40,7 @@ impl std::error::Error for Error {}
 
 pub enum Command {
     Presented(Token),
+    Hover(Token, bool, u64),
     Dismiss(Token),
     Invoke(Token, String),
 }
@@ -190,6 +191,12 @@ impl Service {
             Command::Presented(token) => {
                 self.store
                     .presented(token, Instant::now())
+                    .map_err(Error::Policy)?;
+                Vec::new()
+            }
+            Command::Hover(token, hovered, sequence) => {
+                self.store
+                    .hover(token, hovered, sequence, Instant::now())
                     .map_err(Error::Policy)?;
                 Vec::new()
             }
