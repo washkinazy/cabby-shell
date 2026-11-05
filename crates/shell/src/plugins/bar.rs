@@ -98,7 +98,7 @@ impl Bar {
         match message {
             Message::Clock(clock) => self.clock = clock,
             Message::Network(network) => self.network = network,
-            Message::Tray(message) => self.tray.update(message),
+            Message::Tray(message) => return self.tray.update(message).map(Message::Tray),
             Message::Launcher => {
                 return Task::perform(
                     ui::command(vec!["launcher".into()]),

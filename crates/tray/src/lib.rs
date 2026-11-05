@@ -5,7 +5,10 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tokio::sync::{mpsc, watch};
+use tokio::{
+    sync::{mpsc, watch},
+    time::Instant,
+};
 use zbus::{
     Connection, MatchRule, MessageStream, Proxy,
     connection::Builder,
@@ -191,7 +194,12 @@ async fn resolve(
     })
 }
 
+struct Retry {
+    attempt: u8,
+    due: Instant,
+}
 pub struct Service {
+    retries: HashMap<Token, Retry>,
     connection: Connection,
     signals: futures_util::stream::SelectAll<MessageStream>,
     registry: Registry,
@@ -255,7 +263,7 @@ impl Service {
             .get_name_owner(WATCHER.try_into().unwrap())
             .await?
             .to_string();
-        let mut state = State {
+        let state = State {
             available: true,
             ..State::default()
         };
@@ -271,17 +279,29 @@ impl Service {
             let names: Vec<String> = proxy.get_property("RegisteredStatusNotifierItems").await?;
             for name in names.into_iter().take(MAX_ITEMS) {
                 if let Ok(r) = resolve(&connection, &name, None).await {
-                    if let Ok(item) = read_item(&connection, &r.token).await {
-                        state.items.push(item);
-                    }
                     registry.lock().unwrap().push(r);
                 }
             }
         }
+        let retries = registry
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|r| {
+                (
+                    r.token.clone(),
+                    Retry {
+                        attempt: 0,
+                        due: Instant::now(),
+                    },
+                )
+            })
+            .collect();
         let (commands_tx, commands) = mpsc::channel(8);
         let (snapshots, snapshots_rx) = watch::channel(state.clone());
         Ok((
             Self {
+                retries,
                 connection,
                 signals,
                 registry,
@@ -306,10 +326,18 @@ impl Service {
     }
     async fn run_inner(&mut self) -> Result<()> {
         loop {
+            let next = self
+                .retries
+                .iter()
+                .min_by_key(|(_, r)| r.due)
+                .map(|(t, r)| (t.clone(), r.due));
             tokio::select! {
+                _ = async { match &next { Some((_,due)) => tokio::time::sleep_until(*due).await, None => std::future::pending().await } } => {
+                    if let Some((token,_)) = next { self.refresh(&token).await; }
+                }
                 _ = self.connection.closed() => return Err(Error::Unavailable),
                 registration = self.registrations.recv() => {
-                    if let Some(r) = registration { self.refresh(&r.token).await; }
+                    if let Some(r) = registration { self.schedule(&r.token); }
                 }
                 command = self.commands.recv() => {
                     let Some(command) = command else { return Ok(()); };
@@ -329,7 +357,25 @@ impl Service {
             });
         }
     }
+    fn schedule(&mut self, token: &Token) {
+        self.retries.entry(token.clone()).or_insert(Retry {
+            attempt: 0,
+            due: Instant::now() + Duration::from_millis(100),
+        });
+    }
     async fn refresh(&mut self, token: &Token) {
+        let Some(mut retry) = self.retries.remove(token) else {
+            return;
+        };
+        if !self
+            .registry
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|r| r.token == *token)
+        {
+            return;
+        }
         if let Ok(item) = read_item(&self.connection, token).await {
             self.state.items.retain(|i| i.token != *token);
             self.state.items.push(item);
@@ -339,6 +385,10 @@ impl Service {
                     .cmp(&b.token.owner)
                     .then(a.token.path.cmp(&b.token.path))
             });
+        } else if retry.attempt < 3 {
+            retry.attempt += 1;
+            retry.due = Instant::now() + Duration::from_millis(250 * (1 << (retry.attempt - 1)));
+            self.retries.insert(token.clone(), retry);
         }
     }
     async fn signal(&mut self, signal: &zbus::Message) -> Result<()> {
@@ -371,6 +421,7 @@ impl Service {
                 removed
             };
             for r in removed {
+                self.retries.remove(&r.token);
                 self.state.items.retain(|i| i.token != r.token);
                 if self.state.menu.as_ref().is_some_and(|m| m.token == r.token) {
                     self.state.menu = None;
@@ -398,7 +449,7 @@ impl Service {
                         entries.retain(|x| x.name != r.name);
                         entries.push(r.clone());
                     }
-                    self.refresh(&r.token).await;
+                    self.schedule(&r.token);
                 }
             } else if member == "StatusNotifierItemUnregistered" {
                 let name: String = signal.body().deserialize()?;
@@ -411,6 +462,7 @@ impl Service {
                     .map(|r| r.token.clone());
                 self.registry.lock().unwrap().retain(|r| r.name != name);
                 if let Some(token) = token {
+                    self.retries.remove(&token);
                     self.state.items.retain(|i| i.token != token);
                     if self.state.menu.as_ref().is_some_and(|m| m.token == token) {
                         self.state.menu = None;
@@ -427,7 +479,7 @@ impl Service {
                 .find(|r| r.token.owner == sender && r.token.path == path)
                 .map(|r| r.token.clone());
             if let Some(token) = token {
-                self.refresh(&token).await;
+                self.schedule(&token);
             }
         } else if interface == "com.canonical.dbusmenu"
             && matches!(member, "LayoutUpdated" | "ItemsPropertiesUpdated")
@@ -553,6 +605,9 @@ async fn read_item(connection: &Connection, token: &Token) -> Result<Item> {
         return Err(Error::InvalidData);
     }
     let props: Properties = reply.body().deserialize()?;
+    if props.is_empty() {
+        return Err(Error::InvalidData);
+    }
     let status = string(&props, "Status");
     let attention = status == "NeedsAttention";
     let mut icon_name = string(

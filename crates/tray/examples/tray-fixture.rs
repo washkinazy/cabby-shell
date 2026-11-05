@@ -6,7 +6,8 @@ async fn main() {
     assert!(!guard.is_empty());
     assert_eq!(Some(guard), std::env::var("WAYLAND_DISPLAY").ok());
     let address = std::env::var("DBUS_SESSION_BUS_ADDRESS").expect("private bus required");
-    let (connection, _) = support::fixture(&address).await;
+    let (connection, data) = support::fixture(&address).await;
+    data.lock().unwrap().icon = std::env::var("CABBY_TEST_TRAY_ICON").ok();
     // The harness starts the host before this fixture.
     let proxy = zbus::Proxy::new(
         &connection,

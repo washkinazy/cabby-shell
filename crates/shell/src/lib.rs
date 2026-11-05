@@ -31,3 +31,5 @@ pub mod host;
 mod plugins;
 
 mod network;
+
+mod icons;

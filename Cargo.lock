@@ -346,6 +346,7 @@ dependencies = [
  "futures-util",
  "iced",
  "iced_exwlshell",
+ "image",
  "libc",
  "log",
  "serde",
