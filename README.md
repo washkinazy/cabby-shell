@@ -2,6 +2,8 @@
 
 Cabby Shell is a personal, simplified alternative to Noctalia and Dank shells. It provides the everyday shell features needed alongside a tiling or scrolling window manager, with a deliberately small scope.
 
+This is a personal project in a public repository; competing with other shells or pursuing broad adoption is not its purpose. [Internal plugins](docs/plugins.md) are the intended design pattern for consistent, maintainable feature development within this repository. The architecture is under discussion; no plugin framework or service refactor has been implemented.
+
 ## Design principles
 
 1. **Configuration lives in files.** There is no settings app. Persistent preferences, layout, and styling are configured through documented text files.
