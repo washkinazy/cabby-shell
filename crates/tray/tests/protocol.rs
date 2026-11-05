@@ -180,3 +180,51 @@ async fn uses_existing_watcher_and_rejects_forged_registration() {
     drop(handle);
     assert!(third.run().await.is_ok());
 }
+
+#[tokio::test]
+async fn delayed_exports_retry_without_signals_and_removed_owners_stay_removed() {
+    let bus = Bus::new();
+    let (service, mut handle) = Service::connect(&bus.address).await.unwrap();
+    let worker = tokio::spawn(service.run());
+    let client = support::unready(&bus.address).await;
+    register(&client).await;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    support::export_item(&client).await;
+    let state = until(&mut handle, |s| s.items.len() == 1).await;
+    assert_eq!(state.items[0].title, "Fixture");
+    client.close().await.unwrap();
+    until(&mut handle, |s| s.items.is_empty()).await;
+    let gone = support::unready(&bus.address).await;
+    register(&gone).await;
+    gone.close().await.unwrap();
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(handle.snapshots.borrow().items.is_empty());
+    drop(handle);
+    worker.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn exhausted_metadata_retries_wait_for_a_new_signal() {
+    let bus = Bus::new();
+    let (service, mut handle) = Service::connect(&bus.address).await.unwrap();
+    let worker = tokio::spawn(service.run());
+    let client = support::unready(&bus.address).await;
+    register(&client).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    support::export_item(&client).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(handle.snapshots.borrow().items.is_empty());
+    client
+        .emit_signal(
+            None::<&str>,
+            "/StatusNotifierItem",
+            cabby_tray::ITEM,
+            "NewIcon",
+            &(),
+        )
+        .await
+        .unwrap();
+    until(&mut handle, |s| s.items.len() == 1).await;
+    drop(handle);
+    worker.await.unwrap().unwrap();
+}

@@ -11,6 +11,7 @@ pub struct Data {
     pub activates: usize,
     pub secondary: usize,
     pub status: String,
+    pub icon: Option<String>,
     pub clicked: Vec<i32>,
 }
 struct Item(Arc<Mutex<Data>>);
@@ -35,11 +36,19 @@ impl Item {
         self.0.lock().unwrap().status.clone()
     }
     #[zbus(property)]
-    fn icon_name(&self) -> &str {
-        "fixture-icon"
+    fn icon_name(&self) -> String {
+        self.0
+            .lock()
+            .unwrap()
+            .icon
+            .clone()
+            .unwrap_or_else(|| "fixture-icon".into())
     }
     #[zbus(property)]
     fn icon_pixmap(&self) -> Vec<(i32, i32, Vec<u8>)> {
+        if self.0.lock().unwrap().icon.is_some() {
+            return Vec::new();
+        }
         vec![
             (-1, 2, vec![]),
             (2, 1, vec![128, 250, 30, 20, 255, 40, 50, 60]),
@@ -115,4 +124,28 @@ pub async fn fixture(address: &str) -> (Connection, Arc<Mutex<Data>>) {
         .await
         .unwrap();
     (c, data)
+}
+
+pub async fn export_item(connection: &Connection) {
+    let data = Arc::new(Mutex::new(Data {
+        status: "Active".into(),
+        ..Default::default()
+    }));
+    connection
+        .object_server()
+        .at("/StatusNotifierItem", Item(data))
+        .await
+        .unwrap();
+}
+
+pub async fn unready(address: &str) -> Connection {
+    // Start the object dispatcher so an unexported item fails immediately,
+    // rather than leaving its first call pending until the fixture is exported.
+    Builder::address(address)
+        .unwrap()
+        .serve_at("/Menu", Menu(Arc::new(Mutex::new(Data::default()))))
+        .unwrap()
+        .build()
+        .await
+        .unwrap()
 }

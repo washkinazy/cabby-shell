@@ -9,6 +9,8 @@ import signal
 import subprocess
 import sys
 import tempfile
+import struct
+import zlib
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -396,7 +398,11 @@ def inside(directory, interactive, renderer):
                     if bar.poll() is not None or time.monotonic() > deadline:
                         raise RuntimeError("Tray host did not render")
                     time.sleep(0.05)
-                fixture = subprocess.Popen([ROOT / "target/debug/examples/tray-fixture"], stdout=fixture_log, stderr=fixture_log)
+                icon = directory / "tray-icon.png"
+                def chunk(kind, data):
+                    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+                icon.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 1, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(b"\x00" + bytes([40, 50, 60, 255]) * 2)) + chunk(b"IEND", b""))
+                fixture = subprocess.Popen([ROOT / "target/debug/examples/tray-fixture"], env=dict(os.environ, CABBY_TEST_TRAY_ICON=str(icon)), stdout=fixture_log, stderr=fixture_log)
                 children.append(fixture)
                 deadline = time.monotonic() + 15
                 while True:

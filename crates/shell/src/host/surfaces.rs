@@ -443,9 +443,13 @@ impl Desktop {
             }
             Message::Bar(bar::Message::Tray(message)) => {
                 let closing = matches!(message, tray::Message::Close);
-                if let Some(bar) = &mut self.bar {
-                    bar.tray.update(message);
-                }
+                let icons = if let Some(bar) = &mut self.bar {
+                    bar.tray
+                        .update(message)
+                        .map(|m| Message::Bar(bar::Message::Tray(m)))
+                } else {
+                    Task::none()
+                };
                 if let Some(stage) = &mut self.tray_probe_stage
                     && let Some(bar) = &self.bar
                 {
@@ -453,9 +457,12 @@ impl Desktop {
                         && let Some(item) = bar.tray.state.items.first()
                     {
                         *stage = 1;
-                        return Task::done(Message::Bar(bar::Message::Tray(
-                            tray::Message::Action(cabby_tray::Command::Menu(item.token.clone(), 0)),
-                        )));
+                        return Task::batch([
+                            icons,
+                            Task::done(Message::Bar(bar::Message::Tray(tray::Message::Action(
+                                cabby_tray::Command::Menu(item.token.clone(), 0),
+                            )))),
+                        ]);
                     }
                     if *stage == 1 && bar.tray.state.menu.is_some() {
                         *stage = 2;
@@ -472,11 +479,12 @@ impl Desktop {
                     .as_ref()
                     .is_some_and(|p| matches!(p.plugin, PanelPlugin::Tray));
                 if menu && !open {
-                    return self.open_tray_menu();
+                    return Task::batch([icons, self.open_tray_menu()]);
                 }
                 if !menu && open {
-                    return self.close_panel();
+                    return Task::batch([icons, self.close_panel()]);
                 }
+                return icons;
             }
             Message::Bar(message) => {
                 if let Some(bar) = &mut self.bar {
@@ -572,7 +580,7 @@ impl Desktop {
             .is_some_and(|p| matches!(p.plugin, PanelPlugin::Tray))
             && let Some(bar) = &mut self.bar
         {
-            bar.tray.update(tray::Message::Close);
+            let _ = bar.tray.update(tray::Message::Close);
         }
         self.panel
             .take()
@@ -685,7 +693,7 @@ impl Desktop {
     }
     fn toggle_panel(&mut self, bluetooth: bool) -> Task<Message> {
         if let Some(bar) = &mut self.bar {
-            bar.tray.update(tray::Message::Close);
+            let _ = bar.tray.update(tray::Message::Close);
         }
         if self.panel.as_ref().is_some_and(|p| {
             if bluetooth {

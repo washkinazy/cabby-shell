@@ -1,15 +1,12 @@
 //! Tray UI and owned worker subscription; the host owns the menu surface.
+use crate::icons::{self, Cache, Icon, Key};
 use cabby_tray::{Command, Handle, Service, State, Token};
 use iced::futures::SinkExt;
 use iced::widget::{
     button, column, container, image, mouse_area, row, rule, scrollable, svg, tooltip,
 };
-use iced::{Element, Length, Subscription};
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use iced::{Element, Length, Subscription, Task};
+use std::{collections::HashMap, time::Duration};
 
 #[derive(Clone, Debug)]
 pub(crate) enum Message {
@@ -17,6 +14,7 @@ pub(crate) enum Message {
     State(State),
     Action(Command),
     Close,
+    Icons(Vec<(Key, Option<Icon>)>),
 }
 #[derive(Default)]
 pub(crate) struct Tray {
@@ -24,10 +22,9 @@ pub(crate) struct Tray {
     handle: Option<Handle>,
     icons: HashMap<Token, Icon>,
     menu_requested: bool,
-}
-enum Icon {
-    Raster(image::Handle),
-    Vector(svg::Handle),
+    cache: Cache,
+    loading: bool,
+    resolved: HashMap<Token, Key>,
 }
 fn worker() -> impl iced::futures::Stream<Item = Message> {
     iced::stream::channel(
@@ -63,7 +60,7 @@ impl Tray {
     pub fn subscription(&self) -> Subscription<Message> {
         Subscription::run(worker)
     }
-    pub fn update(&mut self, message: Message) {
+    pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Connected(handle) => self.handle = Some(handle),
             Message::State(mut state) => {
@@ -73,33 +70,47 @@ impl Tray {
                 if !state.available {
                     self.handle = None;
                 }
-                // Decode/load only on backend changes, never during rendering.
                 self.icons
                     .retain(|token, _| state.items.iter().any(|i| &i.token == token));
+                self.resolved
+                    .retain(|token, _| state.items.iter().any(|i| &i.token == token));
                 for item in &state.items {
-                    if self.state.items.iter().any(|old| {
-                        old.token == item.token
-                            && old.pixmap == item.pixmap
-                            && old.icon_name == item.icon_name
-                            && old.icon_theme_path == item.icon_theme_path
-                    }) {
-                        continue;
-                    }
-                    let icon = if let Some(p) = &item.pixmap {
-                        Some(Icon::Raster(image::Handle::from_rgba(
-                            p.width,
-                            p.height,
-                            p.rgba.clone(),
-                        )))
-                    } else {
-                        themed_icon(&item.icon_name, &item.icon_theme_path)
-                    };
-                    self.icons.remove(&item.token);
-                    if let Some(icon) = icon {
-                        self.icons.insert(item.token.clone(), icon);
+                    if let Some(p) = &item.pixmap {
+                        if !self
+                            .state
+                            .items
+                            .iter()
+                            .any(|old| old.token == item.token && old.pixmap == item.pixmap)
+                        {
+                            self.icons.insert(
+                                item.token.clone(),
+                                Icon::Raster(image::Handle::from_rgba(
+                                    p.width,
+                                    p.height,
+                                    p.rgba.clone(),
+                                )),
+                            );
+                        }
+                        self.resolved.remove(&item.token);
                     }
                 }
                 self.state = state;
+                return self.load_icons();
+            }
+            Message::Icons(results) => {
+                self.loading = false;
+                for (key, icon) in results {
+                    for item in self.state.items.iter().filter(|i| {
+                        i.pixmap.is_none()
+                            && Key(i.icon_name.clone(), i.icon_theme_path.clone()) == key
+                    }) {
+                        self.resolved.insert(item.token.clone(), key.clone());
+                        if let Some(icon) = &icon {
+                            self.icons.insert(item.token.clone(), icon.clone());
+                        }
+                    }
+                }
+                return self.load_icons();
             }
             Message::Action(command) => {
                 match &command {
@@ -129,6 +140,29 @@ impl Tray {
                 }
             }
         }
+        Task::none()
+    }
+    fn load_icons(&mut self) -> Task<Message> {
+        if self.loading {
+            return Task::none();
+        }
+        let keys: std::collections::BTreeSet<_> = self
+            .state
+            .items
+            .iter()
+            .filter(|i| i.pixmap.is_none())
+            .map(|i| (i, Key(i.icon_name.clone(), i.icon_theme_path.clone())))
+            .filter(|(i, key)| self.resolved.get(&i.token) != Some(key))
+            .map(|(_, key)| key)
+            .collect();
+        if keys.is_empty() {
+            return Task::none();
+        }
+        self.loading = true;
+        Task::perform(
+            icons::load(self.cache.clone(), keys.into_iter().collect()),
+            Message::Icons,
+        )
     }
     pub fn view(&self, config: &cabby_config::Config) -> Element<'_, Message> {
         let mut icons = row![].spacing(4).align_y(iced::Alignment::Center);
@@ -224,85 +258,29 @@ impl Tray {
         .into()
     }
 }
-fn themed_icon(name: &str, extra: &str) -> Option<Icon> {
-    if name.is_empty() {
-        return None;
-    }
-    let mut candidates = Vec::new();
-    if Path::new(name).is_absolute() {
-        candidates.push(PathBuf::from(name));
-    } else if !name.contains('/') && name != "." && name != ".." {
-        let mut roots = Vec::new();
-        if Path::new(extra).is_absolute() {
-            roots.push(PathBuf::from(extra));
-        }
-        if let Some(home) = std::env::var_os("HOME") {
-            roots.push(PathBuf::from(&home).join(".icons"));
-            roots.push(
-                std::env::var_os("XDG_DATA_HOME")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| PathBuf::from(home).join(".local/share"))
-                    .join("icons"),
-            );
-        }
-        for root in std::env::split_paths(
-            &std::env::var_os("XDG_DATA_DIRS")
-                .unwrap_or_else(|| "/usr/local/share:/usr/share".into()),
-        ) {
-            roots.push(root.join("icons"));
-            candidates.push(root.join("pixmaps").join(format!("{name}.png")));
-            candidates.push(root.join("pixmaps").join(format!("{name}.svg")));
-        }
-        for root in roots {
-            for suffix in ["", "hicolor", "Adwaita"] {
-                let base = root.join(suffix);
-                for size in [
-                    "", "24x24", "22x22", "32x32", "16x16", "48x48", "scalable", "symbolic",
-                ] {
-                    for category in ["", "status", "apps", "devices", "actions"] {
-                        for extension in ["png", "svg"] {
-                            candidates.push(
-                                base.join(size)
-                                    .join(category)
-                                    .join(format!("{name}.{extension}")),
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-    for path in candidates {
-        if !path
-            .metadata()
-            .is_ok_and(|m| m.is_file() && m.len() <= 1024 * 1024)
-        {
-            continue;
-        }
-        if path.extension().is_some_and(|e| e == "svg") {
-            if let Ok(bytes) = std::fs::read(&path) {
-                return Some(Icon::Vector(svg::Handle::from_memory(bytes)));
-            }
-        } else {
-            let config = cabby_config::Config {
-                wallpaper_image: path.to_string_lossy().into_owned(),
-                ..Default::default()
-            };
-            if let Ok(Some(asset)) = cabby_config::wallpaper::load(&config) {
-                return Some(Icon::Raster(image::Handle::from_rgba(
-                    asset.width,
-                    asset.height,
-                    asset.rgba,
-                )));
-            }
-        }
-    }
-    None
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn late_icon_results_cannot_restore_removed_items() {
+        let mut tray = Tray {
+            loading: true,
+            ..Default::default()
+        };
+        let _ = tray.update(Message::State(State::default()));
+        let _ = tray.update(Message::Icons(vec![(
+            Key("gone".into(), String::new()),
+            Some(Icon::Raster(image::Handle::from_rgba(
+                1,
+                1,
+                vec![0, 0, 0, 255],
+            ))),
+        )]));
+        assert!(tray.icons.is_empty());
+        assert!(tray.resolved.is_empty());
+        assert!(!tray.loading);
+    }
     #[test]
     fn closed_menus_cannot_be_reopened_by_late_worker_snapshots() {
         let token = Token {
@@ -310,7 +288,7 @@ mod tests {
             path: "/Item".into(),
         };
         let mut tray = Tray::default();
-        tray.update(Message::Action(Command::Menu(token.clone(), 0)));
+        let _ = tray.update(Message::Action(Command::Menu(token.clone(), 0)));
         let snapshot = State {
             available: true,
             menu: Some(cabby_tray::menu::Menu {
@@ -321,10 +299,10 @@ mod tests {
             }),
             ..State::default()
         };
-        tray.update(Message::State(snapshot.clone()));
+        let _ = tray.update(Message::State(snapshot.clone()));
         assert!(tray.state.menu.is_some());
-        tray.update(Message::Close);
-        tray.update(Message::State(snapshot));
+        let _ = tray.update(Message::Close);
+        let _ = tray.update(Message::State(snapshot));
         assert!(tray.state.menu.is_none());
     }
 }
