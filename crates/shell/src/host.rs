@@ -78,3 +78,16 @@ pub fn audio_probe() -> iced_exwlshell::Result {
         Some(cabby_audio::Client::with_executable(helper)),
     )
 }
+
+/// Disposable-session entrypoint with an explicitly supplied private BlueZ bus.
+pub fn bluetooth_probe() -> iced_exwlshell::Result {
+    let guard = std::env::var("CABBY_TEST_WAYLAND").expect("disposable session guard required");
+    assert!(!guard.is_empty());
+    assert_eq!(Some(guard), std::env::var("WAYLAND_DISPLAY").ok());
+    let address = std::env::var("CABBY_TEST_BLUEZ_BUS").expect("private BlueZ bus required");
+    assert!(address.starts_with("unix:path="));
+    surfaces::run_with_bluetooth(
+        prepare(Plugin::Desktop),
+        cabby_bluetooth::Endpoint::Private(address),
+    )
+}

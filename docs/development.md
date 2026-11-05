@@ -26,6 +26,7 @@ The script uses DNF and requests sudo when needed. It installs packages only; it
 | dbus-daemon, systemd | Private D-Bus session and service lifecycle tooling |
 | python3 | Isolated-session and lifecycle harnesses |
 | pulseaudio-utils | pactl audio snapshots, event subscription, and controls |
+| bluez | System Bluetooth service/API dependency; never enabled by the installer |
 | util-linux | setsid for detached-descendant cleanup tests |
 | mesa-dri-drivers, mesa-vulkan-drivers | Mesa rendering support, including software fallback where available |
 
@@ -33,7 +34,7 @@ Initial environment: Fedora 45, Rust/Cargo 1.98.1, niri 26.04, systemd 262, Wayl
 
 ## Rust baseline
 
-The workspace contains configuration, the control coordinator/CLI, launcher discovery, notification policy/transport, and the `cabby-shell` library. Production bar/launcher/wallpaper/notification UI lives in `crates/shell/src/plugins`, selected through shared host startup. UI executables are thin wrappers in `crates/shell/src/bin`, with existing names preserved. The platform-spike crate now contains only test probes; guarded popup/lock probes remain test-only. See [internal plugins](plugins.md) for responsibility boundaries and the next composition decisions. Phases 0–2 are complete under the recorded acceptance scope; the full daily-use feature set is not yet implemented. Direct dependencies are pinned to Iced 0.14.0 and iced_exwlshell 0.20.1; Cargo.lock fixes transitive dependencies. This is a selected validation baseline, not a claim that these are the newest versions. The declared Rust floor is 1.98; 1.98.1 supplied the original graphical baseline, and 1.99.1 passes the subsequent workspace checks documented below. Iced's wgpu and tiny-skia software backends are compiled with Wayland enabled; GTK and automatic desktop-theme detection are not used.
+The workspace contains configuration, the control coordinator/CLI, launcher discovery, notification policy/transport, audio and Bluetooth backends, and the `cabby-shell` library. Production bar/launcher/wallpaper/notification/audio/Bluetooth UI lives in `crates/shell/src/plugins`, selected through shared host startup. UI executables are thin wrappers in `crates/shell/src/bin`, with existing names preserved. The platform-spike crate now contains only test probes; guarded popup/lock probes remain test-only. See [internal plugins](plugins.md) for responsibility boundaries and the next composition decisions. Phases 0–3 are complete under the recorded acceptance scope; the full daily-use feature set is not yet implemented. Direct dependencies are pinned to Iced 0.14.0 and iced_exwlshell 0.20.1; Cargo.lock fixes transitive dependencies. This is a selected validation baseline, not a claim that these are the newest versions. The declared Rust floor is 1.98; 1.98.1 supplied the original graphical baseline, and 1.99.1 passes the subsequent workspace checks documented below. Iced's wgpu and tiny-skia software backends are compiled with Wayland enabled; GTK and automatic desktop-theme detection are not used.
 
 ```sh
 cargo fmt --all -- --check
@@ -41,6 +42,7 @@ cargo check --workspace --all-targets --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 cargo build --workspace --locked
+cargo build -p cabby-bluetooth --example bluez-fixture --locked
 python3 scripts/phase0-session.py
 python3 scripts/phase0-session.py --renderer software
 python3 -m unittest discover -s scripts -p 'test_*.py'
@@ -156,3 +158,6 @@ Production UI binaries can be built independently with `cargo build -p cabby-she
 See [audio.md](audio.md) for scope, bounds and isolated fixture tests. The runtime helper is pactl from `pulseaudio-utils` (tested format 17.0). Python fixture helpers are launched through explicit paths; tests never invoke the live helper for mutations. The installer lists the prerequisite but does not enable audio services.
 
 The audio panel uses the existing desktop host. `cargo test -p cabby-shell plugins::audio --locked` exercises the worker with copied private fixtures; consistent process visibility is needed for helper-reaping assertions. The standard nested GPU/software harness now runs `audio-panel-probe`, which requires `CABBY_TEST_WAYLAND` and an absolute `CABBY_TEST_AUDIO_HELPER` pointing to the private fixture. It captures `audio.png`/`audio.log`, verifies focus/rendering, and checks that helpers disappear on panel dismissal while the desktop stays alive. These fixture variables are test-only, not production configuration overrides.
+
+
+Bluetooth adds the Fedora `bluez` runtime package; `scripts/install-fedora-deps.sh --print` includes it without enabling services. The Rust backend reuses pinned zbus/Tokio dependencies. `cargo test -p cabby-bluetooth --locked` runs only private D-Bus fixtures, including a real 60-second discovery expiry test; allow at least 70 seconds. Process/socket isolation permissions are needed as for the existing service tests. Before graphical tests also run `cargo build -p cabby-bluetooth --example bluez-fixture --locked`. Both renderer harness modes now exercise a Bluetooth pairing prompt and owned discovery cleanup on the disposable session bus. Production never reads `CABBY_TEST_BLUEZ_BUS`; only the guarded test entrypoint uses it. No real adapter state changes are part of acceptance. See [bluetooth.md](bluetooth.md) for protocol bounds and hardware limitations.

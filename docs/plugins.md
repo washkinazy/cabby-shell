@@ -70,7 +70,7 @@ Before subsequent increments, settle the affected decisions:
 - How feature state, UI contributions, configuration reload, and task cleanup fit the existing Rust/Iced implementation.
 - The next migration and its acceptance checks, preserving established behavior and evidence.
 
-The first migration covers the existing bar, launcher, wallpaper, and notification frontends. The initial plugin refactor now covers all implemented UI features and the combined desktop service. Audio now uses a bounded pactl backend and a shared device panel; Bluetooth remains the next feature. Each later increment must preserve existing behavioral acceptance checks or explicitly document an agreed behavior change. Phase 3 remains incomplete.
+The first migration covers the existing bar, launcher, wallpaper, and notification frontends. The initial plugin refactor now covers all implemented UI features and the combined desktop service. Audio now uses a bounded pactl backend and a shared device panel; Bluetooth now follows the same shared-panel pattern with a direct BlueZ backend. Each later increment must preserve existing behavioral acceptance checks or explicitly document an agreed behavior change. Phase 3 is complete under the documented automated/synthetic acceptance scope.
 
 ## Adding a feature consistently
 
@@ -83,3 +83,6 @@ The first migration covers the existing bar, launcher, wallpaper, and notificati
 The current feature entry points are statically selected by `host::Plugin`; they are not an external API. Production UI binaries build from the `cabby-shell` package. The historical standalone bar executable name `cabby-platform-spike` remains for CLI compatibility, but its source belongs to the shell package. Experimental lock/popup and graphical/IPC probes remain in the separate prototype package and are never production plugins.
 
 The audio plugin is the first device-control contribution: the desktop host maps its typed events to a single on-demand panel, while the plugin subscription owns backend helpers. No audio service or executable is added for production. Device panels can follow this pattern without changing the lifecycle of passive desktop surfaces.
+
+
+Audio and Bluetooth now share a typed device-panel slot in the desktop host. The host owns placement/focus/output lifetime and routes typed plugin messages; each plugin owns its view/state and backend subscription. Switching plugins drops the previous subscription. Bluetooth's backend remains independent of Iced. This concrete composition requires no dynamic registry, third-party API, or one-service-per-plugin convention.

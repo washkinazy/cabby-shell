@@ -1,6 +1,6 @@
 # Phase 3 notification design
 
-Status: the policy, D-Bus adapter, Iced card frontend, and supervised notification unit are implemented. Audio and Bluetooth follow separately; Phase 3 remains incomplete. No notification-specific configuration keys or D-Bus activation file are shipped.
+Status: the policy, D-Bus adapter, Iced card frontend, and supervised notification unit are implemented. Audio and Bluetooth are also implemented; Phase 3 meets the documented automated/synthetic acceptance scope. No notification-specific configuration keys or D-Bus activation file are shipped.
 
 ## Scope and presentation
 

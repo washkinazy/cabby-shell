@@ -24,7 +24,7 @@ The subscribe CLI does not provide a readiness acknowledgement. The panel offers
 
 ## Panel interaction and lifecycle
 
-Click **Audio** in the bar to open the panel on the active output. **Use** selects a device as default; **Mute/Unmute** changes its mute state; **−/+** change its absolute volume in five-percentage-point steps, bounded to 0–100%. All device controls are disabled while a request is pending. Labels and values refresh from the server after completion; errors are shown in the panel. An empty direction shows “No devices available.” Refresh reconciles external changes explicitly if needed. Close or Escape dismisses the panel; opening again creates a fresh connection.
+Click **Audio** in the bar to open the panel on the active output. **Use** selects a device as default; **Mute/Unmute** changes its mute state; **−/+** change its absolute volume in five-percentage-point steps, bounded to 0–100%. All device controls are disabled while a request is pending. Labels and values refresh from the server after completion; errors are shown in the panel. An empty direction shows “No devices available.” Refresh reconciles external changes explicitly if needed. Opening Bluetooth also dismisses Audio and cancels its helpers. Close or Escape dismisses the panel; opening again creates a fresh connection.
 
 The panel lives in the existing desktop process and requests keyboard focus only while open. It does not reserve workspace area. Its maximum size is 440×500 logical pixels, conservatively bounded by the smallest reported output; long lists scroll. Top/right placement leaves room for the configured bar. Removal of its associated output closes it. Late callbacks from an older panel cannot close or update a newly opened one.
 

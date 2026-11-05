@@ -1,7 +1,7 @@
-//! Output/surface ownership for passive desktop plugins.
+//! Output/surface ownership for passive desktop plugins and on-demand device panels.
 use super::Context;
 use crate::{
-    plugins::{audio, bar, wallpaper},
+    plugins::{audio, bar, bluetooth, wallpaper},
     ui,
 };
 use cabby_config::{BarPosition, Config};
@@ -53,10 +53,14 @@ impl Surfaces {
     }
 }
 
-struct AudioPanel {
+enum PanelPlugin {
+    Audio(audio::Audio),
+    Bluetooth(bluetooth::Bluetooth),
+}
+struct DevicePanel {
     id: window::Id,
     output: Option<u32>,
-    plugin: audio::Audio,
+    plugin: PanelPlugin,
 }
 struct Desktop {
     config: Config,
@@ -64,7 +68,10 @@ struct Desktop {
     bar: Option<bar::Bar>,
     wallpaper: Option<wallpaper::Wallpaper>,
     surfaces: Surfaces,
-    audio: Option<AudioPanel>,
+    panel: Option<DevicePanel>,
+    bluetooth_endpoint: cabby_bluetooth::Endpoint,
+    open_bluetooth_on_output: bool,
+    bluetooth_probe_stage: Option<u8>,
     audio_client: cabby_audio::Client,
     open_audio_on_output: bool,
     output_sizes: BTreeMap<u32, (u32, u32)>,
@@ -74,6 +81,7 @@ struct Desktop {
 enum Message {
     Bar(bar::Message),
     Audio(window::Id, audio::Message),
+    Bluetooth(window::Id, bluetooth::Message),
     Escape(window::Id),
     ProbeClose(window::Id),
     Shell(ShellEvent),
@@ -94,6 +102,22 @@ pub(super) fn run_with_audio(
     with_wallpaper: bool,
     fixture: Option<cabby_audio::Client>,
 ) -> iced_exwlshell::Result {
+    run_with_panels(context, with_bar, with_wallpaper, fixture, None)
+}
+
+pub(super) fn run_with_bluetooth(
+    context: Context,
+    endpoint: cabby_bluetooth::Endpoint,
+) -> iced_exwlshell::Result {
+    run_with_panels(context, true, true, None, Some(endpoint))
+}
+fn run_with_panels(
+    context: Context,
+    with_bar: bool,
+    with_wallpaper: bool,
+    fixture: Option<cabby_audio::Client>,
+    bluetooth_fixture: Option<cabby_bluetooth::Endpoint>,
+) -> iced_exwlshell::Result {
     let config = context.config;
     let wallpaper = with_wallpaper
         .then(|| wallpaper::Wallpaper::new(config.clone()))
@@ -111,9 +135,12 @@ pub(super) fn run_with_audio(
             bar: with_bar.then(|| bar::Bar::new(config.clone())),
             wallpaper: wallpaper.clone(),
             surfaces: Surfaces::default(),
-            audio: None,
+            panel: None,
             audio_client: fixture.clone().unwrap_or_default(),
             open_audio_on_output: fixture.is_some(),
+            bluetooth_endpoint: bluetooth_fixture.clone().unwrap_or_default(),
+            open_bluetooth_on_output: bluetooth_fixture.is_some(),
+            bluetooth_probe_stage: bluetooth_fixture.as_ref().map(|_| 0),
             output_sizes: BTreeMap::new(),
         },
         || "cabby-desktop".into(),
@@ -134,7 +161,7 @@ pub(super) fn run_with_audio(
     .run()
 }
 
-fn audio_geometry(config: &Config, outputs: &BTreeMap<u32, (u32, u32)>) -> (u32, u32, i32) {
+fn panel_geometry(config: &Config, outputs: &BTreeMap<u32, (u32, u32)>) -> (u32, u32, i32) {
     let width = outputs.values().map(|s| s.0).min().unwrap_or(800);
     let height = outputs.values().map(|s| s.1).min().unwrap_or(600);
     let top = if config.bar_position == BarPosition::Top {
@@ -185,14 +212,17 @@ impl Desktop {
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
             self.shell.listen().map(Message::Shell),
-            self.audio
+            self.panel
                 .as_ref()
-                .map(|panel| {
-                    panel
-                        .plugin
+                .map(|panel| match &panel.plugin {
+                    PanelPlugin::Audio(plugin) => plugin
                         .subscription()
                         .with(panel.id)
-                        .map(|(id, message)| Message::Audio(id, message))
+                        .map(|(id, message)| Message::Audio(id, message)),
+                    PanelPlugin::Bluetooth(plugin) => plugin
+                        .subscription()
+                        .with(panel.id)
+                        .map(|(id, message)| Message::Bluetooth(id, message)),
                 })
                 .unwrap_or_else(Subscription::none),
             iced::event::listen_raw(|event, _, id| {
@@ -215,22 +245,60 @@ impl Desktop {
     }
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Bar(bar::Message::Audio) => return self.toggle_audio(),
+            Message::Bar(bar::Message::Audio) => return self.toggle_panel(false),
+            Message::Bar(bar::Message::Bluetooth) => return self.toggle_panel(true),
             Message::Audio(id, message) => {
-                if let Some(panel) = &mut self.audio
+                if let Some(panel) = &mut self.panel
                     && panel.id == id
-                    && panel.plugin.update(message)
+                    && let PanelPlugin::Audio(plugin) = &mut panel.plugin
+                    && plugin.update(message)
                 {
-                    return self.close_audio();
+                    return self.close_panel();
+                }
+            }
+            Message::Bluetooth(id, message) => {
+                let mut probe_action = None;
+                if self.panel.as_ref().is_some_and(|panel| panel.id == id)
+                    && let Some(stage) = &mut self.bluetooth_probe_stage
+                    && let bluetooth::Message::State(state) = &message
+                {
+                    if *stage == 0 && state.available && !state.adapters.is_empty() {
+                        *stage = 1;
+                        probe_action = Some(cabby_bluetooth::Command::Scan(
+                            state.adapters[0].path.clone(),
+                        ));
+                    } else if *stage == 1
+                        && state.scanning.is_some()
+                        && !state.busy
+                        && !state.devices.is_empty()
+                    {
+                        *stage = 2;
+                        probe_action = Some(cabby_bluetooth::Command::Pair(
+                            state.devices[0].path.clone(),
+                        ));
+                    } else if *stage == 2 && state.prompt.is_some() {
+                        *stage = 3;
+                        println!("bluetooth-probe-prompt");
+                    }
+                }
+                if let Some(panel) = &mut self.panel
+                    && panel.id == id
+                    && let PanelPlugin::Bluetooth(plugin) = &mut panel.plugin
+                    && plugin.update(message)
+                {
+                    return self.close_panel();
+                }
+                if let Some(command) = probe_action {
+                    return Task::done(Message::Bluetooth(id, bluetooth::Message::Action(command)));
                 }
             }
             Message::Escape(id) | Message::ProbeClose(id)
-                if self.audio.as_ref().is_some_and(|panel| panel.id == id) =>
+                if self.panel.as_ref().is_some_and(|panel| panel.id == id) =>
             {
-                return self.close_audio();
+                return self.close_panel();
             }
             Message::Shell(ShellEvent::WindowOutputChanged { window, output }) => {
-                if let Some(panel) = &mut self.audio
+                if let Some(panel) = &mut self.panel
                     && panel.id == window
                 {
                     panel.output = output.map(|o| o.id);
@@ -255,10 +323,12 @@ impl Desktop {
                 let added = self
                     .surfaces
                     .add(info.id, info.name.unwrap_or_default(), &kinds);
-                let open = if self.open_audio_on_output {
+                let open = if self.open_audio_on_output || self.open_bluetooth_on_output {
+                    let bluetooth = self.open_bluetooth_on_output;
                     self.open_audio_on_output = false;
-                    let open = self.toggle_audio();
-                    let id = self.audio.as_ref().expect("probe panel opened").id;
+                    self.open_bluetooth_on_output = false;
+                    let open = self.toggle_panel(bluetooth);
+                    let id = self.panel.as_ref().expect("probe panel opened").id;
                     Task::batch([
                         open,
                         Task::perform(
@@ -269,8 +339,8 @@ impl Desktop {
                             Message::ProbeClose,
                         ),
                     ])
-                } else if let Some(panel) = &self.audio {
-                    let (width, height, _) = audio_geometry(&self.config, &self.output_sizes);
+                } else if let Some(panel) = &self.panel {
+                    let (width, height, _) = panel_geometry(&self.config, &self.output_sizes);
                     Task::done(Message::LayoutChange {
                         id: panel.id,
                         anchor: Anchor::Top | Anchor::Right,
@@ -291,10 +361,10 @@ impl Desktop {
             }
             Message::Shell(ShellEvent::OutputRemoved(info)) => {
                 self.output_sizes.remove(&info.id);
-                let close = if self.audio.as_ref().is_some_and(|panel| {
+                let close = if self.panel.as_ref().is_some_and(|panel| {
                     panel.output == Some(info.id) || self.output_sizes.is_empty()
                 }) {
-                    self.close_audio()
+                    self.close_panel()
                 } else {
                     Task::none()
                 };
@@ -310,54 +380,77 @@ impl Desktop {
             }
             Message::Shell(ShellEvent::Closed(id)) => {
                 self.surfaces.windows.remove(&id);
-                if self.audio.as_ref().is_some_and(|panel| panel.id == id) {
-                    self.audio = None;
+                if self.panel.as_ref().is_some_and(|panel| panel.id == id) {
+                    self.panel = None;
                 }
             }
             _ => (),
         }
         Task::none()
     }
-    fn close_audio(&mut self) -> Task<Message> {
-        self.audio
+    fn close_panel(&mut self) -> Task<Message> {
+        self.panel
             .take()
             .map(|panel| Task::done(Message::RemoveWindow(panel.id)))
             .unwrap_or_else(Task::none)
     }
-    fn toggle_audio(&mut self) -> Task<Message> {
-        if self.audio.is_some() {
-            return self.close_audio();
+    fn toggle_panel(&mut self, bluetooth: bool) -> Task<Message> {
+        if self
+            .panel
+            .as_ref()
+            .is_some_and(|p| matches!(p.plugin, PanelPlugin::Bluetooth(_)) == bluetooth)
+        {
+            return self.close_panel();
         }
+        let previous = self.close_panel();
         let id = window::Id::unique();
-        let (width, height, top) = audio_geometry(&self.config, &self.output_sizes);
-        self.audio = Some(AudioPanel {
+        let (width, height, top) = panel_geometry(&self.config, &self.output_sizes);
+        self.panel = Some(DevicePanel {
             id,
             output: None,
-            plugin: audio::Audio::new(self.audio_client.clone()),
-        });
-        Task::done(Message::NewLayerShell {
-            id,
-            settings: NewLayerShellSettings {
-                namespace: Some("cabby-audio".into()),
-                output_option: OutputOption::Active,
-                keyboard_interactivity: KeyboardInteractivity::Exclusive,
-                layer: Layer::Overlay,
-                anchor: Anchor::Top | Anchor::Right,
-                size: LayerSize::px(width, height),
-                margin: Some((top, 8, 8, 8)),
-                exclusive_zone: Some(-1),
-                ..Default::default()
+            plugin: if bluetooth {
+                PanelPlugin::Bluetooth(bluetooth::Bluetooth::new(self.bluetooth_endpoint.clone()))
+            } else {
+                PanelPlugin::Audio(audio::Audio::new(self.audio_client.clone()))
             },
-        })
+        });
+        Task::batch([
+            previous,
+            Task::done(Message::NewLayerShell {
+                id,
+                settings: NewLayerShellSettings {
+                    namespace: Some(
+                        if bluetooth {
+                            "cabby-bluetooth"
+                        } else {
+                            "cabby-audio"
+                        }
+                        .into(),
+                    ),
+                    output_option: OutputOption::Active,
+                    keyboard_interactivity: KeyboardInteractivity::Exclusive,
+                    layer: Layer::Overlay,
+                    anchor: Anchor::Top | Anchor::Right,
+                    size: LayerSize::px(width, height),
+                    margin: Some((top, 8, 8, 8)),
+                    exclusive_zone: Some(-1),
+                    ..Default::default()
+                },
+            }),
+        ])
     }
     fn view(&self, id: window::Id) -> Element<'_, Message> {
-        if let Some(panel) = &self.audio
+        if let Some(panel) = &self.panel
             && panel.id == id
         {
-            return panel
-                .plugin
-                .view()
-                .map(move |message| Message::Audio(id, message));
+            return match &panel.plugin {
+                PanelPlugin::Audio(plugin) => plugin
+                    .view()
+                    .map(move |message| Message::Audio(id, message)),
+                PanelPlugin::Bluetooth(plugin) => plugin
+                    .view()
+                    .map(move |message| Message::Bluetooth(id, message)),
+            };
         }
 
         if let Some((output, kind)) = self.surfaces.windows.get(&id) {
@@ -397,26 +490,41 @@ mod tests {
             bar: Some(bar::Bar::new(Config::default())),
             wallpaper: None,
             surfaces: Surfaces::default(),
-            audio: None,
+            panel: None,
             audio_client: cabby_audio::Client::default(),
             open_audio_on_output: false,
+            bluetooth_endpoint: cabby_bluetooth::Endpoint::System,
+            open_bluetooth_on_output: false,
+            bluetooth_probe_stage: None,
             output_sizes: BTreeMap::from([(1, (320, 400))]),
         };
-        let _ = state.toggle_audio();
-        let first = state.audio.as_ref().unwrap().id;
-        let _ = state.toggle_audio();
-        assert!(state.audio.is_none());
-        let _ = state.toggle_audio();
-        let second = state.audio.as_ref().unwrap().id;
+        let _ = state.toggle_panel(false);
+        let first = state.panel.as_ref().unwrap().id;
+        let _ = state.toggle_panel(false);
+        assert!(state.panel.is_none());
+        let _ = state.toggle_panel(false);
+        let second = state.panel.as_ref().unwrap().id;
         assert_ne!(first, second);
         let _ = state.update(Message::Audio(first, audio::Message::Close));
         let _ = state.update(Message::Shell(ShellEvent::Closed(first)));
-        assert_eq!(state.audio.as_ref().unwrap().id, second);
-        let (w, h, top) = audio_geometry(&state.config, &state.output_sizes);
+        assert_eq!(state.panel.as_ref().unwrap().id, second);
+        let (w, h, top) = panel_geometry(&state.config, &state.output_sizes);
         assert!(w <= 304 && h + top as u32 + 8 <= 400);
         let _ = state.update(Message::Escape(second));
-        assert!(state.audio.is_none());
+        assert!(state.panel.is_none());
         assert!(state.bar.is_some());
+        let _ = state.toggle_panel(false);
+        let old = state.panel.as_ref().unwrap().id;
+        let _ = state.toggle_panel(true);
+        let new = state.panel.as_ref().unwrap().id;
+        assert!(matches!(
+            state.panel.as_ref().unwrap().plugin,
+            PanelPlugin::Bluetooth(_)
+        ));
+        let _ = state.update(Message::Audio(old, audio::Message::Close));
+        assert_eq!(state.panel.as_ref().unwrap().id, new);
+        let _ = state.update(Message::Bluetooth(new, bluetooth::Message::Close));
+        assert!(state.panel.is_none());
     }
     #[test]
     fn output_updates_preserve_windows_and_removal_is_scoped() {

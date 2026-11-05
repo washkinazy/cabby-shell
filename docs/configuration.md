@@ -48,7 +48,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Type/default:** string; `"top"` when omitted.
 - **Values:** "top" or "bottom".
 - **Example:** `bar_position = "top"` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps and Audio controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
@@ -58,7 +58,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Type/default:** integer; `8` when omitted.
 - **Values:** 0..32 logical pixels.
 - **Example:** `bar_padding = 8` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps and Audio controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
@@ -68,7 +68,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Type/default:** integer; `8` when omitted.
 - **Values:** 0..32 logical pixels.
 - **Example:** `bar_spacing = 8` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps and Audio controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
@@ -78,27 +78,27 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Type/default:** integer; `14` when omitted.
 - **Values:** 10..32 logical pixels; at least 8 smaller than bar_height.
 - **Example:** `font_size = 14` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps and Audio controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
 ### `background`
 
-- **Purpose:** Shared bar, launcher, audio panel, and notification background color.
+- **Purpose:** Shared bar, launcher, audio/Bluetooth panels, and notification background color.
 - **Type/default:** string; `"#181b22"` when omitted.
 - **Values:** Opaque #RRGGBB hexadecimal RGB, case-insensitive digits.
 - **Example:** `background = "#181b22"` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps and Audio controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
 ### `foreground`
 
-- **Purpose:** Shared bar, launcher, audio panel, and notification normal text color.
+- **Purpose:** Shared bar, launcher, audio/Bluetooth panels, and notification normal text color.
 - **Type/default:** string; `"#e5e9f0"` when omitted.
 - **Values:** Opaque #RRGGBB hexadecimal RGB, case-insensitive digits.
 - **Example:** `foreground = "#e5e9f0"` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps and Audio controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
@@ -108,7 +108,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Type/default:** string; `"#88c0d0"` when omitted.
 - **Values:** Opaque #RRGGBB hexadecimal RGB, case-insensitive digits.
 - **Example:** `accent = "#88c0d0"` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps and Audio controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
@@ -118,7 +118,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Type/default:** boolean; `true` when omitted.
 - **Values:** true or false; no units.
 - **Example:** `show_window_title = true` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps and Audio controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
+- **Dependencies/interactions:** applies to every bar output and both renderers; layout stays Apps, Audio, and Bluetooth controls, workspace buttons, active-window title, and connection/action status. Long workspace lists scroll horizontally; titles are limited to 100 characters and control characters are removed.
 - **Application:** UI restart required; managed `cabby reload` queues it.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
@@ -199,3 +199,8 @@ The managed desktop now runs bar and wallpaper together in `cabby-ui.service`. A
 ## Audio panel interactions
 
 The built-in Audio button opens an on-demand panel in the desktop host. It shares `config.toml` keys `renderer`, `font_size`, `background`, `foreground`, and `accent`; `bar_height` and `bar_position` determine clearance at the top/bottom edge. No audio-specific TOML keys or defaults are added. Panel headings use fixed sizes; its scrollable area is bounded to 440×500 logical pixels and available output dimensions. These layout/theme changes apply after desktop restart, including managed reload; an open panel closes on that restart. Device defaults, volume, and mute are runtime actions delegated to the audio server, whose persistence policy applies. See [audio.md](audio.md) for ranges, interactions, and lifecycle. Existing configuration files need no migration.
+
+
+## Bluetooth panel interactions
+
+The Bluetooth panel shares `config.toml` keys `renderer`, `font_size`, `background`, `foreground`, and `accent`, with `bar_height`/`bar_position` controlling edge clearance. Its headings and maximum dimensions follow Audio; lists scroll. There are no Bluetooth-specific keys or default changes. Shared theme/layout changes require desktop restart, including managed reload. Restart/reload closes the panel and cancels its pending pairing/discovery. Audio and Bluetooth use one panel slot, so opening either closes the other and its backend subscription. BlueZ owns persistence of device operations. Existing files need no migration. See [bluetooth.md](bluetooth.md) for runtime control ranges, dependencies and deadlines.
