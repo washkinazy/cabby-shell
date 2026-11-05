@@ -1,0 +1,21 @@
+[Unit]
+Description=Cabby authenticated session lock
+BindsTo=niri.service
+After=niri.service
+RefuseManualStop=yes
+StartLimitIntervalSec=120
+StartLimitBurst=3
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/cabby lock-ui
+UMask=0077
+LimitCORE=0
+KillMode=control-group
+TimeoutStartSec=15
+TimeoutStopSec=5
+Restart=on-failure
+RestartForceExitStatus=SIGTERM SIGINT SIGHUP SIGPIPE
+RestartSec=1
+RestartPreventExitStatus=73

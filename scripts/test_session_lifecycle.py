@@ -43,8 +43,10 @@ def main():
     config = work / 'config.toml'
     config.write_text('renderer = "software"\nbar_height = 40\n')
     mappings = {'niri.service': names['compositor'], 'cabby-session.service': names['session'],
-                'cabby-notifications.service': names['notifications'], 'cabby-ui.service': names['ui'], 'cabby-launcher.service': names['launcher'], 'cabby.target': names['target']}
+                'cabby-notifications.service': names['notifications'], 'cabby-ui.service': names['ui'], 'cabby-launcher.service': names['launcher'], 'cabby-lock.service': names['lock'], 'cabby.target': names['target']}
     for source in (ROOT / 'systemd/user').iterdir():
+        if source.name == 'cabby-lock.service':
+            continue  # Covered by test_lock_lifecycle.py with READY-aware fixtures.
         content = source.read_text()
         for old, new in mappings.items():
             content = content.replace(old, new)

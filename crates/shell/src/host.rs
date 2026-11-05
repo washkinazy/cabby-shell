@@ -4,6 +4,7 @@
 //! code ownership, not process isolation or a dynamic loading interface.
 use crate::ui;
 mod launcher;
+mod lock;
 mod notifications;
 mod surfaces;
 use cabby_config::{Config, Source};
@@ -12,6 +13,7 @@ use cabby_config::{Config, Source};
 #[derive(Clone, Copy)]
 pub enum Plugin {
     Desktop,
+    Lock,
     Bar,
     Launcher,
     Wallpaper,
@@ -24,11 +26,22 @@ pub(crate) struct Context {
     pub source: Source,
 }
 
+fn load_config(source: &Source, plugin: Plugin) -> cabby_config::Result<Config> {
+    match source.load(true) {
+        Ok(config) => Ok(config),
+        Err(_) if matches!(plugin, Plugin::Lock) => {
+            eprintln!("Invalid lock styling configuration; using defaults");
+            Ok(Config::default())
+        }
+        Err(error) => Err(error),
+    }
+}
+
 /// Validate inputs and initialize shared process state before backend tasks.
 fn prepare(plugin: Plugin) -> Context {
     let context = ui::configuration_source()
         .and_then(|source| {
-            let config = source.load(true)?;
+            let config = load_config(&source, plugin)?;
             Ok(Context { config, source })
         })
         .unwrap_or_else(|error| {
@@ -54,6 +67,7 @@ fn prepare(plugin: Plugin) -> Context {
 pub fn run(plugin: Plugin) -> iced_exwlshell::Result {
     let context = prepare(plugin);
     match plugin {
+        Plugin::Lock => lock::run(context, None),
         Plugin::Desktop => surfaces::run(context, true, true),
         Plugin::Bar => surfaces::run(context, true, false),
         Plugin::Launcher => launcher::run(context),
@@ -98,4 +112,46 @@ pub fn tray_probe() -> iced_exwlshell::Result {
     assert!(!guard.is_empty());
     assert_eq!(Some(guard), std::env::var("WAYLAND_DISPLAY").ok());
     surfaces::run_with_tray(prepare(Plugin::Desktop))
+}
+
+/// Authenticated lock host exercised only on a guarded disposable compositor.
+pub fn lock_probe() -> iced_exwlshell::Result {
+    let guard = std::env::var("CABBY_TEST_WAYLAND").expect("disposable display required");
+    assert!(!guard.is_empty());
+    assert_eq!(Some(guard), std::env::var("WAYLAND_DISPLAY").ok());
+    let helper = std::path::PathBuf::from(
+        std::env::var_os("CABBY_TEST_AUTH_HELPER").expect("private helper required"),
+    );
+    assert!(helper.is_absolute());
+    let mode = std::env::var("CABBY_TEST_LOCK_MODE").expect("probe mode required");
+    assert!(["authenticate", "hold", "crash"].contains(&mode.as_str()));
+    lock::run(
+        prepare(Plugin::Lock),
+        Some((cabby_lock::auth::Client::new(helper), mode)),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn invalid_styling_cannot_prevent_lock_configuration() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.toml");
+        let source = Source::from_env(Some(&path)).unwrap();
+        for content in ["invalid = true", "font_size = 0", "renderer = 42"] {
+            std::fs::write(&path, content).unwrap();
+            assert!(load_config(&source, Plugin::Desktop).is_err());
+            assert_eq!(
+                load_config(&source, Plugin::Lock).unwrap(),
+                Config::default()
+            );
+        }
+        std::fs::remove_file(path).unwrap();
+        assert!(load_config(&source, Plugin::Desktop).is_err());
+        assert_eq!(
+            load_config(&source, Plugin::Lock).unwrap(),
+            Config::default()
+        );
+    }
 }

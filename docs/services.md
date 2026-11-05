@@ -12,11 +12,12 @@ The initial units are in `systemd/user/`. They target a niri session managed as 
 | cabby-session.service | Configuration snapshot, private control socket, readiness notification |
 | cabby-ui.service | Runs the desktop host with bar and wallpaper plugins |
 | cabby-notifications.service | Notification bus owner and passive cards |
+| cabby-lock.service | On-demand authenticated locker; independent of ordinary shell lifetime |
 | cabby-launcher.service | On-demand application overlay; never auto-restarts after dismissal or failure |
 
 The coordinator uses `Wants=` to start the desktop host and notifications with each coordinator activation, including crash recovery. Each component owns its bounded `Restart=on-failure` policy; continuous `Upholds=` is deliberately avoided because it can retry components after their restart limit. The UI waits for coordinator readiness, binds to it and niri, and belongs to cabby.target. The coordinator, desktop host, and notifications use cgroup cleanup, a five-second stop timeout, one-second restart delay, and at most three starts in thirty seconds. Crash loops eventually remain failed; status and journal output explain the failure. `systemctl --user reset-failed cabby-ui.service` permits retry after resolving the cause.
 
-An active lock must be separate from cabby.target and bound to the compositor session. No production lock unit is shipped yet: Phase 5 supplies authenticated locking. The Phase 0 lock-probe must never be installed as a real locker. Lifecycle tests use an explicit sleep-process stand-in to validate this boundary.
+The authenticated lock service is separate from cabby.target and bound only to the compositor session. See [locking.md](locking.md) for READY, recovery and explicit installation. The Phase 0 lock-probe must never be installed as a real locker; its unauthenticated experiment remains test-only.
 
 Shared BlueZ/PipeWire services remain external dependencies. User applications need separate session-owned systemd units, not children in the UI cgroup. `cabby launch -- PROGRAM [ARG...]` supplies that path using a transient `app-cabby-*.service` bound to the compositor, independent of cabby.target. Shell stop/restart leaves it running; compositor loss stops its cgroup. This applies to the launched process tree; applications that hand off to an existing shared process retain that process's ownership.
 
@@ -53,7 +54,7 @@ journalctl --user -u cabby-session.service -u cabby-ui.service
 
 For isolated development, `cabby serve --config /absolute/file.toml --runtime-dir /absolute/private/directory` runs the coordinator in the foreground. `--ui-unit NAME` queues restarts for an existing managed UI; it is not a command to execute arbitrary shell text. The production `desktop` wrapper locates `cabby-desktop` alongside `cabby`. The standalone `ui` wrapper still locates `cabby-platform-spike`; `launcher-ui` locates `cabby-launcher`. See [launcher.md](launcher.md) for discovery, keyboard controls, and launch semantics.
 
-The packaged unit paths currently expect `/usr/bin/cabby`, `/usr/bin/cabby-desktop`, `/usr/bin/cabby-platform-spike`, `/usr/bin/cabby-launcher`, `/usr/bin/cabby-wallpaper`, and `/usr/bin/cabby-notifications`. No installer or package is provided at this phase, and nothing has been installed into the user's session. Use the test harness for current validation; packaging arrives later.
+Shipped units expect `/usr/bin/cabby`, which finds its sibling executables. `just install` builds and installs production siblings under `$HOME/.local/bin`; ordinary local units are supplied by the dotfiles setup. `just install-lock-support` explicitly installs the local locker unit and Fedora PAM policy without enabling or starting it. Distribution packaging remains later work.
 
 ## Automated lifecycle test
 
@@ -82,3 +83,7 @@ The audio panel is owned by the desktop host in `cabby-ui.service`. Its snapshot
 Bluetooth uses the same on-demand desktop panel ownership as Audio, with one panel open at a time. Its private system-bus connection owns its BlueZ agent and discovery lease; panel dismissal cancels that connection, and desktop process loss closes it at the OS boundary. BlueZ releases caller-owned work. No additional production service is installed; Cabby never manages BlueZ's service lifecycle or assumes ownership of another client's discovery. See [bluetooth.md](bluetooth.md).
 
 Valid changed reloads reset the affected units’ start counters before `try-restart`, so repeated deliberate saves do not exhaust crash recovery. Stopped components stay stopped; repeated crashes without a config change remain bounded.
+
+## Authenticated locker
+
+`cabby lock` starts the independent `cabby-lock.service` and waits for compositor-confirmed READY. It binds only to niri, survives ordinary shell stop/restart/reload, and refuses manual stop. Bounded crash recovery and session-end cleanup are defined in [locking.md](locking.md), along with opt-in installation and the remaining real-session evidence gaps. No idle service or automatic lock binding is installed.
