@@ -1,8 +1,13 @@
-use crate::{niri::label, ui};
+use crate::{
+    icons::{self, Cache, Icon, Key},
+    niri::label,
+    ui,
+};
 use cabby_config::Config;
 use cabby_launcher::{Catalog, Picker};
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Element, Event, Length, Task, event, keyboard, window};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 // Escape is captured by text_input when it releases widget focus. Still close
@@ -27,10 +32,14 @@ pub(crate) struct Launcher {
     source: Option<PathBuf>,
     picker: Picker,
     loading: bool,
+    icons: BTreeMap<Key, Option<Icon>>,
+    icon_cache: Cache,
+    icons_loading: bool,
 }
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     Loaded(Catalog),
+    Icons(Vec<(Key, Option<Icon>)>),
     Query(String),
     Choose(usize),
     Submit,
@@ -50,6 +59,9 @@ impl Launcher {
                 source,
                 picker: Picker::default(),
                 loading: true,
+                icons: BTreeMap::new(),
+                icon_cache: Cache::default(),
+                icons_loading: false,
             },
             Task::perform(
                 async {
@@ -68,6 +80,17 @@ impl Launcher {
                 self.picker = Picker::loaded(catalog);
                 self.picker.filter(query);
                 self.loading = false;
+            }
+            Message::Icons(results) => {
+                self.icons_loading = false;
+                // Only current-page handles are retained; the shared cache bounds older results.
+                let wanted = self.icon_keys();
+                self.icons.retain(|key, _| wanted.contains(key));
+                for (key, icon) in results {
+                    if wanted.contains(&key) {
+                        self.icons.insert(key, icon);
+                    }
+                }
             }
             Message::Query(query) => self.picker.filter(query),
             Message::Choose(index) if !self.picker.pending && index < self.picker.matches.len() => {
@@ -90,7 +113,35 @@ impl Launcher {
             Message::Event(Event::Window(window::Event::Closed)) => return Action::Close,
             _ => (),
         }
-        Action::Update(Task::none())
+        Action::Update(self.load_icons())
+    }
+    fn icon_keys(&self) -> Vec<Key> {
+        let rows = usize::from(self.config.launcher_rows);
+        let page = self.picker.selected / rows * rows;
+        self.picker
+            .matches
+            .iter()
+            .skip(page)
+            .take(rows)
+            .filter_map(|i| self.picker.catalog.apps[*i].icon.as_ref())
+            .map(|name| Key(name.clone(), String::new()))
+            .collect()
+    }
+    fn load_icons(&mut self) -> Task<Message> {
+        let wanted = self.icon_keys();
+        self.icons.retain(|key, _| wanted.contains(key));
+        if self.icons_loading {
+            return Task::none();
+        }
+        let keys = wanted
+            .into_iter()
+            .filter(|key| !self.icons.contains_key(key))
+            .collect::<Vec<_>>();
+        if keys.is_empty() {
+            return Task::none();
+        }
+        self.icons_loading = true;
+        Task::perform(icons::load(self.icon_cache.clone(), keys), Message::Icons)
     }
     fn submit(&mut self) -> Task<Message> {
         let Some(app) = self.picker.begin() else {
@@ -138,10 +189,33 @@ impl Launcher {
                 label(&app.name, 70),
                 if app.terminal { "  [terminal]" } else { "" }
             );
+            let icon: Element<'_, Message> = match app
+                .icon
+                .as_ref()
+                .and_then(|name| self.icons.get(&Key(name.clone(), String::new())))
+                .and_then(Option::as_ref)
+            {
+                Some(Icon::Raster(handle)) => iced::widget::image(handle.clone())
+                    .width(24)
+                    .height(24)
+                    .into(),
+                Some(Icon::Vector(handle)) => iced::widget::svg(handle.clone())
+                    .width(24)
+                    .height(24)
+                    .into(),
+                None => container(text("·")).center(24).into(),
+            };
             let mut item = button(
-                container(text(name).line_height(1.0).wrapping(text::Wrapping::None))
-                    .clip(true)
-                    .width(Length::Fill),
+                container(
+                    row![
+                        icon,
+                        text(name).line_height(1.0).wrapping(text::Wrapping::None)
+                    ]
+                    .spacing(8)
+                    .align_y(iced::Alignment::Center),
+                )
+                .clip(true)
+                .width(Length::Fill),
             )
             .width(Length::Fill)
             .padding([6, 8]);
@@ -193,6 +267,21 @@ mod tests {
             text: None,
             repeat: false,
         })
+    }
+    #[test]
+    fn late_icons_do_not_repopulate_a_changed_result_page() {
+        let (mut launcher, _) = Launcher::new(Config::default(), None);
+        let _ = launcher.update(Message::Query("no results".into()));
+        let _ = launcher.update(Message::Icons(vec![(
+            Key("old".into(), String::new()),
+            Some(Icon::Raster(iced::widget::image::Handle::from_rgba(
+                1,
+                1,
+                vec![0, 0, 0, 255],
+            ))),
+        )]));
+        assert!(launcher.icons.is_empty());
+        assert!(!launcher.icons_loading);
     }
     #[test]
     fn dismissals_request_host_close_and_launch_errors_keep_overlay_open() {

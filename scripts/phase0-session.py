@@ -140,7 +140,9 @@ def inside(directory, interactive, renderer):
                 raise RuntimeError("Capture did not produce a PNG")
             applications = directory / "data/applications"
             applications.mkdir(parents=True, exist_ok=True)
-            (applications / "cabby-notes.desktop").write_text('[Desktop Entry]\nType=Application\nName=Cabby Notes\nExec=/usr/bin/true\n')
+            launcher_icon = directory / "launcher-icon.svg"
+            launcher_icon.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" rx="4" fill="#ed359b"/></svg>')
+            (applications / "cabby-notes.desktop").write_text(f'[Desktop Entry]\nType=Application\nName=Cabby Notes\nExec=/usr/bin/true\nIcon={launcher_icon}\n')
             (applications / "cabby-terminal.desktop").write_text('[Desktop Entry]\nType=Application\nName=Cabby Terminal\nExec=/usr/bin/true\nTerminal=true\n')
             # XDG_DATA_DIRS also locates Vulkan ICD manifests; preserve it for graphics.
             with (directory / "notifications.log").open("w") as notifications_log:
@@ -223,7 +225,13 @@ def inside(directory, interactive, renderer):
                 else:
                     raise RuntimeError("Launcher did not map and receive keyboard focus")
                 time.sleep(0.5)
-                subprocess.run(["grim", str(directory / "launcher.png")], check=True, timeout=15)
+                deadline = time.monotonic() + 10
+                while True:
+                    subprocess.run(["grim", str(directory / "launcher.png")], check=True, timeout=15)
+                    checked = subprocess.run([str(ROOT / "target/debug/wallpaper-pixel-probe"), str(directory / "launcher.png"), "launcher-icon"], capture_output=True)
+                    if checked.returncode == 0: break
+                    if time.monotonic() > deadline: raise RuntimeError("Launcher icon did not render")
+                    time.sleep(.1)
                 launcher.terminate()
                 launcher.wait(timeout=5)
             for name in outputs:

@@ -10,6 +10,7 @@ type Result<T> = std::result::Result<T, String>;
 pub struct Application {
     pub id: String,
     pub name: String,
+    pub icon: Option<String>,
     pub search: String,
     pub argv: Vec<String>,
     pub directory: Option<PathBuf>,
@@ -192,6 +193,7 @@ pub fn scan(
             Some(Application {
                 id,
                 name,
+                icon: entry.icon().filter(|v| !v.is_empty()).map(str::to_owned),
                 search,
                 argv,
                 directory,
@@ -326,19 +328,34 @@ impl Picker {
             .apps
             .iter()
             .enumerate()
-            .filter(|(_, a)| tokens.iter().all(|t| a.search.contains(t)))
-            .map(|(i, a)| {
+            .filter_map(|(i, a)| {
                 let name = a.name.to_lowercase();
+                let mut fuzzy = 0usize;
+                let mut name_only = true;
+                for token in &tokens {
+                    if name.contains(token) {
+                        continue;
+                    }
+                    if let Some(score) = subsequence(&name, token) {
+                        fuzzy += score;
+                    } else if a.search.contains(token) {
+                        name_only = false;
+                    } else {
+                        return None;
+                    }
+                }
                 let rank = if name == query {
                     0
                 } else if name.starts_with(&query) {
                     1
                 } else if name.contains(&query) {
                     2
-                } else {
+                } else if name_only {
                     3
+                } else {
+                    4
                 };
-                (rank, i)
+                Some(((rank, fuzzy), i))
             })
             .collect();
         found.sort();
@@ -370,6 +387,26 @@ impl Picker {
         self.pending = false;
         self.error = Some(error);
     }
+}
+
+// Prefer short, contiguous name matches; Unicode characters are matched as characters.
+fn subsequence(name: &str, query: &str) -> Option<usize> {
+    let mut needed = query.chars();
+    let mut next = needed.next()?;
+    let mut previous = None;
+    let mut penalty = 0;
+    for (index, ch) in name.chars().take(512).enumerate() {
+        if ch != next {
+            continue;
+        }
+        penalty += previous.map_or(index, |p| index - p - 1);
+        previous = Some(index);
+        match needed.next() {
+            Some(ch) => next = ch,
+            None => return Some(penalty),
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -499,6 +536,46 @@ mod tests {
             vec!["foot", "-e", "editor", "two words"]
         );
         assert_eq!(app.directory, Some(PathBuf::from("/tmp")));
+    }
+    #[test]
+    fn fuzzy_names_preserve_exact_prefix_and_metadata_priority() {
+        let temp = tempfile::tempdir().unwrap();
+        for (id, name, extra) in [
+            ("firefox", "Firefox", "Icon=firefox"),
+            ("exact", "ffx", ""),
+            ("prefix", "ffx Tools", ""),
+            ("metadata", "Browser", "Keywords=ffx;"),
+            ("unicode", "Éditeur", ""),
+        ] {
+            write(
+                temp.path(),
+                &format!("{id}.desktop"),
+                &format!("Name={name}\nExec=true\n{extra}"),
+            );
+        }
+        let mut picker = Picker::loaded(scan_test(&[temp.path().to_owned()]));
+        picker.filter("ffx".into());
+        let names: Vec<_> = picker
+            .matches
+            .iter()
+            .map(|i| picker.catalog.apps[*i].name.as_str())
+            .collect();
+        assert_eq!(names, ["ffx", "ffx Tools", "Firefox", "Browser"]);
+        assert_eq!(
+            picker
+                .catalog
+                .apps
+                .iter()
+                .find(|a| a.name == "Firefox")
+                .unwrap()
+                .icon
+                .as_deref(),
+            Some("firefox")
+        );
+        picker.filter("étr".into());
+        assert_eq!(picker.matches.len(), 1);
+        picker.filter("zzzzz".into());
+        assert!(picker.matches.is_empty());
     }
     #[test]
     fn ranking_navigation_and_pending_launch_policy() {
