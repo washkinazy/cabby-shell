@@ -20,6 +20,42 @@ fn main() {
     let left = [40, 90, 130];
     let right = [180, 130, 60];
     match args[2].as_str() {
+        mode if mode.starts_with("clock-") => {
+            let rows = if mode.ends_with("top") {
+                0..40
+            } else {
+                h - 40..h
+            };
+            let mut xs = Vec::new();
+            for y in rows {
+                for x in 0..w {
+                    let offset = ((y * w + x) * 4) as usize;
+                    if asset.rgba[offset..offset + 3]
+                        .iter()
+                        .zip([229u8, 233, 240])
+                        .all(|(a, b)| a.abs_diff(b) < 50)
+                    {
+                        xs.push(x);
+                    }
+                }
+            }
+            assert!(xs.len() > 100, "clock text missing: {} pixels", xs.len());
+            let left = *xs.iter().min().unwrap();
+            let right = *xs.iter().max().unwrap();
+            if mode.contains("-left-") {
+                assert!(left < 16 && right < w / 3, "left bounds: {left}..{right}");
+            } else if mode.contains("-right-") {
+                assert!(
+                    right > w - 16 && left > w * 2 / 3,
+                    "right bounds: {left}..{right}"
+                );
+            } else {
+                assert!(
+                    ((left + right) / 2).abs_diff(w / 2) < 4,
+                    "middle bounds: {left}..{right}, width {w}"
+                );
+            }
+        }
         mode if mode.starts_with("audio-") || mode.starts_with("tray-") => {
             // The nested audio probe runs after scale 1.5 is established.
             let scale = 1.5f32;

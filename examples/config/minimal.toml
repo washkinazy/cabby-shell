@@ -1,3 +1,4 @@
+# Default regions: workspaces left; clock/date middle; audio, network, Bluetooth, tray right.
 # Tray icons and menus share desktop styling; changed reloads close menus and reconnect tray ownership.
 # The coordinator automatically reloads valid saves (300 ms debounce); invalid edits retain the old config.
 # Bluetooth shares theme/layout settings; reload closes the panel and its discovery/pairing.

@@ -91,3 +91,5 @@ Run `just deps` once to install Fedora dependencies, including Rust/Cargo and na
 The coordinator automatically reloads valid config and active wallpaper-file changes; invalid edits preserve the previous configuration. `cabby reload` remains available for immediate validation.
 
 A [system tray](docs/tray.md) now hosts StatusNotifier items and application menus in the desktop process.
+
+The default bar places workspaces left, local clock/date in the middle, and Audio, NetworkManager status, Bluetooth and system tray on the right. Configure their order and placement with `bar_left`, `bar_middle` and `bar_right`; Apps, window title and diagnostic status are optional widgets.

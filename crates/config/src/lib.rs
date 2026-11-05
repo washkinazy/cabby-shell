@@ -23,6 +23,32 @@ impl Renderer {
     }
 }
 
+/// Built-in bar contributions, in the order given by each region.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BarWidget {
+    Workspaces,
+    Clock,
+    Audio,
+    Network,
+    Bluetooth,
+    Tray,
+    Apps,
+    Title,
+    Status,
+}
+pub const BAR_WIDGETS: &[BarWidget] = &[
+    BarWidget::Workspaces,
+    BarWidget::Clock,
+    BarWidget::Audio,
+    BarWidget::Network,
+    BarWidget::Bluetooth,
+    BarWidget::Tray,
+    BarWidget::Apps,
+    BarWidget::Title,
+    BarWidget::Status,
+];
+
 // Field names for coverage are generated from the same declaration as the
 // parser type. New fields cannot bypass documentation/example coverage.
 macro_rules! configuration {
@@ -40,6 +66,9 @@ macro_rules! configuration {
 configuration! {
     renderer: Renderer = Renderer::Vulkan,
     bar_height: u16 = 40,
+    bar_left: Vec<BarWidget> = vec![BarWidget::Workspaces],
+    bar_middle: Vec<BarWidget> = vec![BarWidget::Clock],
+    bar_right: Vec<BarWidget> = vec![BarWidget::Audio, BarWidget::Network, BarWidget::Bluetooth, BarWidget::Tray],
     bar_position: BarPosition = BarPosition::Top,
     bar_padding: u16 = 8,
     bar_spacing: u16 = 8,
@@ -95,6 +124,20 @@ impl Config {
             return Err("configuration exceeds 64 KiB".into());
         }
         let config: Self = toml::from_str(source).map_err(|error| error.to_string())?;
+        let mut widgets = std::collections::HashSet::new();
+        for widget in config
+            .bar_left
+            .iter()
+            .chain(&config.bar_middle)
+            .chain(&config.bar_right)
+        {
+            if !widgets.insert(*widget) {
+                return Err(
+                    "bar widgets may appear only once across bar_left, bar_middle and bar_right"
+                        .into(),
+                );
+            }
+        }
         if !(32..=128).contains(&config.bar_height) {
             return Err("bar_height must be between 32 and 128 logical pixels".into());
         }
@@ -139,6 +182,11 @@ impl Config {
         Ok(config)
     }
 
+    pub fn has_widget(&self, widget: BarWidget) -> bool {
+        self.bar_left.contains(&widget)
+            || self.bar_middle.contains(&widget)
+            || self.bar_right.contains(&widget)
+    }
     pub fn to_toml(&self) -> String {
         toml::to_string_pretty(self).expect("configuration contains only serializable fields")
     }
@@ -256,6 +304,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn bar_regions_default_order_custom_order_and_duplicates() {
+        use BarWidget::*;
+        let defaults = Config::parse("").unwrap();
+        assert_eq!(defaults.bar_left, vec![Workspaces]);
+        assert_eq!(defaults.bar_middle, vec![Clock]);
+        assert_eq!(defaults.bar_right, vec![Audio, Network, Bluetooth, Tray]);
+        let custom = Config::parse(
+            "bar_left=['tray','audio']\nbar_middle=[]\nbar_right=['clock','workspaces']",
+        )
+        .unwrap();
+        assert_eq!(custom.bar_left, vec![Tray, Audio]);
+        assert!(!custom.has_widget(Network));
+        assert_eq!(Config::parse(&custom.to_toml()).unwrap(), custom);
+        for invalid in [
+            "bar_left=['unknown']",
+            "bar_left=['clock']",
+            "bar_left=['apps','apps']",
+            "bar_right='audio'",
+        ] {
+            assert!(Config::parse(invalid).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
     fn invalid_candidates_never_replace_active_config() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("config.toml");
@@ -335,6 +407,7 @@ mod tests {
                 "missing reference: {key}"
             );
         }
+        let mut covered_widgets = std::collections::HashSet::new();
         let mut variants = Vec::new();
         let mut modes = Vec::new();
         for entry in std::fs::read_dir(root.join("examples/config")).unwrap() {
@@ -347,6 +420,14 @@ mod tests {
                 .load(true)
                 .unwrap();
                 wallpaper::revision(&config).unwrap();
+                covered_widgets.extend(
+                    config
+                        .bar_left
+                        .iter()
+                        .chain(&config.bar_middle)
+                        .chain(&config.bar_right)
+                        .copied(),
+                );
                 modes.push(config.wallpaper_mode);
                 variants.push(
                     Config::parse(&std::fs::read_to_string(path).unwrap())
@@ -363,6 +444,10 @@ mod tests {
         ] {
             assert!(modes.contains(&mode));
         }
+        assert!(
+            BAR_WIDGETS.iter().all(|w| covered_widgets.contains(w)),
+            "every widget must appear in a runnable example"
+        );
         assert!(variants.contains(&Renderer::Vulkan));
         assert!(variants.contains(&Renderer::Software));
         assert_eq!(
