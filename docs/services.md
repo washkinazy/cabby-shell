@@ -1,5 +1,7 @@
 # Service ownership and control
 
+This page describes the implemented service architecture. [Internal plugin design intent](plugins.md) records a pending discussion about consistent feature organization and possible process boundaries; it does not change these units or their behavior.
+
 ## Components
 
 The initial units are in `systemd/user/`. They target a niri session managed as `niri.service` (for example through niri-session). They are not enabled by builds/tests. Running niri without that service requires a deliberate adapter for its lifetime; do not install a dummy niri.service to bypass ownership.
