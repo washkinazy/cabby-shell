@@ -114,7 +114,11 @@ pub fn serve(
     ))
     .map_err(|e| e.to_string())?;
     let mut deadline = Some(Instant::now() + watch::DEBOUNCE);
-    let idle = crate::idle::Idle::new(store.active().idle_lock_seconds, &path);
+    let idle = crate::idle::Idle::new(
+        store.active().idle_lock_seconds,
+        store.active().idle_display_off_seconds,
+        &path,
+    );
     notify_ready()?;
     loop {
         let incoming = watcher
@@ -156,7 +160,10 @@ pub fn serve(
                 deadline = Some(Instant::now() + watch::DEBOUNCE);
             }
         }
-        idle.configure(store.active().idle_lock_seconds);
+        idle.configure(
+            store.active().idle_lock_seconds,
+            store.active().idle_display_off_seconds,
+        );
         if !incoming {
             continue;
         }
@@ -202,7 +209,10 @@ pub fn serve(
                     {
                         deadline = Some(Instant::now() + watch::DEBOUNCE);
                     }
-                    idle.configure(store.active().idle_lock_seconds);
+                    idle.configure(
+                        store.active().idle_lock_seconds,
+                        store.active().idle_display_off_seconds,
+                    );
                     response
                 }
                 _ => serde_json::json!({"ok": false, "error": "unknown request"}),

@@ -24,7 +24,7 @@ impl Status {
             match self.state.as_str() {
                 "watching" => "Idle lock",
                 "locking" => "Locking",
-                "lock-failed" => "Lock failed",
+                "lock-failed" | "display-failed" => "Idle failed",
                 _ => "Idle ?",
             }
         }

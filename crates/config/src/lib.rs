@@ -69,6 +69,7 @@ macro_rules! configuration {
 
 configuration! {
     idle_lock_seconds: u32 = 0,
+    idle_display_off_seconds: u32 = 0,
     renderer: Renderer = Renderer::Vulkan,
     bar_height: u16 = 40,
     bar_left: Vec<BarWidget> = vec![BarWidget::Workspaces],
@@ -131,6 +132,13 @@ impl Config {
         let config: Self = toml::from_str(source).map_err(|error| error.to_string())?;
         if config.idle_lock_seconds > 86400 {
             return Err("idle_lock_seconds must be 0..86400 seconds".into());
+        }
+        if config.idle_display_off_seconds > 86400
+            || (config.idle_display_off_seconds > 0
+                && (config.idle_lock_seconds == 0
+                    || config.idle_display_off_seconds <= config.idle_lock_seconds))
+        {
+            return Err("idle_display_off_seconds must be 0 (disabled), or greater than idle_lock_seconds and at most 86400 seconds; locking must be enabled".into());
         }
         let mut widgets = std::collections::HashSet::new();
         for widget in config
@@ -404,6 +412,14 @@ mod tests {
     #[test]
     fn every_example_and_setting_has_reference_coverage() {
         assert!(Config::parse("idle_lock_seconds=86400").is_ok());
+        assert!(Config::parse("idle_lock_seconds=10\nidle_display_off_seconds=11").is_ok());
+        for config in [
+            "idle_display_off_seconds=10",
+            "idle_lock_seconds=10\nidle_display_off_seconds=10",
+            "idle_lock_seconds=10\nidle_display_off_seconds=86401",
+        ] {
+            assert!(Config::parse(config).is_err());
+        }
         assert!(Config::parse("idle_lock_seconds=86401").is_err());
         assert!(Config::parse("idle_lock_seconds=-1").is_err());
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");

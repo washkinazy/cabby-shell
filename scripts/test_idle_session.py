@@ -51,9 +51,17 @@ def inside(directory, renderer):
         config.write_text('idle_lock_seconds=0\n')
         wait_for(lambda:cli('idle-status')['idle']['state']=='disabled')
         before=requests(); time.sleep(1.2); assert requests()==before
+        niri_helper=bindir/'niri'
+        niri_helper.write_text("#!/usr/bin/python3\nimport sys\nfrom pathlib import Path\nassert sys.argv[1:3]==['msg','action']\nassert sys.argv[3] in ['power-off-monitors','power-on-monitors']\nwith (Path(__file__).resolve().parents[1]/'power').open('a') as f: f.write(sys.argv[3]+'\\n')\n")
+        niri_helper.chmod(0o700)
+        config.write_text('idle_lock_seconds=1\nidle_display_off_seconds=2\n')
+        wait_for(lambda:(directory/'power').exists())
+        assert 'power-off-monitors' in (directory/'power').read_text()
+        cli('idle-inhibit-on')
+        wait_for(lambda:'power-on-monitors' in (directory/'power').read_text())
         trace=(directory/'idle.log').read_text()
         assert 'get_idle_notification' in trace and 'get_input_idle_notification' not in trace
-        (directory/'result.json').write_text(json.dumps({'passed':True,'checks':['native-idle-lock-once','manual-inhibit','release-fresh-countdown','live-timeout-reset','binary-replacement','invalid-retention','disable','inhibitor-aware-protocol'],'unverified':['physical-application-inhibitors','multiple-seats','real-lock-authentication']},indent=2))
+        (directory/'result.json').write_text(json.dumps({'passed':True,'checks':['native-idle-lock-once','manual-inhibit','release-fresh-countdown','live-timeout-reset','binary-replacement','invalid-retention','disable','inhibitor-aware-protocol','display-off-after-lock','inhibition-restores-displays'],'unverified':['physical-application-inhibitors','multiple-seats','real-lock-authentication','physical-display-power/hotplug/wake']},indent=2))
     except Exception as error:
         (directory/'error.txt').write_text(repr(error)); raise
     finally:

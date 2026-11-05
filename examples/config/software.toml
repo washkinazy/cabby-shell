@@ -24,3 +24,4 @@ launcher_rows = 6
 
 # idle_lock_seconds is omitted: automatic locking stays disabled (0).
 # Optional "idle" bar widget toggles the manual idle inhibitor; not in defaults.
+# idle_display_off_seconds defaults to 0: no automatic display power change.

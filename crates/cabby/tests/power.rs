@@ -108,3 +108,43 @@ fn invalid_suspend_options_fail_before_any_helper() {
         assert!(!String::from_utf8_lossy(&output.stderr).contains("No such file"));
     }
 }
+
+#[test]
+fn display_power_requires_lock_and_restoration_never_unlocks() {
+    for denied in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let ctl = temp.path().join("systemctl");
+        fs::write(
+            &ctl,
+            format!(
+                "#!/usr/bin/python3\nimport sys\nsys.exit({} if 'start' in sys.argv else 0)\n",
+                u8::from(denied)
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&ctl, fs::Permissions::from_mode(0o700)).unwrap();
+        let niri = temp.path().join("niri");
+        fs::write(&niri, "#!/usr/bin/python3\nimport os,sys\nfrom pathlib import Path\nassert sys.argv[1:3]==['msg','action']\nassert sys.argv[3] in ['power-off-monitors','power-on-monitors']\nwith (Path(os.environ['CABBY_POWER_FIXTURE'])/'power').open('a') as f: f.write(sys.argv[3]+'\\n')\n").unwrap();
+        fs::set_permissions(&niri, fs::Permissions::from_mode(0o700)).unwrap();
+        let run = |action| {
+            Command::new(env!("CARGO_BIN_EXE_cabby"))
+                .arg(action)
+                .env("PATH", temp.path())
+                .env("CABBY_POWER_FIXTURE", temp.path())
+                .output()
+                .unwrap()
+        };
+        assert_eq!(run("display-off").status.success(), !denied);
+        assert_eq!(temp.path().join("power").exists(), !denied);
+        assert!(run("display-on").status.success());
+        let calls = fs::read_to_string(temp.path().join("power")).unwrap();
+        assert_eq!(
+            calls,
+            if denied {
+                "power-on-monitors\n"
+            } else {
+                "power-off-monitors\npower-on-monitors\n"
+            }
+        );
+    }
+}

@@ -54,3 +54,6 @@ wallpaper_mode = "fill"
 # Automatic lock after 600 idle seconds; 0 disables. Requires lock support.
 idle_lock_seconds = 0
 # Optional "idle" bar widget toggles the manual idle inhibitor; not in defaults.
+
+# Display power-off timeout: 0 disables; otherwise greater than idle_lock_seconds.
+idle_display_off_seconds = 0

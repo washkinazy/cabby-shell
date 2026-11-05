@@ -15,7 +15,8 @@ const HELP: &str = "Usage:
   cabby restart-ui [--ui-unit UNIT] [--session-unit UNIT]
   cabby launcher [--launcher-unit UNIT] [--target UNIT] [--session-unit UNIT]
   cabby launcher-ui [--config PATH]
-  cabby lock|suspend [--lock-unit UNIT] [--session-unit UNIT]
+  cabby lock|suspend|display-off [--lock-unit UNIT] [--session-unit UNIT]
+  cabby display-on
   cabby lock-ui [--config PATH]
   cabby launch-app --desktop-id ID [--config PATH] [--session-unit UNIT]
   cabby launch [--session-unit UNIT] [--working-directory PATH] -- PROGRAM [ARG...]
@@ -144,7 +145,8 @@ fn run() -> Result<()> {
         | "idle-inhibit-toggle" => &["--runtime-dir"],
         "start" | "stop" | "restart" => &["--target", "--session-unit"],
         "restart-ui" => &["--ui-unit", "--session-unit"],
-        "lock" | "suspend" => &["--lock-unit", "--session-unit"],
+        "lock" | "suspend" | "display-off" => &["--lock-unit", "--session-unit"],
+        "display-on" => &[],
         "launcher" => &["--launcher-unit", "--target", "--session-unit"],
         "launch-app" => &["--desktop-id", "--config", "--session-unit"],
         "launch" => &["--session-unit", "--working-directory"],
@@ -266,11 +268,15 @@ fn run() -> Result<()> {
             require_session(&session)?;
             systemctl(&["restart", &ui])?;
         }
-        "lock" | "suspend" => {
+        "lock" | "suspend" | "display-off" => {
             let locker = text_option("--lock-unit", "cabby-lock.service")?;
             unit(&locker, ".service")?;
             power::request(&session, &locker, command == "suspend")?;
+            if command == "display-off" {
+                power::monitors(true)?;
+            }
         }
+        "display-on" => power::monitors(false)?,
         "launcher" => {
             let launcher = text_option("--launcher-unit", "cabby-launcher.service")?;
             unit(&launcher, ".service")?;
