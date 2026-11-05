@@ -295,6 +295,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cabby-lock"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "cabby-notification-service"
 version = "0.1.0"
 dependencies = [

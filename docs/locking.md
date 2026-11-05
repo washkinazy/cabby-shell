@@ -1,0 +1,23 @@
+# Locking and idle direction
+
+Idle/lock is prioritized ahead of clipboard. Cabby's locker will have a separate compositor-bound lifetime: ordinary shell stop/restart, config reload and desktop crashes must not stop or unlock it. The existing manual locker and bindings remain in place until an explicit switch; building or installing binaries does not activate locking.
+
+## Authentication backend (implemented)
+
+`cabby-lock` contains UI-independent lock policy and Linux-PAM authentication. The private `cabby-auth` executable accepts one length-prefixed UTF-8 credential on stdin (1–1024 bytes), authenticates the real UID's passwd entry, and exits 0 for success, 1 for rejection, or 2 for an unavailable/malformed request. It accepts no arguments, alternate usernames, environment-selected policy, or production test mode. No password appears in arguments, logs or persistent state. The UI client allows one owned helper future with a 30-second deadline; timeout/error kills and reaps it, and cancellation kills it on drop. Helpers and PAM descendants belong to the lock service's cleanup cgroup.
+
+The fixed policy is `/etc/pam.d/cabby-lock`, which must exist, be root-owned, and not group/world writable. Authentication and account checks must both succeed, and PAM must retain the original user. Passwordless/empty credentials and multi-step authentication are outside this initial scope; a second hidden prompt is rejected. Echoed prompts receive the fixed username. Informational/error module text is discarded. No PAM session is opened and no password-changing flow is implemented. PAM modules remain trusted system policy.
+
+Credentials use bounded storage with redacted Debug output and explicit clearing. The helper disables core dumps. This reduces retention but does not claim that all compiler, toolkit, kernel or PAM-internal copies can be erased. PAM owns and frees successful conversation responses. The helper is not setuid; distro PAM modules may use their existing privileged helpers.
+
+Private tests use `pam_start_confdir` with synthetic permit/deny stacks, never a real account authentication stack. Production has no private-policy selector. Tests cover success, auth/account denial, missing modules, conversation bounds, helper framing/deadlines/cancellation, and lock confirmation/matching-attempt requirements. Real-user authentication remains unverified.
+
+## UI and lifecycle contract (next increment)
+
+Use Iced's `ext-session-lock-v1` client with opaque surfaces for all outputs. READY must mean receipt of the compositor's `locked` event, not just a mapped window. Only a successful current authentication attempt after lock confirmation may request unlock. Escape clears input; it never exits. Crash, signal termination, timeout and renderer failure must disconnect without an unlock request.
+
+The pinned exwlshellev 0.20.1 normal-exit path sends `unlock_and_destroy` when locked. Consequently the lock host must reserve `iced::exit()` exclusively for authenticated success; fatal paths use process termination and no normal-exit task. Its protocol trace must prove no unlock request on killed/failed paths. The protocol requires a compositor to remain locked after client death; replacement-locker recovery is compositor-specific and must be tested on the pinned niri baseline. If replacement is refused or restart limits are exhausted, recovery is an authenticated VT session ending the affected graphical session, not a cleanup unlock. Compositor/session loss stops the locker and its helpers.
+
+Idle policy will use compositor idle notifications (respecting application inhibitors) and an explicit manual inhibitor. Display power must follow confirmed locking; resuming activity restores displays without unlocking. Cabby-requested suspend must require confirmed lock. logind suspend coordination, gamma/night-light support and hardware behavior remain separate acceptance work; automatic idle/suspend behavior is not enabled by this backend increment.
+
+References: [session-lock protocol](https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/main/staging/ext-session-lock/ext-session-lock-v1.xml), [idle notification protocol](https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/main/staging/ext-idle-notify/ext-idle-notify-v1.xml), [Linux-PAM ABI](https://raw.githubusercontent.com/linux-pam/linux-pam/master/libpam/include/security/_pam_types.h), [PAM initialization/private policy directories](https://raw.githubusercontent.com/linux-pam/linux-pam/master/doc/man/pam_start.3.xml).
