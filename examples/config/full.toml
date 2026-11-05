@@ -21,7 +21,7 @@ bar_height = 40
 # A widget may occur only once across all three lists.
 bar_left = ["workspaces"]
 bar_middle = ["clock"]
-bar_right = ["audio", "network", "bluetooth", "tray"]
+bar_right = ["audio", "network", "bluetooth", "nightlight", "tray"]
 
 # Bar edge: "top" or "bottom". Reserved space follows the edge.
 bar_position = "top"
@@ -60,3 +60,19 @@ idle_display_off_seconds = 0
 
 # Observe logind sleep notifications and hold a bounded delay inhibitor.
 lock_before_sleep = false
+
+# Night light: separate scheduled enable and forced night temperature.
+[nightlight]
+enabled = false
+force = false
+temperature_day = 6500
+temperature_night = 4000
+
+# Location source; set a city, coordinates, automatic lookup, or explicit custom times.
+[location]
+auto_locate = false
+address = ""
+custom_schedule = false
+sunset = ""
+sunrise = ""
+# Optional coordinates are omitted by default; see nightlight-location.toml.

@@ -119,7 +119,17 @@ pub fn serve(
         store.active().idle_display_off_seconds,
         &path,
     );
-    let sleep = crate::sleep::Sleep::new(store.active().lock_before_sleep, idle.resume_handle());
+    let night = crate::night::Night::new(store.active(), &path);
+    let idle_resume = idle.resume_handle();
+    let night_resume = night.resume_handle();
+    let sleep = crate::sleep::Sleep::new(
+        store.active().lock_before_sleep,
+        night.observing(),
+        move || {
+            idle_resume.resume();
+            night_resume.resume();
+        },
+    );
     notify_ready()?;
     loop {
         let incoming = watcher
@@ -161,7 +171,8 @@ pub fn serve(
                 deadline = Some(Instant::now() + watch::DEBOUNCE);
             }
         }
-        sleep.configure(store.active().lock_before_sleep);
+        night.configure(store.active());
+        sleep.configure(store.active().lock_before_sleep, night.observing());
         idle.configure(
             store.active().idle_lock_seconds,
             store.active().idle_display_off_seconds,
@@ -183,7 +194,16 @@ pub fn serve(
         } else {
             match command.trim() {
                 "status" => {
-                    serde_json::json!({"ok": true, "source": store.source.path, "config": store.active(), "pid": std::process::id(), "idle": idle.status(), "sleep": sleep.status()})
+                    serde_json::json!({"ok": true, "source": store.source.path, "config": store.active(), "pid": std::process::id(), "idle": idle.status(), "sleep": sleep.status(), "night_light": night.status()})
+                }
+                "nightlight-status"
+                | "nightlight-enable"
+                | "nightlight-disable"
+                | "nightlight-toggle"
+                | "nightlight-force-toggle" => {
+                    night.control(command.trim());
+                    sleep.configure(store.active().lock_before_sleep, night.observing());
+                    serde_json::json!({"ok":true,"night_light":night.status()})
                 }
                 "idle-status" | "idle-inhibit-on" | "idle-inhibit-off" | "idle-inhibit-toggle" => {
                     match command.trim() {
@@ -192,7 +212,7 @@ pub fn serve(
                         "idle-inhibit-toggle" => idle.inhibit(None),
                         _ => (),
                     }
-                    serde_json::json!({"ok": true, "idle": idle.status(), "sleep": sleep.status()})
+                    serde_json::json!({"ok": true, "idle": idle.status(), "sleep": sleep.status(), "night_light": night.status()})
                 }
                 "reload" => {
                     let response = reload(
@@ -211,7 +231,8 @@ pub fn serve(
                     {
                         deadline = Some(Instant::now() + watch::DEBOUNCE);
                     }
-                    sleep.configure(store.active().lock_before_sleep);
+                    night.configure(store.active());
+                    sleep.configure(store.active().lock_before_sleep, night.observing());
                     idle.configure(
                         store.active().idle_lock_seconds,
                         store.active().idle_display_off_seconds,

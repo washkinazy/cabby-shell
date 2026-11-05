@@ -330,7 +330,7 @@ impl Dispatch<ExtIdleNotificationV1, (u32, u64, bool)> for State {
 use wayland_client::Proxy;
 delegate_noop!(State: ignore wl_seat::WlSeat);
 delegate_noop!(State: ignore ExtIdleNotifierV1);
-fn wait(wake: &UnixStream, fd: i32, timeout: i32) -> std::io::Result<bool> {
+pub(crate) fn wait(wake: &UnixStream, fd: i32, timeout: i32) -> std::io::Result<bool> {
     let mut descriptors = [
         libc::pollfd {
             fd: wake.as_raw_fd(),
@@ -464,7 +464,15 @@ fn connected(
             connection.as_fd().as_raw_fd(),
             if state.action.is_some() { 100 } else { -1 },
         )? {
-            reader.read()?;
+            match reader.read() {
+                Ok(_) => (),
+                Err(wayland_client::backend::WaylandError::Io(e))
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+                    ) => {}
+                Err(e) => return Err(e.into()),
+            }
         }
     }
 }

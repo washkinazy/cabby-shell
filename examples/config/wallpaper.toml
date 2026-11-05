@@ -1,7 +1,7 @@
 # Launcher row sizing includes 24-pixel icons; search/close/status stay outside result scrolling.
 # Audio/Bluetooth widgets observe status while configured; Bluetooth interaction ends on panel close.
 # Device panels follow the clicked widget/output and configured bar edge.
-# Default regions: workspaces left; clock/date middle; audio, network, Bluetooth, tray right.
+# Default regions: workspaces left; clock/date middle; audio, network, Bluetooth, night light, tray right.
 # Tray icons and menus share desktop styling; ordinary reloads preserve menus and tray ownership.
 # The coordinator automatically reloads valid saves (300 ms debounce); invalid edits retain the old config.
 # Bluetooth shares theme/layout settings; ordinary reload preserves the panel and discovery/pairing.
@@ -18,3 +18,4 @@ wallpaper_mode = "fit"
 # Optional "idle" bar widget toggles the manual idle inhibitor; not in defaults.
 # idle_display_off_seconds defaults to 0: no automatic display power change.
 # lock_before_sleep defaults to false; opt-in sleep coordination needs lock support.
+# Night light is disabled unless configured; the default bar includes its indicator.

@@ -105,7 +105,7 @@ def inside(directory, interactive, renderer):
             idle_config.write_text(base_config + 'bar_left = ["idle"]\nbar_middle = []\nbar_right = []\n')
             idle_root = runtime / "cabby-shell"
             with (directory / "idle-coordinator.log").open("w") as idle_coordinator_log, (directory / "idle.log").open("w") as idle_log:
-                coordinator = subprocess.Popen([ROOT / "target/debug/cabby", "serve", "--config", idle_config, "--runtime-dir", idle_root], stdout=idle_coordinator_log, stderr=idle_coordinator_log)
+                coordinator = subprocess.Popen([ROOT / "target/debug/cabby", "serve", "--config", idle_config, "--runtime-dir", idle_root], stdout=idle_coordinator_log, stderr=idle_coordinator_log, env=dict(os.environ, DBUS_SYSTEM_BUS_ADDRESS="unix:path="+str(directory/"no-system-bus")))
                 children.append(coordinator)
                 deadline = time.monotonic() + 10
                 while not (idle_root / "idle.json").exists():
@@ -125,6 +125,23 @@ def inside(directory, interactive, renderer):
                 time.sleep(1)
                 subprocess.run(["grim", str(directory / "idle-inhibited.png")], check=True, timeout=15)
                 run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(directory / "idle-inhibited.png"), f"idle-{'top' if renderer == 'gpu' else 'bottom'}")
+                idle_config.write_text(base_config + 'bar_left = ["nightlight"]\nbar_middle = []\nbar_right = []\n')
+                deadline = time.monotonic() + 10
+                while not (idle_root / "nightlight.json").exists():
+                    if time.monotonic() > deadline: raise TimeoutError("nightlight snapshot unavailable")
+                    time.sleep(.05)
+                time.sleep(1)
+                subprocess.run(["grim", str(directory / "nightlight-off.png")], check=True, timeout=15)
+                run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(directory / "nightlight-off.png"), f"idle-{'top' if renderer == 'gpu' else 'bottom'}")
+                run(str(ROOT / "target/debug/cabby"), "nightlight-toggle")
+                deadline = time.monotonic() + 10
+                while not json.loads((idle_root / "nightlight.json").read_text()).get("enabled"):
+                    if time.monotonic() > deadline: raise TimeoutError("nightlight toggle unavailable")
+                    time.sleep(.05)
+                time.sleep(1)
+                subprocess.run(["grim", str(directory / "nightlight-unavailable.png")], check=True, timeout=15)
+                run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(directory / "nightlight-unavailable.png"), f"idle-{'top' if renderer == 'gpu' else 'bottom'}")
+                run(str(ROOT / "target/debug/cabby"), "nightlight-disable")
                 bar.terminate(); bar.wait(timeout=5)
                 coordinator.terminate(); coordinator.wait(timeout=5)
             bar = subprocess.Popen([ROOT / "target/debug/cabby", "ui", "--config", config], stdout=log, stderr=log)

@@ -144,11 +144,12 @@ mod tests {
         fs::write(&script, "#!/usr/bin/python3\nimport os,sys,time\nopen(sys.argv[1], 'w').write(str(os.getpid()))\ntime.sleep(60)\n").unwrap();
         fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
         let result = bounded(
-            Command::new(script).arg(&pid),
+            Command::new("/usr/bin/python3").arg(script).arg(&pid),
             Duration::from_millis(500),
             "fixture",
         );
-        assert!(result.unwrap_err().contains("timed out"));
+        let error = result.unwrap_err();
+        assert!(error.contains("timed out"), "{error}");
         let pid = fs::read_to_string(pid).unwrap();
         assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
     }

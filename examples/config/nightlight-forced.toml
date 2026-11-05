@@ -1,0 +1,6 @@
+# Force night temperature independently of enable/schedule/location.
+[nightlight]
+enabled = false
+force = true
+temperature_day = 6500
+temperature_night = 4000

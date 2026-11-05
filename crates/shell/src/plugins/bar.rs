@@ -15,6 +15,9 @@ pub(crate) struct Bar {
     pub(crate) audio_label: String,
     pub(crate) bluetooth_label: String,
     network: crate::network::Status,
+    nightlight: super::nightlight::Status,
+    nightlight_pending: bool,
+    nightlight_failed: bool,
     idle: super::idle::Status,
     idle_pending: bool,
     idle_failed: bool,
@@ -28,6 +31,9 @@ pub(crate) enum Message {
     Disconnected,
     Clock(String),
     IdleState(super::idle::Status),
+    NightlightState(super::nightlight::Status),
+    NightlightToggle,
+    NightlightResult(Result<(), String>),
     IdleToggle,
     IdleResult(Result<(), String>),
     Network(crate::network::Status),
@@ -73,6 +79,9 @@ impl Bar {
             audio_label: "Audio ?".into(),
             bluetooth_label: "Bluetooth ?".into(),
             network: crate::network::Status::default(),
+            nightlight: super::nightlight::Status::default(),
+            nightlight_pending: false,
+            nightlight_failed: false,
             idle: super::idle::Status::default(),
             idle_pending: false,
             idle_failed: false,
@@ -103,11 +112,27 @@ impl Bar {
         if self.config.has_widget(BarWidget::Idle) {
             subscriptions.push(Subscription::run(super::idle::events).map(Message::IdleState));
         }
+        if self.config.has_widget(BarWidget::Nightlight) {
+            subscriptions
+                .push(Subscription::run(super::nightlight::events).map(Message::NightlightState));
+        }
         Subscription::batch(subscriptions)
     }
 
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::NightlightState(status) => self.nightlight = status,
+            Message::NightlightToggle if !self.nightlight_pending => {
+                self.nightlight_pending = true;
+                return Task::perform(
+                    ui::command(vec!["nightlight-toggle".into()]),
+                    Message::NightlightResult,
+                );
+            }
+            Message::NightlightResult(result) => {
+                self.nightlight_pending = false;
+                self.nightlight_failed = result.is_err();
+            }
             Message::IdleState(state) => self.idle = state,
             Message::IdleToggle if !self.idle_pending => {
                 self.idle_pending = true;
@@ -206,6 +231,27 @@ impl Bar {
         };
         match widget {
             BarWidget::Workspaces => self.workspaces(output),
+            BarWidget::Nightlight => {
+                let control = button(ui::body(
+                    &self.config,
+                    if self.nightlight_failed {
+                        "Night action failed"
+                    } else {
+                        self.nightlight.label()
+                    },
+                ));
+                let control = if self.nightlight_pending {
+                    control
+                } else {
+                    control.on_press(Message::NightlightToggle)
+                };
+                tooltip(
+                    control,
+                    text(self.nightlight.detail()),
+                    tooltip::Position::Bottom,
+                )
+                .into()
+            }
             BarWidget::Idle => {
                 let label = if self.idle_failed {
                     "Idle action failed"

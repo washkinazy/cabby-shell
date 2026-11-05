@@ -1,6 +1,9 @@
 mod idle;
+mod location;
+mod night;
 mod power;
 mod runtime;
+mod schedule;
 mod sleep;
 mod watch;
 use cabby_config::{Result, Source};
@@ -16,6 +19,7 @@ const HELP: &str = "Usage:
   cabby restart-ui [--ui-unit UNIT] [--session-unit UNIT]
   cabby launcher [--launcher-unit UNIT] [--target UNIT] [--session-unit UNIT]
   cabby launcher-ui [--config PATH]
+  cabby nightlight-status|nightlight-enable|nightlight-disable|nightlight-toggle|nightlight-force-toggle [--runtime-dir PATH]
   cabby lock|suspend|display-off [--lock-unit UNIT] [--session-unit UNIT]
   cabby display-on
   cabby lock-ui [--config PATH]
@@ -143,7 +147,12 @@ fn run() -> Result<()> {
         | "idle-status"
         | "idle-inhibit-on"
         | "idle-inhibit-off"
-        | "idle-inhibit-toggle" => &["--runtime-dir"],
+        | "idle-inhibit-toggle"
+        | "nightlight-status"
+        | "nightlight-enable"
+        | "nightlight-disable"
+        | "nightlight-toggle"
+        | "nightlight-force-toggle" => &["--runtime-dir"],
         "start" | "stop" | "restart" => &["--target", "--session-unit"],
         "restart-ui" => &["--ui-unit", "--session-unit"],
         "lock" | "suspend" | "display-off" => &["--lock-unit", "--session-unit"],
@@ -219,7 +228,12 @@ fn run() -> Result<()> {
         | "idle-status"
         | "idle-inhibit-on"
         | "idle-inhibit-off"
-        | "idle-inhibit-toggle" => {
+        | "idle-inhibit-toggle"
+        | "nightlight-status"
+        | "nightlight-enable"
+        | "nightlight-disable"
+        | "nightlight-toggle"
+        | "nightlight-force-toggle" => {
             let result = runtime::request(&runtime::directory(directory)?, command)?;
             println!("{result}");
             if result["ok"] != true {

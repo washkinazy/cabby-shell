@@ -16,3 +16,5 @@ mod clock;
 pub(crate) mod lock;
 
 mod idle;
+
+mod nightlight;

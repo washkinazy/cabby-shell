@@ -1,0 +1,6 @@
+# Astronomical sunrise/sunset; public example coordinates for Berlin.
+[nightlight]
+enabled = true
+[location]
+latitude = 52.52
+longitude = 13.405
