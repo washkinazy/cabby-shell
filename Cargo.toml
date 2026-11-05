@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/bluetooth", "crates/audio", "crates/platform-spike", "crates/shell", "crates/config", "crates/cabby", "crates/launcher", "crates/notifications", "crates/notification-service"]
+members = ["crates/tray", "crates/bluetooth", "crates/audio", "crates/platform-spike", "crates/shell", "crates/config", "crates/cabby", "crates/launcher", "crates/notifications", "crates/notification-service"]
 resolver = "3"
 
 [workspace.package]
@@ -11,7 +11,7 @@ cabby-launcher = { path = "crates/launcher" }
 cabby-config = { path = "crates/config" }
 serde = { version = "=1.0.229", features = ["derive"] }
 toml = "=1.1.8"
-iced = { version = "=0.14.0", default-features = false, features = ["wgpu", "tiny-skia", "tokio", "wayland", "image-without-codecs"] }
+iced = { version = "=0.14.0", default-features = false, features = ["wgpu", "tiny-skia", "tokio", "wayland", "image-without-codecs", "svg"] }
 iced_exwlshell = { version = "=0.20.1", default-features = false, features = ["macros"] }
 
 [profile.dev]
