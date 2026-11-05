@@ -40,7 +40,7 @@ fn main() -> iced_exwlshell::Result {
         eprintln!("cannot apply renderer environment: {error}");
         std::process::exit(1);
     }
-    cabby_platform_spike::renderer_diagnostics();
+    cabby_shell::renderer_diagnostics();
     daemon(
         Spike::default,
         || "cabby-phase0".into(),

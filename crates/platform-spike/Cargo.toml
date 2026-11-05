@@ -6,17 +6,8 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-cabby-notifications = { path = "../notifications" }
-cabby-notification-service = { path = "../notification-service" }
-cabby-launcher.workspace = true
+cabby-shell = { path = "../shell" }
 cabby-config.workspace = true
 iced.workspace = true
 iced_exwlshell.workspace = true
-log = "=0.4.34"
-
-serde.workspace = true
-serde_json = "=1.0.154"
-tokio = { version = "=1.54.1", features = ["net", "io-util", "time", "rt", "macros", "process"] }
-
-[dev-dependencies]
-tempfile = "3"
+tokio = { version = "=1.54.1", features = ["time", "rt", "macros"] }

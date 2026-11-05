@@ -1,6 +1,6 @@
 # Service ownership and control
 
-This page describes the implemented service architecture. [Internal plugin design intent](plugins.md) records a pending discussion about consistent feature organization and possible process boundaries; it does not change these units or their behavior.
+This page describes the implemented service architecture. [Internal plugin design](plugins.md) describes the shared startup and built-in feature modules now used by the UI executables. This code refactor preserves the units and behavior below; process consolidation remains a separate decision.
 
 ## Components
 

@@ -1,4 +1,4 @@
-//! Diagnostics shared by the disposable platform probes.
+//! Built-in shell features and shared host machinery.
 struct RendererLog;
 
 impl log::Log for RendererLog {
@@ -26,3 +26,6 @@ pub fn renderer_diagnostics() {
 pub mod niri;
 
 pub mod ui;
+
+pub mod host;
+mod plugins;
