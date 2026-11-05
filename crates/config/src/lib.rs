@@ -1,4 +1,6 @@
+pub mod changes;
 pub mod wallpaper;
+pub mod watch;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::{Path, PathBuf};

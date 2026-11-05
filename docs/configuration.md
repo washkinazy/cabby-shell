@@ -8,7 +8,7 @@ Cabby reads TOML from `$HOME/.config/cabby-shell/config.toml`. This is currently
 
 A missing default file at startup uses built-in defaults. A missing explicitly selected file is an error. Empty files and omitted settings use defaults. Invalid startup configuration fails ordinary component startup. The lock UI falls back to built-in styling defaults on a parse/validation/load error; path-resolution or renderer failures still fail startup. Invalid reloads (including a removed file) retain the entire previous valid snapshot. Unknown/duplicate keys, wrong types, unknown renderer names, and invalid ranges are errors. Files are limited to 64 KiB and must be UTF-8.
 
-The coordinator automatically reloads after configuration or active wallpaper-file changes, using Linux directory watches and a 300 ms debounce (no recurring config polling). Atomic saves, symlinks, and directory recreation are supported. Rejected changes emit a content-free journal message and retain the old snapshot; `cabby reload` remains available for immediate validation/error detail. No new setting is required. Both automatic and explicit reload use the same transaction: invalid input retains the previous active snapshot; changed valid input (including changed wallpaper image bytes) is published atomically and queues a managed desktop-host restart for bar and wallpaper together. Bar and wallpaper settings require that restart; launcher settings take effect on its next opening. Direct UI invocation reads settings on startup only. Lock renderer, font and colors apply on the next lock; an active locker never restarts on reload. See [services.md](services.md) for runtime ownership and restart results.
+The coordinator watches config and active wallpaper files with a 300 ms debounce, validates candidates and atomically publishes the active snapshot. Desktop and notification hosts consume snapshots in place: ordinary edits preserve open panels, pairing interactions, tray ownership and notifications. Wallpaper decoding runs off the UI thread and retains the current image on failure. Only `renderer` changes restart active desktop/notification services. Launcher settings apply next opening; active lock configuration never changes. Direct desktop/notification invocation watches its config file; wallpaper-file-only edits are watched by the managed coordinator. Invalid edits retain the previous valid snapshot. See [services.md](services.md).
 
 ## Validation and installation
 
@@ -39,7 +39,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** any subset of `"workspaces"`, `"clock"`, `"audio"`, `"network"`, `"bluetooth"`, `"tray"`, `"apps"`, `"title"`, `"status"`, in the desired order. Unknown names and duplicate widgets anywhere across the three regions are errors. `[]` leaves this region empty.
 - **Example:** `bar_left = ["workspaces"]`; optional Apps/title/status placement is demonstrated in [custom-layout.toml](../examples/config/custom-layout.toml).
 - **Dependencies/interactions:** the three regions occupy equal widths. Overflow scrolls horizontally within its region; it cannot shift or cover another region. Each array replaces that region's default, while omitted regions still use their defaults. Widgets omitted from all regions disappear; omitted clock/network/tray widgets do not start their background subscriptions. See the widget behavior below.
-- **Application:** automatic or explicit valid reload restarts the desktop with the new layout; direct UI invocation requires restart.
+- **Application:** valid config reload updates regions in place.
 - **Migration:** defaults change from the former fixed Apps/device/workspace/title/status row to the user-requested three-region layout. Existing files inherit these defaults without adding keys. Include `apps`, `title` or `status` explicitly to restore those optional contributions; the launcher command/keybinding remains available.
 
 ### `bar_middle`
@@ -49,7 +49,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** the same widget names and uniqueness rules as `bar_left`; `[]` leaves this region empty.
 - **Example:** `bar_middle = ["clock"]` in [full.toml](../examples/config/full.toml).
 - **Dependencies/interactions:** uses the middle third of the content area; oversized contents scroll within that region. To move the clock elsewhere, explicitly remove it from this list as well as adding it to the destination.
-- **Application:** automatic/explicit valid reload restarts the desktop; standalone UI requires restart.
+- **Application:** valid config reload updates regions in place.
 - **Migration:** omitted values now show local clock/date in the middle.
 
 ### `bar_right`
@@ -59,7 +59,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** the same widget names and uniqueness rules as `bar_left`; `[]` leaves this region empty.
 - **Example:** `bar_right = ["audio", "network", "bluetooth", "tray"]` in [full.toml](../examples/config/full.toml).
 - **Dependencies/interactions:** uses the right third; a large tray or long status scrolls within the region. Audio/Bluetooth keep their existing on-demand panels. Network is read-only status; it does not change connections or radio state.
-- **Application:** automatic/explicit valid reload restarts the desktop; standalone UI requires restart.
+- **Application:** valid config reload updates regions in place.
 - **Migration:** the default order is audio, network, Bluetooth, system tray.
 
 #### Widget behavior
@@ -73,7 +73,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** inclusive range `32` through `128`, in logical pixels. Fractional output scaling determines physical pixel size.
 - **Example:** `bar_height = 40` in [full.toml](../examples/config/full.toml).
 - **Dependencies/interactions:** applies to the bar on each output, independently of renderer choice. It does not configure monitor resolution or scale.
-- **Application:** UI restart required.
+- **Application:** live update after valid automatic/manual reload.
 - **Migration:** first schema; no prior setting to migrate.
 
 ### `bar_position`
@@ -83,7 +83,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** "top" or "bottom".
 - **Example:** `bar_position = "top"` in [full.toml](../examples/config/full.toml).
 - **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
-- **Application:** UI restart required; managed `cabby reload` queues it.
+- **Application:** live update after valid automatic/manual reload; lock and launcher use the next opening.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
 ### `bar_padding`
@@ -93,7 +93,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** 0..32 logical pixels.
 - **Example:** `bar_padding = 8` in [full.toml](../examples/config/full.toml).
 - **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
-- **Application:** UI restart required; managed `cabby reload` queues it.
+- **Application:** live update after valid automatic/manual reload; lock and launcher use the next opening.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
 ### `bar_spacing`
@@ -103,7 +103,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** 0..32 logical pixels.
 - **Example:** `bar_spacing = 8` in [full.toml](../examples/config/full.toml).
 - **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
-- **Application:** UI restart required; managed `cabby reload` queues it.
+- **Application:** live update after valid automatic/manual reload; lock and launcher use the next opening.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
 ### `font_size`
@@ -113,7 +113,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** 10..32 logical pixels; at least 8 smaller than bar_height.
 - **Example:** `font_size = 14` in [full.toml](../examples/config/full.toml).
 - **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
-- **Application:** UI restart required; managed `cabby reload` queues it.
+- **Application:** live update after valid automatic/manual reload; lock and launcher use the next opening.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
 ### `background`
@@ -123,7 +123,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** Opaque #RRGGBB hexadecimal RGB, case-insensitive digits.
 - **Example:** `background = "#181b22"` in [full.toml](../examples/config/full.toml).
 - **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
-- **Application:** UI restart required; managed `cabby reload` queues it.
+- **Application:** live update after valid automatic/manual reload; lock and launcher use the next opening.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
 ### `foreground`
@@ -133,7 +133,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** Opaque #RRGGBB hexadecimal RGB, case-insensitive digits.
 - **Example:** `foreground = "#e5e9f0"` in [full.toml](../examples/config/full.toml).
 - **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
-- **Application:** UI restart required; managed `cabby reload` queues it.
+- **Application:** live update after valid automatic/manual reload; lock and launcher use the next opening.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
 ### `accent`
@@ -143,7 +143,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** Opaque #RRGGBB hexadecimal RGB, case-insensitive digits.
 - **Example:** `accent = "#88c0d0"` in [full.toml](../examples/config/full.toml).
 - **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
-- **Application:** UI restart required; managed `cabby reload` queues it.
+- **Application:** live update after valid automatic/manual reload; lock and launcher use the next opening.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
 ### `show_window_title`
@@ -153,7 +153,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** true or false; no units.
 - **Example:** `show_window_title = true` in [full.toml](../examples/config/full.toml).
 - **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
-- **Application:** UI restart required; managed `cabby reload` queues it.
+- **Application:** live update after valid automatic/manual reload; lock and launcher use the next opening.
 - **Migration:** the boolean default remains true, but title display now also requires `"title"` in one region. It is omitted from the new default layout.
 
 ### `launcher_width`
@@ -193,7 +193,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** a UTF-8 file path, absolute or relative to the directory containing the selected config file. No tilde/environment expansion. The managed snapshot normalizes paths to absolute paths.
 - **Example:** `wallpaper_image = "assets/sample.png"` in [wallpaper.toml](../examples/config/wallpaper.toml); copy its `assets/` folder too.
 - **Dependencies/interactions:** static PNG/JPEG only; regular files at most 32 MiB, dimensions at most 8192×8192, decoder allocation limit 256 MiB. Transparent pixels reveal wallpaper_color. Image metadata orientation is not applied. No external wallpaper helper or GTK dependency.
-- **Application:** startup/reload validates and decodes images before publishing configuration. Invalid/missing images retain the current config on reload. Image content changes at the same path are detected by reload even when TOML is unchanged; successful changes restart the shared desktop host (wallpaper and bar). The managed coordinator watches both this config and the active image path. Concurrent file edits after validation can still fail component startup; replace image files atomically.
+- **Application:** startup/reload validates and decodes images before publishing configuration. Invalid/missing images retain the current config on reload. Image content changes at the same path are detected by reload even when TOML is unchanged; successful changes replace the wallpaper in place. The managed coordinator watches both this config and the active image path. Concurrent decode failures retain the displayed image; replace image files atomically.
 - **Migration:** new optional setting; omission produces a solid background. No automatic import of another wallpaper tool's settings.
 
 ### `wallpaper_color`
@@ -203,7 +203,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** opaque `#RRGGBB` RGB with case-insensitive hexadecimal digits, no units.
 - **Example:** `wallpaper_color = "#101820"` in [wallpaper.toml](../examples/config/wallpaper.toml).
 - **Dependencies/interactions:** independent of UI theme background; applies on every output with either renderer.
-- **Application:** desktop-host restart (wallpaper and bar) on managed reload; direct invocation reads at startup.
+- **Application:** live update on config reload.
 - **Migration:** new optional setting.
 
 ### `wallpaper_mode`
@@ -213,7 +213,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** `"fill"` preserves aspect ratio and crops; `"fit"` preserves the complete image with color borders; `"stretch"` changes aspect ratio to fill; `"center"` centers at native image dimensions interpreted as logical pixels and clips overflow.
 - **Example:** `wallpaper_mode = "fit"`; [center](../examples/config/wallpaper-center.toml) and [stretch](../examples/config/wallpaper-stretch.toml) alternatives are provided.
 - **Dependencies/interactions:** ignored for an empty image. Output scaling determines physical pixel dimensions. Tiling, slideshows, and per-output image overrides are not implemented.
-- **Application:** desktop-host restart (wallpaper and bar) on managed reload; no changes to compositor output configuration.
+- **Application:** live update on config reload; no changes to compositor output configuration.
 - **Migration:** new optional setting.
 
 ## Keeping this reference complete
@@ -224,21 +224,21 @@ The configuration type and its setting-key metadata come from the same Rust decl
 
 The notification UI uses `config.toml` and the existing `renderer`, `font_size`, `background`, `foreground`, and `accent` settings with their documented types, defaults, ranges, and examples. `bar_position` and `bar_height` also determine notification top clearance and available vertical space. No separate notification settings are supported. All outputs share the theme; card placement and retention limits are fixed policies documented in [notifications.md](notifications.md).
 
-Managed reload now queues a notification-service restart for any accepted changed configuration or wallpaper asset, alongside the shared desktop-host restart. This applies even when the changed key does not affect notifications. A restart discards active and queued notifications because there is no history. Invalid or unchanged reloads leave notifications intact; an open launcher still uses its startup snapshot. Direct `cabby notifications --config PATH` reads settings at startup and needs a restart for changes. Existing configurations remain valid; no key migration is required. New installations of the unit set start the notification owner with the shell, so an already-running notification daemon causes a reported ownership conflict rather than replacement.
+Notification colors, body typography and geometry update in place. Ordinary config or wallpaper changes preserve active/queued notifications and D-Bus ownership. Renderer changes require a restart and discard in-memory notifications. Direct invocation watches its config file. Existing configurations require no key migration; an existing notification owner still causes a reported conflict rather than replacement.
 
 ## Desktop plugin host migration
 
-The managed desktop now runs bar and wallpaper together in `cabby-ui.service`. All existing keys, defaults, paths, and validation rules remain the same. `cabby restart-ui` restarts both plugins; any accepted changed configuration or wallpaper asset restarts the desktop and notifications. Invalid/unchanged reloads preserve both. The old separate wallpaper unit is removed; manually installed units need the [service migration](services.md#desktop-host-migration). Standalone `cabby ui` and `cabby wallpaper` still read configuration at startup, while `cabby desktop` runs both.
+Bar and wallpaper share `cabby-ui.service`. `cabby restart-ui` explicitly restarts both, while ordinary automatic/manual reload applies changes in place. The old separate wallpaper unit remains removed; see [service migration](services.md#desktop-host-migration). Standalone desktop/bar/wallpaper hosts watch their selected config file.
 
 ## Audio panel interactions
 
-The `"audio"` widget (included by default) opens an on-demand panel in the desktop host. It shares `config.toml` keys `renderer`, `font_size`, `background`, `foreground`, and `accent`; `bar_height` and `bar_position` determine clearance at the top/bottom edge. No audio-specific TOML keys or defaults are added. Panel headings use fixed sizes; its scrollable area is bounded to 440×500 logical pixels and available output dimensions. These layout/theme changes apply after desktop restart, including managed reload; an open panel closes on that restart. Device defaults, volume, and mute are runtime actions delegated to the audio server, whose persistence policy applies. See [audio.md](audio.md) for ranges, interactions, and lifecycle. Existing configuration files need no migration.
+The `"audio"` widget opens the audio panel. Shared colors and body typography update in place; headings use fixed sizes and button labels use the startup text size. Panel geometry follows bar/output settings; renderer changes require restart. Ordinary reload preserves the panel and operations. Runtime device controls are described in [audio.md](audio.md). No audio-specific settings are added.
 
 
 ## Bluetooth panel interactions
 
-The Bluetooth panel shares `config.toml` keys `renderer`, `font_size`, `background`, `foreground`, and `accent`, with `bar_height`/`bar_position` controlling edge clearance. Its headings and maximum dimensions follow Audio; lists scroll. There are no Bluetooth-specific keys or default changes. Shared theme/layout changes require desktop restart, including managed reload. Restart/reload closes the panel and cancels its pending pairing/discovery. Audio and Bluetooth use one panel slot, so opening either closes the other and its backend subscription. BlueZ owns persistence of device operations. Existing files need no migration. See [bluetooth.md](bluetooth.md) for runtime control ranges, dependencies and deadlines.
+Bluetooth uses the same shared appearance and panel geometry as audio. Ordinary reload preserves pairing and discovery; renderer changes or explicit desktop restart close the panel and cancel its interaction. No Bluetooth-specific settings are added. See [bluetooth.md](bluetooth.md).
 
-Valid changed reloads reset the affected units’ start counters before `try-restart`, so repeated deliberate saves do not exhaust crash recovery. Stopped components stay stopped; repeated crashes without a config change remain bounded.
+Renderer changes reset start counters before restarting active components. Other changes do not restart processes. Stopped components stay stopped; automatic crash recovery remains bounded.
 
-The [system tray](tray.md) shares the desktop host, font/colors and reload policy. Reload closes an open tray menu and reconnects item ownership; there are no tray-specific keys.
+The [system tray](tray.md) shares desktop appearance. Ordinary reload preserves open menus and item ownership; renderer changes require a desktop restart. No tray-specific settings are added.

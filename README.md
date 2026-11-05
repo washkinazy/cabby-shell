@@ -88,7 +88,7 @@ A proposed starting workflow is to choose a capture target, capture it, preview 
 
 Run `just deps` once to install Fedora dependencies, including Rust/Cargo and native development headers. After applying the local dotfiles setup, run `just install` to build/install Cabby, reload user units, and validate configuration. Use `just build` to build only.
 
-The coordinator automatically reloads valid config and active wallpaper-file changes; invalid edits preserve the previous configuration. `cabby reload` remains available for immediate validation.
+The coordinator automatically reloads valid config and active wallpaper-file changes; invalid edits preserve the previous configuration. Ordinary reloads preserve panels and notifications; only renderer changes restart these processes. `cabby reload` remains available for immediate validation.
 
 A [system tray](docs/tray.md) now hosts StatusNotifier items and application menus in the desktop process.
 

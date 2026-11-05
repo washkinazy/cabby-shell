@@ -2,7 +2,7 @@
 
 ## Scope
 
-The built-in Bluetooth button opens a device panel in the desktop host. It lists adapters and known/discovered devices, controls adapter power, searches for devices, pairs, connects/disconnects, and forgets devices after a confirmation. Audio and Bluetooth share one panel slot: opening either closes the other. Close, Escape, output removal, desktop restart, or changed configuration reload also closes the panel.
+The built-in Bluetooth button opens a device panel in the desktop host. It lists adapters and known/discovered devices, controls adapter power, searches for devices, pairs, connects/disconnects, and forgets devices after a confirmation. Audio and Bluetooth share one panel slot: opening either closes the other. Close, Escape, output removal, desktop restart, or renderer change also closes the panel. Ordinary configuration reload preserves it.
 
 Pairing supports numeric comparison, PIN entry (1–16 ASCII letters/digits), passkey entry (up to six digits, 0–999999), display instructions for keyboards, and explicit authorization. Compare displayed codes before choosing **Codes match**. **Cancel pairing** rejects a pending prompt and cancels the pairing attempt. Input is masked, retained only while needed, and cleared on prompt changes. This is an ordinary Bluetooth pairing agent, not a Polkit agent.
 
@@ -33,3 +33,5 @@ Private dbus-daemon fixtures cover discovery start/stop/expiry, adapter power, p
 The nested compositor probe starts a private BlueZ fixture, opens the real panel, starts discovery, shows a pending pairing confirmation, checks keyboard focus and rendered pixels, then dismisses the panel and verifies agent/discovery cleanup while the desktop remains alive. Its explicit private bus and disposable-display guards are test-only; production uses the system bus. The fixture is built separately as a test example and adds no production executable or service.
 
 Physical adapters/devices, real pairing/connect behavior, policy/rfkill combinations, physical hotplug, pointer/key delivery, focus restoration and multiple physical outputs remain unverified. Automated tests never mutate real Bluetooth state. Synthetic success is not a claim of hardware compatibility.
+
+Ordinary configuration reload now updates the existing host in place and preserves its active UI state. Renderer changes still restart it. See [configuration](configuration.md) for the current reload contract.

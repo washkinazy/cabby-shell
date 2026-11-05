@@ -2,7 +2,7 @@
 use cabby_tray::{Command, Handle, Service, State, Token};
 use iced::futures::SinkExt;
 use iced::widget::{
-    button, column, container, image, mouse_area, row, rule, scrollable, svg, text, tooltip,
+    button, column, container, image, mouse_area, row, rule, scrollable, svg, tooltip,
 };
 use iced::{Element, Length, Subscription};
 use std::{
@@ -130,16 +130,18 @@ impl Tray {
             }
         }
     }
-    pub fn view(&self) -> Element<'_, Message> {
+    pub fn view(&self, config: &cabby_config::Config) -> Element<'_, Message> {
         let mut icons = row![].spacing(4).align_y(iced::Alignment::Center);
         if !self.state.available {
-            return text("Tray unavailable").into();
+            return crate::ui::body(config, "Tray unavailable").into();
         }
         for item in self.state.items.iter().filter(|i| !i.passive) {
             let content: Element<'_, Message> = match self.icons.get(&item.token) {
                 Some(Icon::Raster(handle)) => image(handle.clone()).width(22).height(22).into(),
                 Some(Icon::Vector(handle)) => svg(handle.clone()).width(22).height(22).into(),
-                None => text(item.title.chars().take(3).collect::<String>()).into(),
+                None => {
+                    crate::ui::body(config, item.title.chars().take(3).collect::<String>()).into()
+                }
             };
             let token = item.token.clone();
             let button = button(content)
@@ -153,16 +155,20 @@ impl Tray {
             let mouse = mouse_area(button)
                 .on_right_press(Message::Action(Command::Menu(token.clone(), 0)))
                 .on_middle_press(Message::Action(Command::Secondary(token)));
-            icons = icons.push(tooltip(mouse, text(&item.title), tooltip::Position::Bottom));
+            icons = icons.push(tooltip(
+                mouse,
+                crate::ui::body(config, &item.title),
+                tooltip::Position::Bottom,
+            ));
         }
         if self.state.failed {
-            icons = icons.push(text("Tray action failed"));
+            icons = icons.push(crate::ui::body(config, "Tray action failed"));
         }
         icons.into()
     }
-    pub fn menu_view(&self) -> Element<'_, Message> {
+    pub fn menu_view(&self, config: &cabby_config::Config) -> Element<'_, Message> {
         let Some(menu) = &self.state.menu else {
-            return text("Menu unavailable").into();
+            return crate::ui::body(config, "Menu unavailable").into();
         };
         let mut entries = column![].spacing(4);
         if menu.parent != 0 {
@@ -185,7 +191,7 @@ impl Tray {
                 entry.label,
                 if entry.submenu { "  ›" } else { "" }
             );
-            let mut b = button(text(label)).width(Length::Fill);
+            let mut b = button(crate::ui::body(config, label)).width(Length::Fill);
             if entry.enabled {
                 b = b.on_press(Message::Action(Command::Click(
                     menu.token.clone(),
@@ -195,12 +201,15 @@ impl Tray {
             entries = entries.push(b);
         }
         if self.state.failed {
-            entries = entries.push(text("Application did not accept the action"));
+            entries = entries.push(crate::ui::body(
+                config,
+                "Application did not accept the action",
+            ));
         }
         container(
             column![
                 row![
-                    text("Application menu").width(Length::Fill),
+                    crate::ui::body(config, "Application menu").width(Length::Fill),
                     button("Close").on_press(Message::Close)
                 ]
                 .spacing(8),

@@ -69,3 +69,11 @@ pub async fn command(args: Vec<std::ffi::OsString>) -> Result<(), String> {
         Err("Could not launch: check the application, terminal command, and Cabby session".into())
     }
 }
+
+/// Shared live typography for feature content; headings may override the size.
+pub fn body<'a>(
+    config: &Config,
+    value: impl iced::widget::text::IntoFragment<'a>,
+) -> iced::widget::Text<'a> {
+    iced::widget::text(value).size(f32::from(config.font_size))
+}

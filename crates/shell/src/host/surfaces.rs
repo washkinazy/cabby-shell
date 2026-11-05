@@ -65,6 +65,7 @@ struct DevicePanel {
 }
 struct Desktop {
     config: Config,
+    config_path: Option<std::path::PathBuf>,
     shell: ShellReceiver,
     bar: Option<bar::Bar>,
     wallpaper: Option<wallpaper::Wallpaper>,
@@ -89,6 +90,7 @@ enum Message {
     ProbeClose(window::Id),
     Shell(ShellEvent),
     Resized,
+    Config(super::live_config::Update),
 }
 
 pub(super) fn run(
@@ -125,6 +127,7 @@ fn run_with_panels(
     bluetooth_fixture: Option<cabby_bluetooth::Endpoint>,
     tray_probe: bool,
 ) -> iced_exwlshell::Result {
+    let config_path = context.source.path;
     let config = context.config;
     let wallpaper = with_wallpaper
         .then(|| wallpaper::Wallpaper::new(config.clone()))
@@ -138,6 +141,7 @@ fn run_with_panels(
     daemon(
         move || Desktop {
             config: config.clone(),
+            config_path: Some(config_path.clone()),
             shell: receiver.clone(),
             bar: with_bar.then(|| bar::Bar::new(config.clone())),
             wallpaper: wallpaper.clone(),
@@ -219,6 +223,13 @@ fn settings(kind: Kind, output: u32, config: &Config) -> NewLayerShellSettings {
 impl Desktop {
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
+            self.config_path
+                .as_ref()
+                .map(|p| {
+                    super::live_config::subscription(p.clone(), self.wallpaper.is_some())
+                        .map(Message::Config)
+                })
+                .unwrap_or_else(Subscription::none),
             self.shell.listen().map(Message::Shell),
             self.panel
                 .as_ref()
@@ -254,6 +265,41 @@ impl Desktop {
     }
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Config(update) if update.config.renderer == self.config.renderer => {
+                let changes = cabby_config::changes::Changes::between(&self.config, &update.config);
+                if let Some(bar) = &mut self.bar {
+                    bar.configure(update.config.clone());
+                }
+                if self.wallpaper.is_some() {
+                    self.wallpaper = Some(wallpaper::Wallpaper::from_asset(
+                        update.config.clone(),
+                        update.asset.as_deref(),
+                    ));
+                }
+                self.config = update.config;
+                if changes.bar_geometry {
+                    return Task::batch(
+                        self.surfaces
+                            .windows
+                            .iter()
+                            .filter(|(_, (_, kind))| *kind == Kind::Bar)
+                            .flat_map(|(id, (output, kind))| {
+                                let settings = settings(*kind, *output, &self.config);
+                                [
+                                    Task::done(Message::LayoutChange {
+                                        id: *id,
+                                        anchor: settings.anchor,
+                                        size: settings.size,
+                                    }),
+                                    Task::done(Message::ExclusiveZoneChange {
+                                        id: *id,
+                                        zone_size: i32::from(self.config.bar_height),
+                                    }),
+                                ]
+                            }),
+                    );
+                }
+            }
             Message::Tray(id, message)
                 if self
                     .panel
@@ -555,13 +601,13 @@ impl Desktop {
                     .as_ref()
                     .expect("tray belongs to bar")
                     .tray
-                    .menu_view()
+                    .menu_view(&self.config)
                     .map(move |m| Message::Tray(id, m)),
                 PanelPlugin::Audio(plugin) => plugin
-                    .view()
+                    .view(&self.config)
                     .map(move |message| Message::Audio(id, message)),
                 PanelPlugin::Bluetooth(plugin) => plugin
-                    .view()
+                    .view(&self.config)
                     .map(move |message| Message::Bluetooth(id, message)),
             };
         }
@@ -599,6 +645,7 @@ mod tests {
     fn audio_panel_toggle_and_stale_callbacks_preserve_desktop_plugins() {
         let mut state = Desktop {
             config: Config::default(),
+            config_path: None,
             shell: shell::channel().1,
             bar: Some(bar::Bar::new(Config::default())),
             wallpaper: None,
@@ -614,6 +661,17 @@ mod tests {
         };
         let _ = state.toggle_panel(false);
         let first = state.panel.as_ref().unwrap().id;
+        let config = Config {
+            bar_height: 48,
+            background: "#112233".into(),
+            ..state.config.clone()
+        };
+        let _ = state.update(Message::Config(super::super::live_config::Update {
+            config,
+            asset: None,
+        }));
+        assert_eq!(state.panel.as_ref().unwrap().id, first);
+        assert_eq!(state.config.bar_height, 48);
         let _ = state.toggle_panel(false);
         assert!(state.panel.is_none());
         let _ = state.toggle_panel(false);

@@ -67,6 +67,9 @@ impl Bar {
             action_failed: false,
         }
     }
+    pub(crate) fn configure(&mut self, config: Config) {
+        self.config = config;
+    }
     pub(crate) fn subscription(&self) -> Subscription<Message> {
         let mut subscriptions = Vec::new();
         if [BarWidget::Workspaces, BarWidget::Title, BarWidget::Status]
@@ -145,7 +148,12 @@ impl Bar {
                 if workspace.is_urgent { "! " } else { "" },
                 niri::label(&name, 24)
             );
-            let mut item = button(text(label).line_height(1.0)).padding([2, 8]);
+            let mut item = button(
+                text(label)
+                    .size(f32::from(self.config.font_size))
+                    .line_height(1.0),
+            )
+            .padding([2, 8]);
             if !self.action_pending {
                 item = item.on_press(Message::Focus(workspace.id));
             }
@@ -164,6 +172,7 @@ impl Bar {
     fn widget(&self, widget: BarWidget, output: &str) -> Element<'_, Message> {
         let label = |value: String| {
             text(value)
+                .size(f32::from(self.config.font_size))
                 .wrapping(iced::widget::text::Wrapping::None)
                 .line_height(1.0)
         };
@@ -185,7 +194,7 @@ impl Bar {
                 tooltip::Position::Bottom,
             )
             .into(),
-            BarWidget::Tray => self.tray.view().map(Message::Tray),
+            BarWidget::Tray => self.tray.view(&self.config).map(Message::Tray),
             BarWidget::Title => label(if self.config.show_window_title {
                 self.model.title(output)
             } else {

@@ -1,7 +1,7 @@
 //! On-demand audio state and controls; all helpers belong to this subscription.
 use cabby_audio::{Client, Command, Error, Kind, Operation, Snapshot};
 use iced::futures::SinkExt;
-use iced::widget::{button, column, container, row, scrollable, text};
+use iced::widget::{button, column, container, row, scrollable};
 use iced::{Element, Length, Subscription};
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -174,26 +174,31 @@ impl Audio {
             self.error = Some(Error::Unavailable);
         }
     }
-    pub(crate) fn view(&self) -> Element<'_, Message> {
+    pub(crate) fn view(&self, config: &cabby_config::Config) -> Element<'_, Message> {
         let mut contents = column![
             row![
-                text("Audio").size(24).width(Length::Fill),
+                crate::ui::body(config, "Audio")
+                    .size(24)
+                    .width(Length::Fill),
                 button("Close").on_press(Message::Close)
             ],
-            text("Existing apps may keep their current device."),
+            crate::ui::body(config, "Existing apps may keep their current device."),
         ]
         .spacing(12);
         if let Some(error) = self.error {
-            contents = contents.push(text(error.to_string()));
+            contents = contents.push(crate::ui::body(config, error.to_string()));
         }
         if let Some(snapshot) = &self.snapshot {
             for kind in [Kind::Output, Kind::Input] {
                 contents = contents.push(
-                    text(if kind == Kind::Output {
-                        "Output"
-                    } else {
-                        "Input"
-                    })
+                    crate::ui::body(
+                        config,
+                        if kind == Kind::Output {
+                            "Output"
+                        } else {
+                            "Input"
+                        },
+                    )
                     .size(20),
                 );
                 let mut found = false;
@@ -221,7 +226,7 @@ impl Audio {
                     };
                     contents = contents.push(
                         column![
-                            text(label),
+                            crate::ui::body(config, label),
                             row![
                                 action("Use", Operation::Default, !snapshot.is_default(device)),
                                 action(
@@ -236,7 +241,7 @@ impl Audio {
                                     ),
                                     device.percent > 0
                                 ),
-                                text(format!("{}%", device.percent)),
+                                crate::ui::body(config, format!("{}%", device.percent)),
                                 action(
                                     "+",
                                     Operation::Volume(
@@ -252,11 +257,11 @@ impl Audio {
                     );
                 }
                 if !found {
-                    contents = contents.push(text("No devices available"));
+                    contents = contents.push(crate::ui::body(config, "No devices available"));
                 }
             }
         } else {
-            contents = contents.push(text("Connecting to audio…"));
+            contents = contents.push(crate::ui::body(config, "Connecting to audio…"));
         }
         let refresh = button(if self.pending {
             "Working…"

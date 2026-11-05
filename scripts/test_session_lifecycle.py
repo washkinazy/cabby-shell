@@ -120,12 +120,12 @@ def main():
         old_ui = pid('ui')
         old_notifications = pid('notifications')
         reloaded = request('reload')
-        assert reloaded['ui_restart_queued'] and reloaded['wallpaper_restart_queued'] is None and reloaded['notifications_restart_queued']
-        wait_for(lambda: active('notifications') and pid('notifications') != old_notifications, 'notification reload')
-        wait_for(lambda: active('ui') and pid('ui') != old_ui, 'UI restart after valid reload')
+        assert reloaded['live_update'] and reloaded['ui_restart_queued'] is None and reloaded['notifications_restart_queued'] is None
+        assert pid('notifications') == old_notifications
+        assert pid('ui') == old_ui
         assert request('status')['config']['bar_height'] == 64
         assert not request('reload')['changed']
-        results.append('valid reload publishes and restarts UI; unchanged reload is no-op')
+        results.append('valid reload publishes without restarting UI; unchanged reload is no-op')
         ctl('reset-failed', names['ui'])
         old_ui = pid('ui')
         ctl('kill', '--kill-whom=main', '--signal=KILL', names['ui'])
@@ -166,9 +166,9 @@ def main():
         old_notifications = pid('notifications')
         config.write_text('renderer = "software"\nbar_height = 64\nwallpaper_color = "#19334d"\n')
         response = request('reload')
-        assert response['ui_restart_queued'] and response['wallpaper_restart_queued'] is None
-        wait_for(lambda: active('ui') and pid('ui') != old_ui, 'desktop wallpaper reload')
-        wait_for(lambda: active('notifications') and pid('notifications') != old_notifications, 'notification wallpaper reload')
+        assert response['live_update'] and response['ui_restart_queued'] is None
+        assert pid('ui') == old_ui
+        assert pid('notifications') == old_notifications
         stable_ui = pid('ui')
         config.write_text('wallpaper_image = "/nonexistent/cabby-fixture.png"\n')
         assert not request('reload', check=False)['ok']
@@ -176,14 +176,14 @@ def main():
         assert request('status')['config']['wallpaper_color'] == '#19334d'
         config.write_text('renderer = "software"\nbar_height = 64\nwallpaper_color = "#19334d"\n')
         assert not request('reload')['changed']
-        results.append('wallpaper-only changes restart shared desktop; invalid assets preserve it')
+        results.append('wallpaper-only changes preserve desktop and notifications; invalid assets preserve it')
         ctl('reset-failed', names['ui'], names['notifications'])
         old_ui = pid('ui')
         temporary_config = work / 'config-save.tmp'
         temporary_config.write_text('renderer = "software"\nbar_height = 72\n')
         temporary_config.replace(config)
         wait_for(lambda: request('status')['config']['bar_height'] == 72, 'automatic config publication')
-        wait_for(lambda: active('ui') and pid('ui') != old_ui, 'automatic UI restart')
+        assert pid('ui') == old_ui
         config.write_text('bar_height = 0\n')
         time.sleep(0.7)
         assert request('status')['config']['bar_height'] == 72
@@ -192,8 +192,8 @@ def main():
             old_ui = pid('ui')
             config.write_text(f'renderer = "software"\nbar_height = {height}\n')
             wait_for(lambda: request('status')['config']['bar_height'] == height, 'successive save')
-            wait_for(lambda: active('ui') and pid('ui') != old_ui, 'successive restart')
-        results.append('automatic atomic/repeated saves restart UI without exhausting crash budget; invalid saves preserve config')
+            assert pid('ui') == old_ui
+        results.append('automatic atomic/repeated saves preserve UI without consuming crash budget; invalid saves preserve config')
 
         ctl('reset-failed', names['notifications'])
         previous_notification = pid('notifications')

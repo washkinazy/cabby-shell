@@ -3,7 +3,7 @@ use cabby_bluetooth::{Command, Endpoint, PromptKind, Reply, State};
 use iced::{
     Element, Length, Subscription,
     futures::SinkExt,
-    widget::{button, column, container, row, scrollable, text, text_input},
+    widget::{button, column, container, row, scrollable, text_input},
 };
 use tokio::sync::{mpsc, watch};
 #[derive(Clone)]
@@ -137,7 +137,7 @@ impl Bluetooth {
             self.state.error = Some(cabby_bluetooth::Error::Unavailable);
         }
     }
-    pub(crate) fn view(&self) -> Element<'_, Message> {
+    pub(crate) fn view(&self, config: &cabby_config::Config) -> Element<'_, Message> {
         let enabled = self.state.available && !self.state.busy && !self.submitted;
         let action = |label: &'static str, command, allow: bool| {
             let b = button(label);
@@ -148,7 +148,9 @@ impl Bluetooth {
             }
         };
         let header = row![
-            text("Bluetooth").size(24).width(Length::Fill),
+            crate::ui::body(config, "Bluetooth")
+                .size(24)
+                .width(Length::Fill),
             button("Close").on_press(Message::Close)
         ];
         let mut contents = column![].spacing(12).padding(iced::Padding {
@@ -156,7 +158,7 @@ impl Bluetooth {
             ..Default::default()
         });
         if let Some(error) = self.state.error {
-            contents = contents.push(text(error.to_string()));
+            contents = contents.push(crate::ui::body(config, error.to_string()));
         }
         if let Some(prompt) = &self.state.prompt {
             let name = self
@@ -166,11 +168,14 @@ impl Bluetooth {
                 .find(|d| d.path == prompt.device)
                 .map(|d| d.name.as_str())
                 .unwrap_or("Device");
-            contents = contents.push(text(format!("Pair with {name}")).size(20));
+            contents = contents.push(crate::ui::body(config, format!("Pair with {name}")).size(20));
             match &prompt.kind {
                 PromptKind::Confirm(key) => {
                     contents = contents
-                        .push(text(format!("Does {key:06} match the code on the device?")))
+                        .push(crate::ui::body(
+                            config,
+                            format!("Does {key:06} match the code on the device?"),
+                        ))
                         .push(
                             button("Codes match").on_press(Message::Action(Command::Reply(
                                 prompt.id,
@@ -179,12 +184,16 @@ impl Bluetooth {
                         )
                 }
                 PromptKind::Authorize => {
-                    contents = contents.push(text("Allow this pairing request?")).push(
-                        button("Allow pairing")
-                            .on_press(Message::Action(Command::Reply(prompt.id, Reply::Accept))),
-                    )
+                    contents =
+                        contents
+                            .push(crate::ui::body(config, "Allow this pairing request?"))
+                            .push(button("Allow pairing").on_press(Message::Action(
+                                Command::Reply(prompt.id, Reply::Accept),
+                            )))
                 }
-                PromptKind::Display(value) => contents = contents.push(text(value)),
+                PromptKind::Display(value) => {
+                    contents = contents.push(crate::ui::body(config, value))
+                }
                 PromptKind::Pin | PromptKind::Passkey => {
                     let placeholder = if matches!(prompt.kind, PromptKind::Pin) {
                         "PIN (1–16 letters or digits)"
@@ -208,17 +217,17 @@ impl Bluetooth {
         }
         if self.state.pairing.is_some() {
             contents = contents
-                .push(text("Pairing…"))
+                .push(crate::ui::body(config, "Pairing…"))
                 .push(button("Cancel pairing").on_press(Message::Action(Command::CancelPair)));
         }
         if let Some(path) = &self.remove
             && let Some(device) = self.state.devices.iter().find(|d| &d.path == path)
         {
             contents = contents
-                .push(text(format!(
-                    "Forget {} and remove its pairing information?",
-                    device.name
-                )))
+                .push(crate::ui::body(
+                    config,
+                    format!("Forget {} and remove its pairing information?", device.name),
+                ))
                 .push(
                     row![
                         button("Forget device").on_press(Message::ConfirmRemove),
@@ -228,33 +237,35 @@ impl Bluetooth {
                 );
         }
         if !self.state.available {
-            contents = contents.push(text("Waiting for Bluetooth…"));
+            contents = contents.push(crate::ui::body(config, "Waiting for Bluetooth…"));
         } else if self.state.adapters.is_empty() {
-            contents = contents.push(text("No Bluetooth adapters available"));
+            contents = contents.push(crate::ui::body(config, "No Bluetooth adapters available"));
         }
         for adapter in &self.state.adapters {
-            contents = contents.push(text(&adapter.name).size(20)).push(
-                row![
-                    action(
-                        if adapter.powered {
-                            "Power off"
-                        } else {
-                            "Power on"
-                        },
-                        Command::Power(adapter.path.clone(), !adapter.powered),
-                        true
-                    ),
-                    action(
-                        "Find devices",
-                        Command::Scan(adapter.path.clone()),
-                        adapter.powered && self.state.scanning.is_none()
-                    ),
-                ]
-                .spacing(8),
-            );
+            contents = contents
+                .push(crate::ui::body(config, &adapter.name).size(20))
+                .push(
+                    row![
+                        action(
+                            if adapter.powered {
+                                "Power off"
+                            } else {
+                                "Power on"
+                            },
+                            Command::Power(adapter.path.clone(), !adapter.powered),
+                            true
+                        ),
+                        action(
+                            "Find devices",
+                            Command::Scan(adapter.path.clone()),
+                            adapter.powered && self.state.scanning.is_none()
+                        ),
+                    ]
+                    .spacing(8),
+                );
             if self.state.scanning.as_deref() == Some(&adapter.path) {
                 contents = contents
-                    .push(text("Searching for up to 60 seconds…"))
+                    .push(crate::ui::body(config, "Searching for up to 60 seconds…"))
                     .push(action("Stop searching", Command::StopScan, true));
             }
             let mut count = 0;
@@ -300,11 +311,17 @@ impl Bluetooth {
                     remove
                 });
                 contents = contents
-                    .push(text(format!("{} · {status}", device.name)))
+                    .push(crate::ui::body(
+                        config,
+                        format!("{} · {status}", device.name),
+                    ))
                     .push(controls);
             }
             if count == 0 {
-                contents = contents.push(text("No known devices. Use Find devices to search."));
+                contents = contents.push(crate::ui::body(
+                    config,
+                    "No known devices. Use Find devices to search.",
+                ));
             }
         }
         contents = contents.push(action(
