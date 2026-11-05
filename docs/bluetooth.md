@@ -6,7 +6,7 @@ The built-in Bluetooth button opens a device panel in the desktop host. It lists
 
 Pairing supports numeric comparison, PIN entry (1–16 ASCII letters/digits), passkey entry (up to six digits, 0–999999), display instructions for keyboards, and explicit authorization. Compare displayed codes before choosing **Codes match**. **Cancel pairing** rejects a pending prompt and cancels the pairing attempt. Input is masked, retained only while needed, and cleared on prompt changes. This is an ordinary Bluetooth pairing agent, not a Polkit agent.
 
-Pairing does not automatically trust a device or connect every profile. Use **Connect** after pairing when needed; BlueZ chooses supported profiles. Trust/block controls, incoming pairing outside a Cabby-initiated operation, discoverability, custom profiles, file transfers, battery indicators, and adapter aliases are outside the baseline. Cabby does not modify discoverable/pairable settings, install authorization policy, or take over the system default agent. Existing BlueZ preferences and bonds remain owned by BlueZ.
+Pairing does not automatically trust a device or connect every profile. Use **Connect** after pairing when needed; BlueZ chooses supported profiles. Trust/block controls, incoming pairing outside a Cabby-initiated operation, discoverability, custom profiles, file transfers and adapter aliases are outside the baseline. Cabby does not modify discoverable/pairable settings, install authorization policy, or take over the system default agent. Existing BlueZ preferences and bonds remain owned by BlueZ.
 
 ## Protocol and ownership
 
@@ -35,3 +35,9 @@ The nested compositor probe starts a private BlueZ fixture, opens the real panel
 Physical adapters/devices, real pairing/connect behavior, policy/rfkill combinations, physical hotplug, pointer/key delivery, focus restoration and multiple physical outputs remain unverified. Automated tests never mutate real Bluetooth state. Synthetic success is not a claim of hardware compatibility.
 
 Ordinary configuration reload now updates the existing host in place and preserves its active UI state. Renderer changes still restart it. See [configuration](configuration.md) for the current reload contract.
+
+## Passive status and device ordering
+
+The desktop observes BlueZ while the Bluetooth contribution is configured. The bar shows unavailable, powered off, or the connected-device count. This read-only connection registers no agent, never starts discovery and rejects control commands. Opening the panel replaces it with an interactive connection; dismissal replaces that connection with passive observation, releasing its agent, discovery and pairing lease. Generation-qualified events prevent the previous connection from updating a replacement. Omitting the contribution with no open panel stops observation.
+
+Devices are grouped as Connected, Paired and Available. Within each group first-seen ordering is retained through property/name/battery updates; removed devices leave that ordering. BlueZ Battery1 percentages are displayed when available (0–100%); absence is not interpreted as zero. No battery polling or extra process is added. Private fixtures verify passive isolation and battery parsing; actual device reporting remains unverified.

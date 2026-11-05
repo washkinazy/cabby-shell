@@ -172,6 +172,14 @@ impl Device {
         self.0.lock().unwrap().connected
     }
 }
+struct Battery;
+#[zbus::interface(name = "org.bluez.Battery1")]
+impl Battery {
+    #[zbus(property)]
+    fn percentage(&self) -> u8 {
+        83
+    }
+}
 struct Probe(Shared);
 #[zbus::interface(name = "org.cabby.Test")]
 impl Probe {
@@ -207,6 +215,8 @@ impl Fixture {
             .serve_at("/org/bluez", Manager(data.clone()))
             .unwrap()
             .serve_at(ADAPTER, Adapter(data.clone()))
+            .unwrap()
+            .serve_at(DEVICE, Battery)
             .unwrap()
             .serve_at(DEVICE, Device(data.clone()))
             .unwrap()

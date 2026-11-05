@@ -23,8 +23,8 @@ impl std::fmt::Debug for Message {
         f.write_str("BluetoothMessage(redacted)")
     }
 }
-fn service(endpoint: &Endpoint) -> impl iced::futures::Stream<Item = Message> + use<> {
-    let endpoint = endpoint.clone();
+fn service(key: &(Endpoint, bool, u64)) -> impl iced::futures::Stream<Item = Message> + use<> {
+    let (endpoint, interactive, _) = key.clone();
     iced::stream::channel(
         1,
         move |mut output: iced::futures::channel::mpsc::Sender<Message>| async move {
@@ -33,7 +33,7 @@ fn service(endpoint: &Endpoint) -> impl iced::futures::Stream<Item = Message> + 
             if output.send(Message::Ready(sender)).await.is_err() {
                 return;
             }
-            let worker = cabby_bluetooth::run(endpoint, commands, states);
+            let worker = cabby_bluetooth::run_mode(endpoint, commands, states, interactive);
             tokio::pin!(worker);
             loop {
                 tokio::select! {
@@ -55,6 +55,7 @@ pub(crate) struct Bluetooth {
     input: String,
     remove: Option<String>,
     submitted: bool,
+    order: Vec<String>,
 }
 impl Bluetooth {
     pub(crate) fn new(endpoint: Endpoint) -> Self {
@@ -65,15 +66,23 @@ impl Bluetooth {
             input: String::new(),
             remove: None,
             submitted: false,
+            order: Vec::new(),
         }
     }
-    pub(crate) fn subscription(&self) -> Subscription<Message> {
-        Subscription::run_with(self.endpoint.clone(), service)
+    pub(crate) fn subscription(&self, interactive: bool, generation: u64) -> Subscription<Message> {
+        Subscription::run_with((self.endpoint.clone(), interactive, generation), service)
     }
     pub(crate) fn update(&mut self, message: Message) -> bool {
         match message {
             Message::Ready(sender) => self.sender = Some(sender),
             Message::State(state) => {
+                self.order
+                    .retain(|path| state.devices.iter().any(|d| &d.path == path));
+                for d in &state.devices {
+                    if !self.order.contains(&d.path) {
+                        self.order.push(d.path.clone());
+                    }
+                }
                 if state.prompt.as_ref().map(|p| p.id) != self.state.prompt.as_ref().map(|p| p.id) {
                     self.input.clear();
                 }
@@ -125,6 +134,31 @@ impl Bluetooth {
             _ => (),
         }
         false
+    }
+    pub(crate) fn reset_interaction(&mut self) {
+        self.sender = None;
+        self.input.clear();
+        self.remove = None;
+        self.submitted = false;
+        self.state.prompt = None;
+        self.state.pairing = None;
+        self.state.scanning = None;
+        self.state.busy = false;
+        self.state.error = None;
+    }
+    pub(crate) fn label(&self) -> String {
+        if !self.state.available {
+            return "Bluetooth ?".into();
+        }
+        if !self.state.adapters.iter().any(|a| a.powered) {
+            return "Bluetooth off".into();
+        }
+        let connected = self.state.devices.iter().filter(|d| d.connected).count();
+        if connected == 0 {
+            "Bluetooth".into()
+        } else {
+            format!("Bluetooth {connected}")
+        }
     }
     fn send(&mut self, command: Command) {
         if self
@@ -269,12 +303,23 @@ impl Bluetooth {
                     .push(action("Stop searching", Command::StopScan, true));
             }
             let mut count = 0;
-            for device in self
+            let mut devices: Vec<_> = self
                 .state
                 .devices
                 .iter()
                 .filter(|d| d.adapter == adapter.path)
-            {
+                .collect();
+            devices.sort_by_key(|d| (group(d), self.order.iter().position(|p| p == &d.path)));
+            let mut previous_group = None;
+            for device in devices {
+                let current = group(device);
+                if previous_group != Some(current) {
+                    contents = contents.push(
+                        crate::ui::body(config, ["Connected", "Paired", "Available"][current])
+                            .size(18),
+                    );
+                    previous_group = Some(current);
+                }
                 count += 1;
                 let status = if device.connected {
                     "connected"
@@ -313,7 +358,14 @@ impl Bluetooth {
                 contents = contents
                     .push(crate::ui::body(
                         config,
-                        format!("{} · {status}", device.name),
+                        format!(
+                            "{} · {status}{}",
+                            device.name,
+                            device
+                                .battery
+                                .map(|v| format!(" · {v}% battery"))
+                                .unwrap_or_default()
+                        ),
                     ))
                     .push(controls);
             }
@@ -341,6 +393,15 @@ impl Bluetooth {
             .into()
     }
 }
+fn group(device: &cabby_bluetooth::Device) -> usize {
+    if device.connected {
+        0
+    } else if device.paired {
+        1
+    } else {
+        2
+    }
+}
 fn valid_input(kind: &PromptKind, input: &str) -> bool {
     match kind {
         PromptKind::Pin => {
@@ -357,6 +418,37 @@ fn valid_input(kind: &PromptKind, input: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn status_and_first_seen_order_survive_device_updates() {
+        let mut plugin = Bluetooth::new(Endpoint::System);
+        let mut state = State {
+            available: true,
+            adapters: vec![cabby_bluetooth::Adapter {
+                powered: true,
+                ..Default::default()
+            }],
+            devices: vec![
+                cabby_bluetooth::Device {
+                    path: "b".into(),
+                    ..Default::default()
+                },
+                cabby_bluetooth::Device {
+                    path: "a".into(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        plugin.update(Message::State(state.clone()));
+        state.devices.reverse();
+        state.devices[0].connected = true;
+        plugin.update(Message::State(state));
+        assert_eq!(plugin.order, ["b", "a"]);
+        assert_eq!(plugin.label(), "Bluetooth 1");
+        assert_eq!(group(&plugin.state.devices[0]), 0);
+        plugin.reset_interaction();
+        assert_eq!(plugin.label(), "Bluetooth 1");
+    }
     #[test]
     fn pairing_input_and_removal_require_explicit_valid_actions() {
         let mut plugin = Bluetooth::new(Endpoint::System);

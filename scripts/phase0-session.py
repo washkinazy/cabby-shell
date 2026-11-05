@@ -327,17 +327,24 @@ def inside(directory, interactive, renderer):
                     if time.monotonic() > deadline:
                         raise RuntimeError("Audio panel did not dismiss")
                     time.sleep(0.1)
+                # Passive audio observation survives panel dismissal.
                 pids = (audio_fixture / "audio-pids").read_text().splitlines()
-                deadline = time.monotonic() + 3
-                while any(Path("/proc", pid).exists() for pid in pids):
-                    if time.monotonic() > deadline:
-                        raise RuntimeError("Audio helpers survived panel dismissal")
-                    time.sleep(0.05)
+                assert any(Path("/proc", pid).exists() for pid in pids), "Audio status subscription stopped with panel"
                 if bar.poll() is not None:
                     raise RuntimeError("Panel dismissal stopped desktop")
-            # Exercise discovery + a pending pairing prompt against private BlueZ.
+            # Removing the contribution cancels passive audio while the host remains alive.
+            wallpaper_config.write_text(original_config + '\nbar_right = ["network", "bluetooth", "tray"]\n')
+            deadline = time.monotonic() + 5
+            while any(Path("/proc", pid).exists() for pid in pids):
+                if time.monotonic() > deadline:
+                    raise RuntimeError("Audio helpers survived contribution removal")
+                time.sleep(.05)
+            assert bar.poll() is None
+            # Abrupt process exit is covered by the enclosing systemd scope cleanup.
             bar.terminate()
             bar.wait(timeout=5)
+            wallpaper_config.write_text(original_config)
+            # Exercise discovery + a pending pairing prompt against private BlueZ.
             bluetooth_env = dict(os.environ, CABBY_TEST_BLUEZ_BUS=os.environ["DBUS_SESSION_BUS_ADDRESS"])
             with (directory / "bluez-fixture.log").open("w") as fixture_log, (directory / "bluetooth.log").open("w") as bluetooth_log:
                 fixture = subprocess.Popen([ROOT / "target/debug/examples/bluez-fixture"], env=bluetooth_env, stdout=fixture_log, stderr=fixture_log)

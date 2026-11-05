@@ -1,7 +1,7 @@
 //! On-demand audio state and controls; all helpers belong to this subscription.
 use cabby_audio::{Client, Command, Error, Kind, Operation, Snapshot};
 use iced::futures::SinkExt;
-use iced::widget::{button, column, container, row, scrollable};
+use iced::widget::{button, column, container, row, scrollable, slider};
 use iced::{Element, Length, Subscription};
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -17,6 +17,8 @@ pub(crate) enum Message {
     Snapshot(Result<Snapshot, Error>),
     Done(Result<(), Error>),
     Apply(Command),
+    Volume(Kind, String, u8),
+    CommitVolume(Kind, String),
     Refresh,
     Close,
 }
@@ -112,6 +114,7 @@ pub(crate) struct Audio {
     snapshot: Option<Snapshot>,
     pending: bool,
     error: Option<Error>,
+    draft: Option<(Kind, String, u8)>,
 }
 impl Audio {
     pub(crate) fn new(client: Client) -> Self {
@@ -121,6 +124,7 @@ impl Audio {
             snapshot: None,
             pending: false,
             error: None,
+            draft: None,
         }
     }
     pub(crate) fn subscription(&self) -> Subscription<Message> {
@@ -134,9 +138,16 @@ impl Audio {
                 if self.snapshot.is_none() {
                     self.error = None;
                 }
+                self.draft = self.draft.take().filter(|(kind, name, _)| {
+                    snapshot
+                        .devices
+                        .iter()
+                        .any(|d| d.kind == *kind && d.name == *name)
+                });
                 self.snapshot = Some(snapshot);
             }
             Message::Snapshot(Err(error)) => {
+                self.draft = None;
                 self.snapshot = None;
                 self.pending = false;
                 self.error = Some(error);
@@ -145,7 +156,25 @@ impl Audio {
                 self.pending = false;
                 self.error = result.err();
             }
-            Message::Close => return true,
+            Message::Volume(kind, name, value) if !self.pending => {
+                self.draft = Some((kind, name, value.min(100)))
+            }
+            Message::CommitVolume(kind, name) => {
+                if let Some((k, n, value)) = self.draft.take()
+                    && k == kind
+                    && n == name
+                {
+                    return self.update(Message::Apply(Command {
+                        kind,
+                        name,
+                        operation: Operation::Volume(value),
+                    }));
+                }
+            }
+            Message::Close => {
+                self.draft = None;
+                return true;
+            }
             Message::Apply(command) if !self.pending => {
                 if self
                     .snapshot
@@ -161,6 +190,20 @@ impl Audio {
             _ => (),
         }
         false
+    }
+    pub(crate) fn close(&mut self) {
+        self.draft = None;
+    }
+    pub(crate) fn label(&self) -> String {
+        match self.snapshot.as_ref().and_then(|s| {
+            s.devices
+                .iter()
+                .find(|d| d.kind == Kind::Output && s.is_default(d))
+        }) {
+            Some(d) if d.muted => "Audio muted".into(),
+            Some(d) => format!("Audio {}%", d.percent),
+            None => "Audio ?".into(),
+        }
     }
     fn send(&mut self, request: Request) {
         if self
@@ -220,13 +263,25 @@ impl Audio {
                         }
                     };
                     let label = if snapshot.is_default(device) {
-                        format!("{} · default", device.description)
+                        format!("✓ {} · selected", device.description)
                     } else {
                         device.description.clone()
                     };
+                    let value = self
+                        .draft
+                        .as_ref()
+                        .filter(|(k, n, _)| *k == kind && n == &device.name)
+                        .map(|(_, _, v)| *v)
+                        .unwrap_or(device.percent.min(100) as u8);
+                    let name = device.name.clone();
+                    let volume = slider(0..=100, value, move |v| {
+                        Message::Volume(kind, name.clone(), v)
+                    })
+                    .on_release(Message::CommitVolume(kind, device.name.clone()));
                     contents = contents.push(
                         column![
                             crate::ui::body(config, label),
+                            volume,
                             row![
                                 action("Use", Operation::Default, !snapshot.is_default(device)),
                                 action(
@@ -317,7 +372,7 @@ mod tests {
             panic!("missing channel")
         };
         let Message::Snapshot(Ok(snapshot)) = next(&mut stream).await else {
-            panic!("missing snapshot")
+            panic!("missing snapshot from fixture")
         };
         assert_eq!(snapshot.devices.len(), 3);
         sender
@@ -452,7 +507,10 @@ mod tests {
             name: "fixture".into(),
             operation: Operation::Volume(55),
         };
-        audio.update(Message::Apply(command.clone()));
+        audio.update(Message::Volume(Kind::Output, "fixture".into(), 40));
+        audio.update(Message::Volume(Kind::Output, "fixture".into(), 55));
+        assert!(receiver.try_recv().is_err()); // dragging never sends device commands
+        audio.update(Message::CommitVolume(Kind::Output, "fixture".into()));
         audio.update(Message::Apply(command.clone()));
         assert!(receiver.try_recv().is_ok());
         assert!(receiver.try_recv().is_err());
