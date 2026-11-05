@@ -1,0 +1,23 @@
+<node>
+  <interface name="org.freedesktop.Notifications">
+    <method name="GetCapabilities"><arg name="capabilities" type="as" direction="out"/></method>
+    <method name="GetServerInformation">
+      <arg name="name" type="s" direction="out"/><arg name="vendor" type="s" direction="out"/>
+      <arg name="version" type="s" direction="out"/><arg name="spec_version" type="s" direction="out"/>
+    </method>
+    <method name="Notify">
+      <arg name="app_name" type="s" direction="in"/><arg name="replaces_id" type="u" direction="in"/>
+      <arg name="app_icon" type="s" direction="in"/><arg name="summary" type="s" direction="in"/>
+      <arg name="body" type="s" direction="in"/><arg name="actions" type="as" direction="in"/>
+      <arg name="hints" type="a{sv}" direction="in"/><arg name="expire_timeout" type="i" direction="in"/>
+      <arg name="id" type="u" direction="out"/>
+    </method>
+    <method name="CloseNotification"><arg name="id" type="u" direction="in"/></method>
+    <signal name="NotificationClosed"><arg name="id" type="u"/><arg name="reason" type="u"/></signal>
+    <signal name="ActionInvoked"><arg name="id" type="u"/><arg name="action_key" type="s"/></signal>
+  </interface>
+  <interface name="org.freedesktop.DBus.Introspectable">
+    <method name="Introspect"><arg name="xml_data" type="s" direction="out"/></method>
+  </interface>
+  <interface name="org.freedesktop.DBus.Peer"><method name="Ping"/></interface>
+</node>
