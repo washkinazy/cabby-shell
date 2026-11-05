@@ -12,7 +12,7 @@ binds {
 
 Type to search. Up/Down selects a result and crosses pages, Enter launches it, and Escape or Close dismisses the overlay. Clicking a result launches it. The overlay opens on the compositor's active output, temporarily requests exclusive keyboard input, and releases it when closed. It does not reserve desktop space. The bar keeps its noninteractive keyboard policy.
 
-Names, generic names, keywords, and desktop IDs are matched case-insensitively. All space-separated query terms must match. Exact names rank first, then name prefixes, name substrings, and other matches; ties use name/desktop-ID order. This is substring search, not fuzzy character matching. No usage ranking, persistent history, or query logging is implemented. Discovery refreshes on every opening. Search is limited to 256 characters.
+Names, generic names, keywords, and desktop IDs are matched case-insensitively. All space-separated query terms must match. Exact names rank first, then name prefixes, name substrings, and other matches; ties use name/desktop-ID order. Fuzzy name matching follows exact/prefix/substring matches; metadata remains substring-based. No usage ranking, persistent history, or query logging is implemented. Discovery refreshes on every opening. Search is limited to 256 characters.
 
 ## Application discovery and execution
 
@@ -33,3 +33,9 @@ The selected command goes through `cabby launch`'s implementation and runs in a 
 `cabby launcher-ui --config PATH` runs the UI in the foreground for a supervised disposable-session test. Normal usage is `cabby launcher` through systemd. Development unit overrides `--launcher-unit`, `--target`, and `--session-unit` select existing staged units; they do not rewrite dependencies.
 
 Rust fixtures cover discovery precedence, visibility/localization, symlink handling, argument boundaries/escaping, terminal prefixes, search ranking, selection wrapping, duplicate submission, and captured Escape. The lifecycle harness verifies the launcher is on demand, repeated opening is idempotent, shutdown closes it, and a real desktop-entry launch with a working directory survives a shell restart and stops on compositor loss. Graphical tests map the launcher in nested niri, observe keyboard focus and buffer attachment, capture its layout, and verify selected hardware Vulkan separately from software rendering. The GUI test does not activate installed applications. Actual typing/click delivery, focus restoration, and physical multi-output placement remain unverified; manual acceptance is not required.
+
+## Search and icons
+
+Results prioritize exact names, name prefixes and name substrings, followed by fuzzy name matches and metadata matches. Fuzzy matching accepts characters in order (for example `ffx` finds Firefox), favors smaller gaps, and scans at most 512 name characters per token. All query tokens must match; metadata keeps substring matching. Unicode case folding uses Rust lowercase conversion, with deterministic catalog order for ties. Query length remains bounded to 256 characters.
+
+Desktop-entry `Icon` values appear beside results. Only the visible page requests icons; query/page changes discard obsolete results. The launcher reuses the bounded asynchronous PNG/SVG loader and 64-entry cache described in [tray.md](tray.md). Missing icons use a neutral placeholder. There is no icon download or persistent usage/history storage.

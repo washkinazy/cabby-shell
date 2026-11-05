@@ -100,6 +100,21 @@ fn main() {
                 "audio panel content missing: {text_pixels} text pixels"
             );
         }
+        "launcher-icon" => {
+            let pixels = asset
+                .rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .filter(|p| {
+                    p[..3]
+                        .iter()
+                        .zip([237u8, 53, 155])
+                        .all(|(a, b)| a.abs_diff(b) < 5)
+                })
+                .count();
+            assert!(pixels > 100, "launcher icon missing");
+        }
         "bar-top" => check(w / 2, 1, [24, 27, 34]),
         "bar-bottom" => check(w / 2, h - 2, [24, 27, 34]),
         mode if mode.starts_with("notifications-") => {
