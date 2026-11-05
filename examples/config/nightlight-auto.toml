@@ -1,0 +1,6 @@
+# Explicit opt-in to IP lookup through api.noctalia.dev; coordinates stay in memory.
+[nightlight]
+enabled = true
+temperature_night = 4500
+[location]
+auto_locate = true

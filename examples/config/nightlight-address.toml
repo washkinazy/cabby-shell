@@ -1,0 +1,5 @@
+# Optional public city-name geocoding; auto_locate takes precedence if both are set.
+[nightlight]
+enabled = true
+[location]
+address = "Berlin, Germany"

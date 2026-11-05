@@ -19,13 +19,13 @@ fn set(status: &Status, value: &'static str) {
     *status.lock().unwrap() = value;
 }
 pub struct Sleep {
-    control: watch::Sender<Option<bool>>,
+    control: watch::Sender<Option<(bool, bool)>>,
     thread: Option<std::thread::JoinHandle<()>>,
     status: Status,
 }
 impl Sleep {
-    pub fn new(enabled: bool, resume: crate::idle::Resume) -> Self {
-        let (control, mut updates) = watch::channel(Some(enabled));
+    pub fn new(enabled: bool, observe: bool, resume: impl Fn() + Send + 'static) -> Self {
+        let (control, mut updates) = watch::channel(Some((enabled, observe)));
         let status = Arc::new(Mutex::new("starting"));
         let state = status.clone();
         let executable = std::env::current_exe().expect("coordinator executable");
@@ -37,14 +37,14 @@ impl Sleep {
             runtime.block_on(async move {
                 loop {
                     let enabled = *updates.borrow_and_update();
-                    let Some(enabled) = enabled else { return; };
-                    if !enabled {
+                    let Some((enabled,observe)) = enabled else { return; };
+                    if !enabled && !observe {
                         set(&state, "disabled");
                         if updates.changed().await.is_err() { return; }
                         continue;
                     }
                     tokio::select! {
-                        result = monitor(None, &executable, &state, || resume.resume()) => { if result.is_err() { set(&state, "unavailable"); } },
+                        result = monitor(None, &executable, &state, &resume, enabled) => { if result.is_err() { set(&state, "unavailable"); } },
                         _ = updates.changed() => continue,
                     }
                     tokio::select! { _ = tokio::time::sleep(Duration::from_secs(2)) => (), _ = updates.changed() => () }
@@ -57,12 +57,12 @@ impl Sleep {
             status,
         }
     }
-    pub fn configure(&self, enabled: bool) {
+    pub fn configure(&self, enabled: bool, observe: bool) {
         self.control.send_if_modified(|v| {
-            if *v == Some(enabled) {
+            if *v == Some((enabled, observe)) {
                 false
             } else {
-                *v = Some(enabled);
+                *v = Some((enabled, observe));
                 true
             }
         });
@@ -131,6 +131,7 @@ async fn monitor(
     executable: &Path,
     status: &Status,
     resume: impl Fn(),
+    lock_enabled: bool,
 ) -> zbus::Result<()> {
     let (connection, mut owners, mut signals, owner, budget) =
         tokio::time::timeout(TIMEOUT, async {
@@ -169,7 +170,11 @@ async fn monitor(
             )
             .await?;
             let proxy = Proxy::new(&connection, owner.as_str(), PATH, INTERFACE).await?;
-            let delay: u64 = proxy.get_property("InhibitDelayMaxUSec").await?;
+            let delay: u64 = if lock_enabled {
+                proxy.get_property("InhibitDelayMaxUSec").await?
+            } else {
+                3_000_000
+            };
             // Reserve 100ms for scheduling/FD release; never retain a client >30s.
             let budget = Duration::from_micros(delay)
                 .saturating_sub(Duration::from_millis(100))
@@ -182,10 +187,23 @@ async fn monitor(
         .await
         .map_err(|_| zbus::Error::Failure("sleep setup timed out".into()))??;
     let proxy = Proxy::new(&connection, owner.as_str(), PATH, INTERFACE).await?;
-    let mut lease = Some(inhibit(&proxy).await?);
+    let mut lease = if lock_enabled {
+        Some(inhibit(&proxy).await?)
+    } else {
+        None
+    };
     let mut sleeping: bool = proxy.get_property("PreparingForSleep").await?;
-    let mut pending = sleeping.then(|| Box::pin(lock(executable, budget)));
-    set(status, if sleeping { "locking" } else { "watching" });
+    let mut pending = (sleeping && lock_enabled).then(|| Box::pin(lock(executable, budget)));
+    set(
+        status,
+        if sleeping {
+            if lock_enabled { "locking" } else { "sleeping" }
+        } else if lock_enabled {
+            "watching"
+        } else {
+            "observing"
+        },
+    );
     loop {
         tokio::select! {
             _ = connection.closed() => return Err(zbus::Error::Failure("sleep bus disconnected".into())),
@@ -200,12 +218,12 @@ async fn monitor(
                 let (start,): (bool,) = signal.body().deserialize()?;
                 if start == sleeping { continue; }
                 sleeping = start;
-                if start { pending = Some(Box::pin(lock(executable, budget))); set(status, "locking"); }
+                if start { if lock_enabled{pending = Some(Box::pin(lock(executable, budget)));set(status,"locking");}else{set(status,"sleeping");} }
                 else {
                     pending = None; lease.take();
                     resume();
-                    lease = Some(inhibit(&proxy).await?);
-                    set(status, "watching");
+                    lease = if lock_enabled{Some(inhibit(&proxy).await?)}else{None};
+                    set(status, if lock_enabled{"watching"}else{"observing"});
                 }
             }
             ready = async { pending.as_mut().unwrap().await }, if pending.is_some() => {
@@ -276,7 +294,7 @@ mod tests {
     }
     #[tokio::test]
     async fn private_delay_fd_readiness_timeout_foreign_signals_resume_and_owner_loss() {
-        for reject in [false, true] {
+        for (reject, lock_enabled) in [(false, true), (true, true), (false, false)] {
             let mut daemon = Command::new("dbus-daemon")
                 .args(["--session", "--nofork", "--print-address=1"])
                 .stdout(Stdio::piped())
@@ -318,11 +336,35 @@ mod tests {
             let resumes = Arc::new(AtomicUsize::new(0));
             let resumed = resumes.clone();
             let task = tokio::spawn(async move {
-                monitor(Some(&address), &exe, &status, move || {
-                    resumed.fetch_add(1, Ordering::SeqCst);
-                })
+                monitor(
+                    Some(&address),
+                    &exe,
+                    &status,
+                    move || {
+                        resumed.fetch_add(1, Ordering::SeqCst);
+                    },
+                    lock_enabled,
+                )
                 .await
             });
+            if !lock_enabled {
+                wait(|| *state.lock().unwrap() == "observing").await;
+                server
+                    .emit_signal(None::<&str>, PATH, INTERFACE, "PrepareForSleep", &(true,))
+                    .await
+                    .unwrap();
+                wait(|| *state.lock().unwrap() == "sleeping").await;
+                assert!(readers.lock().unwrap().is_empty());
+                assert!(!root.path().join("locker.pid").exists());
+                server
+                    .emit_signal(None::<&str>, PATH, INTERFACE, "PrepareForSleep", &(false,))
+                    .await
+                    .unwrap();
+                wait(|| resumes.load(Ordering::SeqCst) == 1).await;
+                server.release_name(NAME).await.unwrap();
+                assert!(task.await.unwrap().is_err());
+                continue;
+            }
             wait(|| *state.lock().unwrap() == "watching").await;
             assert!(!released(&readers, 0));
             foreign

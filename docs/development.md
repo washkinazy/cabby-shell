@@ -21,6 +21,7 @@ The script uses DNF and requests sudo when needed. It installs packages only; it
 | Packages | Purpose |
 | --- | --- |
 | cargo, rust, rustfmt, clippy | Compiler, dependency/build tool, formatter, linting |
+| curl | Bounded opt-in HTTPS location lookup for night light |
 | just | Build/install task runner (`just build`, `just install`) |
 | gcc, pkgconf-pkg-config | Native linker and library discovery |
 | wayland-devel, libxkbcommon-devel | Wayland and keyboard development libraries |
@@ -192,3 +193,5 @@ The graphical harness also runs a private coordinator with automatic locking dis
 Display policy extends `test_idle_session.py` with an intercepted niri helper: the nested compositor emits real idle notifications, while all lock and power operations stay in fixtures. `cargo test -p cabby --test power --locked` covers lock rejection before DPMS and safe restoration. Niri is an existing dependency; no new Fedora packages or service installation is needed.
 
 Private logind coverage: `cargo test -p cabby --bin cabby sleep::tests --locked` creates its own D-Bus daemon/Manager and inhibitor sockets. It tests unique-owner signal filtering, readiness/timeout FD lifetime, resume reacquisition and owner loss with synthetic helpers. Existing zbus/Tokio versions and D-Bus/systemd/Python prerequisites are reused. No host sleep or live inhibitor is acquired.
+
+Night-light prerequisite: `curl` supplies bounded HTTPS IP/address location lookups; `just deps` includes it. No package is enabled as a service. Native gamma/schedule code reuses pinned wayland-protocols-wlr. `python3 scripts/test_nightlight_protocol.py` owns a synthetic Wayland socket/server and a parent-death-bound coordinator, validating FD uploads/restoration without any physical gamma changes. The existing graphical harness additionally captures off/unavailable indicator states. See [night-light.md](night-light.md) for source provenance, provider behavior and hardware limitations.

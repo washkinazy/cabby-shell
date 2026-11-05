@@ -1,0 +1,10 @@
+# Custom sunrise/sunset, with one-hour clock-anchored fades around each time.
+[nightlight]
+enabled = true
+force = false
+temperature_day = 6500
+temperature_night = 4000
+[location]
+custom_schedule = true
+sunset = "20:30"
+sunrise = "07:30"

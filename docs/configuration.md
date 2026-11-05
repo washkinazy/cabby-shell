@@ -36,7 +36,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 
 - **File/purpose:** `config.toml`; ordered widgets aligned to the left of the bar.
 - **Type/default:** array of strings; `["workspaces"]` when omitted. No units.
-- **Values:** any subset of `"workspaces"`, `"clock"`, `"audio"`, `"network"`, `"bluetooth"`, `"tray"`, `"apps"`, `"title"`, `"status"`, `"idle"`, in the desired order. Unknown names and duplicate widgets anywhere across the three regions are errors. `[]` leaves this region empty.
+- **Values:** any subset of `"workspaces"`, `"clock"`, `"audio"`, `"network"`, `"bluetooth"`, `"tray"`, `"apps"`, `"title"`, `"status"`, `"idle"`, `"nightlight"`, in the desired order. Unknown names and duplicate widgets anywhere across the three regions are errors. `[]` leaves this region empty.
 - **Example:** `bar_left = ["workspaces"]`; optional Apps/title/status placement is demonstrated in [custom-layout.toml](../examples/config/custom-layout.toml).
 - **Dependencies/interactions:** the three regions occupy equal widths. Overflow scrolls horizontally within its region; it cannot shift or cover another region. Each array replaces that region's default, while omitted regions still use their defaults. Widgets omitted from all regions disappear; omitted clock/network/tray widgets do not start their background subscriptions. See the widget behavior below.
 - **Application:** valid config reload updates regions in place.
@@ -55,16 +55,16 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 ### `bar_right`
 
 - **File/purpose:** `config.toml`; ordered widgets aligned to the right of the bar.
-- **Type/default:** array of strings; `["audio", "network", "bluetooth", "tray"]` when omitted. No units.
+- **Type/default:** array of strings; `["audio", "network", "bluetooth", "nightlight", "tray"]` when omitted. No units.
 - **Values:** the same widget names and uniqueness rules as `bar_left`; `[]` leaves this region empty.
 - **Example:** `bar_right = ["audio", "network", "bluetooth", "tray"]` in [full.toml](../examples/config/full.toml).
 - **Dependencies/interactions:** uses the right third; a large tray or long status scrolls within the region. Audio/Bluetooth keep their existing on-demand panels. Network is read-only status; it does not change connections or radio state.
 - **Application:** valid config reload updates regions in place.
-- **Migration:** the default order is audio, network, Bluetooth, system tray.
+- **Migration:** the default order is audio, network, Bluetooth, night light, system tray.
 
 #### Widget behavior
 
-`workspaces` follows niri and shows an unavailable label if disconnected. `clock` shows local date and 24-hour time (for example `Thu 05 Nov  09:07`) and updates at minute boundaries; wall-clock jumps are reflected within a minute. Timezone/format configuration is not exposed; restart after changing the process timezone. `audio` and `bluetooth` show event-driven status and open their device panels. Audio reports default-output volume/mute; Bluetooth reports power/connected count. Omitting either widget stops its observation when its panel is closed. Bluetooth registers its agent only while the panel is open; passive observation never starts discovery. `network` reads NetworkManager's connection type/state and connectivity events on the system bus, including offline, connecting, local-only, limited and captive-portal states. Missing NetworkManager shows `Network ?`; owner/bus loss clears status and reconnects after two seconds. No network scan or connectivity-check command is issued. `tray` hosts [StatusNotifier items and menus](tray.md). `idle` shows automatic-lock status (`Idle lock`, `Idle disabled`, `Locking`, `Idle failed`, or unavailable `Idle ?`) and toggles a coordinator-lifetime manual inhibitor; `Keep awake` means inhibited. Changes from CLI controls appear through atomic runtime status updates. No subscription starts when omitted. The default regions do not include it; see [idle.toml](../examples/config/idle.toml). `apps` opens the launcher. `title` shows the output's active window title when `show_window_title` is true. `status` shows niri connection/action errors. Shared typography, colors, spacing and the bar's top/bottom placement apply to every region.
+`workspaces` follows niri and shows an unavailable label if disconnected. `clock` shows local date and 24-hour time (for example `Thu 05 Nov  09:07`) and updates at minute boundaries; wall-clock jumps are reflected within a minute. Timezone/format configuration is not exposed; restart after changing the process timezone. `audio` and `bluetooth` show event-driven status and open their device panels. Audio reports default-output volume/mute; Bluetooth reports power/connected count. Omitting either widget stops its observation when its panel is closed. Bluetooth registers its agent only while the panel is open; passive observation never starts discovery. `network` reads NetworkManager's connection type/state and connectivity events on the system bus, including offline, connecting, local-only, limited and captive-portal states. Missing NetworkManager shows `Network ?`; owner/bus loss clears status and reconnects after two seconds. No network scan or connectivity-check command is issued. `tray` hosts [StatusNotifier items and menus](tray.md). `idle` shows automatic-lock status (`Idle lock`, `Idle disabled`, `Locking`, `Idle failed`, or unavailable `Idle ?`) and toggles a coordinator-lifetime manual inhibitor; `Keep awake` means inhibited. Changes from CLI controls appear through atomic runtime status updates. No subscription starts when omitted. The default regions do not include it; see [idle.toml](../examples/config/idle.toml). `nightlight` shows off/scheduled/night/forced/unavailable state and toggles the same coordinator-owned state as `cabby nightlight-toggle`; its tooltip reports temperature/output failures. Forced mode returns to scheduled-on on toggle, then the next toggle disables it. It is included before the tray by default; explicit old bar lists must add it to show the indicator. `apps` opens the launcher. `title` shows the output's active window title when `show_window_title` is true. `status` shows niri connection/action errors. Shared typography, colors, spacing and the bar's top/bottom placement apply to every region.
 
 ### `bar_height`
 
@@ -273,3 +273,96 @@ Device panels and tray menus open beside the clicked widget on its output, below
 - **Dependencies/interactions:** requires installed Cabby lock support and the system-bus org.freedesktop.login1 service. Uses a caller-owned `sleep`/`delay` inhibitor FD, released on lock readiness, failure/deadline, cancellation or owner loss. The client budget is InhibitDelayMaxUSec minus 100 milliseconds, capped at 30 seconds. A delay cannot veto sleep; logind's deadline remains authoritative and failure may still be followed by sleep. `cabby suspend` retains its separate confirmation-before-request guarantee. No host suspend is initiated by observing signals. Idle inhibitors do not suppress sleep locking. Missing service, rejected FD acquisition, bus loss or owner change report unavailable and reconnect after two seconds. The FD is close-on-exec and never inherited by lock/PAM children.
 - **Application:** live reload cancels/replaces observation and its owned clients/FDs. Resume re-acquires a fresh inhibitor and resets idle/display timers, preserving the manual inhibitor and active lock. `cabby status` (and idle-status replies) report sleep watcher status. Coordinator shutdown never requests unlock; an accepted lock job remains independently owned.
 - **Migration:** opt-in; installation never enables it or changes bindings. Late startup during an already pending sleep is best effort. Real sleep, resume and real-user authentication remain unverified.
+
+### `nightlight`
+
+- **File/purpose:** `[nightlight]` table in `config.toml`; native per-output color temperature.
+- **Type/default:** table; all child defaults below apply when omitted. Unknown child keys are errors.
+- **Example:** [full.toml](../examples/config/full.toml); scheduled, forced, coordinate, automatic and address alternatives are in the example directory.
+- **Dependencies/interactions:** requires compositor wlr-gamma-control support and usable output gamma tables. The normal niri session advertises the protocol; nested niri may not. Ownership conflicts/output failures are reported, without fighting another gamma client. The location table supplies the schedule. The default right bar includes `nightlight` before `tray`; add it explicitly to pre-existing custom regions.
+- **Application:** valid reload applies immediately; ordinary reload never restarts an active lock. Settings/control commands are shared with the indicator/keybinding. Runtime overrides last until coordinator restart or the matching persistent enable/force setting changes.
+- **Migration:** new table; old configurations inherit disabled night light. The indicator appears by default unless regions are explicitly configured. No automatic configuration writes.
+
+### `nightlight.enabled`
+
+- **File/purpose/type/default:** `[nightlight]`, boolean `false`; enables scheduled day/night temperatures.
+- **Values/example:** `true` or `false`; `enabled = true` in [nightlight-custom.toml](../examples/config/nightlight-custom.toml). No units.
+- **Interactions:** requires a location/custom schedule; missing schedule releases gamma and reports `no-schedule`. Force works independently. `cabby nightlight-enable`, `nightlight-disable`, and `nightlight-toggle` override this in runtime. Toggle from forced mode returns to scheduled-on, then the next toggle disables. Explicit disable also clears force.
+- **Application:** immediate on valid reload or control request; disabling releases gamma ownership and restores native output.
+
+### `nightlight.force`
+
+- **File/purpose/type/default:** `[nightlight]`, boolean `false`; holds night temperature independently of schedule and enabled state.
+- **Values/example:** `force = true` in [nightlight-forced.toml](../examples/config/nightlight-forced.toml); no units.
+- **Interactions:** no location is required; `cabby nightlight-force-toggle` toggles runtime force. The indicator shows forced state, or unavailable if gamma cannot apply.
+- **Application:** immediate on reload/control; clearing force returns to the configured scheduled/disabled state.
+
+### `nightlight.temperature_day`
+
+- **File/purpose/type/default:** `[nightlight]`, integer `6500`; day white-point temperature in Kelvin.
+- **Values/example:** `1000..10000`; must exceed night by at least `100`. Example `temperature_day = 6500` in [full.toml](../examples/config/full.toml).
+- **Interactions:** scheduled transitions interpolate between these temperatures; values are approximate color-temperature multipliers, not colorimeter calibration. Enabled scheduled daytime retains gamma ownership, matching Noctalia; disabling restores native tables.
+- **Application:** valid reload applies the current target immediately; no restart.
+
+### `nightlight.temperature_night`
+
+- **File/purpose/type/default:** `[nightlight]`, integer `4000`; night/forced white-point temperature in Kelvin.
+- **Values/example:** `1000..10000`, at least `100` below day. Example `temperature_night = 4500` in [nightlight-auto.toml](../examples/config/nightlight-auto.toml).
+- **Interactions:** one-hour fades are centered on sunrise/sunset and anchored to wall clock. Startup/enable/force/reload snap to the current target; only the schedule fades. Uploads are coalesced when unchanged and paced during transitions.
+- **Application:** immediate on valid reload; schedule is rechecked at most one minute apart, more often during large transitions. No restart.
+
+### `location`
+
+- **File/purpose/type/default:** `[location]` table in `config.toml`; shared location/custom sunrise-sunset model for night light. Omitted fields use defaults below; unknown children fail validation.
+- **Example:** [nightlight-location.toml](../examples/config/nightlight-location.toml), [nightlight-custom.toml](../examples/config/nightlight-custom.toml).
+- **Interactions:** explicit custom times override coordinates. Otherwise automatic lookup takes precedence over address lookup, followed by manual coordinates when available. No resolved location is invented or silently replaced by custom times. Lookup failure keeps the previous valid coordinates and retries in five minutes. Approximate astronomical times are recomputed with date/timezone; polar day/night is supported.
+- **Application:** immediate valid reload; coordinates/lookup results remain in memory, without disk cache or content logging. Resume reevaluates the schedule; see night-light documentation for sleep observation.
+
+### `location.auto_locate`
+
+- **File/purpose/type/default:** `[location]`, boolean `false`; opt-in IP-derived approximate location.
+- **Values/example:** `auto_locate = true` in [nightlight-auto.toml](../examples/config/nightlight-auto.toml); no units.
+- **Interactions:** uses `https://api.noctalia.dev/geolocate`, as Noctalia does. The provider sees the connection IP. Takes precedence over `address`; refreshes every six hours while needed. No lookup runs for disabled night light or explicit custom schedules. Uses bounded supervised curl with HTTPS-only requests, eight-second network limit and 16 KiB response limit; failures do not log response contents.
+- **Application:** valid reload cancels obsolete requests and resolves the new source; no restart.
+
+### `location.address`
+
+- **File/purpose/type/default:** `[location]`, UTF-8 string `""`; optional city/address geocoding.
+- **Values/example:** at most 1024 bytes without control characters; `address = "Berlin, Germany"` in [nightlight-address.toml](../examples/config/nightlight-address.toml). No units.
+- **Interactions:** when auto lookup is off, nonempty text is URL-encoded and sent to `https://api.noctalia.dev/geocode?city=...`; no shell evaluation. Empty text selects manual coordinates. Successful address results remain in memory across toggles/reconnects until the source changes or resume requests refresh; failure retries after five minutes. No address/response content is logged.
+- **Application:** immediate valid reload cancels old requests; no restart.
+
+### `location.custom_schedule`
+
+- **File/purpose/type/default:** `[location]`, boolean `false`; use explicit sunrise/sunset instead of astronomical times.
+- **Values/example:** `custom_schedule = true` in [nightlight-custom.toml](../examples/config/nightlight-custom.toml); no units.
+- **Interactions:** requires valid, distinct `sunset` and `sunrise`. Overrides coordinates and skips network lookup for night light. Invalid custom schedules reject the whole reload, retaining previous valid config.
+- **Application:** immediate valid reload; current clock-anchored target applies, without restarting the fade.
+
+### `location.sunset`
+
+- **File/purpose/type/default:** `[location]`, string `""`; local night boundary (fade midpoint).
+- **Values/example:** empty or exact 24-hour `HH:MM`, `00:00..23:59`; `sunset = "20:30"` in [nightlight-custom.toml](../examples/config/nightlight-custom.toml). Units are local hours/minutes.
+- **Interactions:** used only when custom_schedule is true, which requires nonempty/distinct boundaries. Not a fallback for failed geolocation. Fade starts 30 minutes before and finishes 30 minutes after.
+- **Application:** immediate valid reload; no restart.
+
+### `location.sunrise`
+
+- **File/purpose/type/default:** `[location]`, string `""`; local day boundary (fade midpoint).
+- **Values/example:** empty or exact `HH:MM`, `00:00..23:59`; `sunrise = "07:30"` in [nightlight-custom.toml](../examples/config/nightlight-custom.toml). Local hours/minutes.
+- **Interactions:** same custom-schedule rules as sunset; overnight and daytime-crossing schedules are supported. Process timezone applies; restart after changing the process timezone.
+- **Application:** immediate valid reload; no restart.
+
+### `location.latitude`
+
+- **File/purpose/type/default:** `[location]`, optional floating-point number; omitted by default. Manual latitude in degrees.
+- **Values/example:** finite `-90..90`; `latitude = 52.52` in [nightlight-location.toml](../examples/config/nightlight-location.toml).
+- **Interactions:** both coordinates are required together. Custom times take precedence; resolved network coordinates take precedence when available. No manual coordinates are sent to the lookup provider.
+- **Application:** immediate valid reload recomputes the current astronomical schedule; no restart.
+
+### `location.longitude`
+
+- **File/purpose/type/default:** `[location]`, optional floating-point number; omitted by default. Manual longitude in degrees.
+- **Values/example:** finite `-180..180`; `longitude = 13.405` in [nightlight-location.toml](../examples/config/nightlight-location.toml).
+- **Interactions:** requires latitude; no schedule is assumed when neither coordinates nor custom times resolve. Examples use public city coordinates.
+- **Application:** immediate valid reload; no restart.

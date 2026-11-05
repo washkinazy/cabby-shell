@@ -19,3 +19,5 @@ The managed desktop hosts bar and wallpaper together. `cabby restart-ui` restart
 The lock UI uses shared `renderer`, `font_size`, `background`, `foreground` and `accent` settings only when a new lock starts. Reload never restarts an active locker; invalid styling uses built-in defaults. No lock-specific settings or automatic idle activation are present. See [locking](../../docs/locking.md).
 
 [idle.toml](idle.toml) enables a ten-minute idle lock after installing lock support; other examples leave automatic locking disabled.
+
+Night light examples cover [custom times](nightlight-custom.toml), [manual coordinates](nightlight-location.toml), [automatic IP lookup](nightlight-auto.toml), [address geocoding](nightlight-address.toml), and [forced mode](nightlight-forced.toml). Network lookup is opt-in and no example executes it merely by validation. The default right bar now includes the night-light toggle before the system tray.

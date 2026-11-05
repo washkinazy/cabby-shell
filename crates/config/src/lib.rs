@@ -39,6 +39,7 @@ pub enum BarWidget {
     Title,
     Status,
     Idle,
+    Nightlight,
 }
 pub const BAR_WIDGETS: &[BarWidget] = &[
     BarWidget::Workspaces,
@@ -51,13 +52,14 @@ pub const BAR_WIDGETS: &[BarWidget] = &[
     BarWidget::Title,
     BarWidget::Status,
     BarWidget::Idle,
+    BarWidget::Nightlight,
 ];
 
 // Field names for coverage are generated from the same declaration as the
 // parser type. New fields cannot bypass documentation/example coverage.
 macro_rules! configuration {
     ($($field:ident: $ty:ty = $default:expr),+ $(,)?) => {
-        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+        #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
         #[serde(default, deny_unknown_fields)]
         pub struct Config { $(pub $field: $ty),+ }
         impl Default for Config {
@@ -67,7 +69,34 @@ macro_rules! configuration {
     };
 }
 
+macro_rules! section {
+    ($name:ident, $keys:ident, {$($field:ident: $ty:ty = $default:expr),+ $(,)?}) => {
+        #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+        #[serde(default, deny_unknown_fields)]
+        pub struct $name { $(pub $field: $ty),+ }
+        impl Default for $name { fn default() -> Self { Self { $($field: $default),+ } } }
+        pub const $keys: &[&str] = &[$(stringify!($field)),+];
+    };
+}
+section!(Nightlight, NIGHTLIGHT_KEYS, {
+    enabled: bool = false,
+    force: bool = false,
+    temperature_day: u16 = 6500,
+    temperature_night: u16 = 4000,
+});
+section!(Location, LOCATION_KEYS, {
+    auto_locate: bool = false,
+    address: String = String::new(),
+    custom_schedule: bool = false,
+    sunset: String = String::new(),
+    sunrise: String = String::new(),
+    latitude: Option<f64> = None,
+    longitude: Option<f64> = None,
+});
+
 configuration! {
+    nightlight: Nightlight = Nightlight::default(),
+    location: Location = Location::default(),
     lock_before_sleep: bool = false,
     idle_lock_seconds: u32 = 0,
     idle_display_off_seconds: u32 = 0,
@@ -75,7 +104,7 @@ configuration! {
     bar_height: u16 = 40,
     bar_left: Vec<BarWidget> = vec![BarWidget::Workspaces],
     bar_middle: Vec<BarWidget> = vec![BarWidget::Clock],
-    bar_right: Vec<BarWidget> = vec![BarWidget::Audio, BarWidget::Network, BarWidget::Bluetooth, BarWidget::Tray],
+    bar_right: Vec<BarWidget> = vec![BarWidget::Audio, BarWidget::Network, BarWidget::Bluetooth, BarWidget::Nightlight, BarWidget::Tray],
     bar_position: BarPosition = BarPosition::Top,
     bar_padding: u16 = 8,
     bar_spacing: u16 = 8,
@@ -125,12 +154,66 @@ pub fn rgb(value: &str) -> Option<[u8; 3]> {
     ])
 }
 
+pub fn clock_minutes(value: &str) -> Option<u16> {
+    let b = value.as_bytes();
+    if b.len() != 5 || b[2] != b':' || ![b[0], b[1], b[3], b[4]].iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let h = (b[0] - b'0') as u16 * 10 + (b[1] - b'0') as u16;
+    let m = (b[3] - b'0') as u16 * 10 + (b[4] - b'0') as u16;
+    (h < 24 && m < 60).then_some(h * 60 + m)
+}
 impl Config {
     pub fn parse(source: &str) -> Result<Self> {
         if source.len() > MAX_CONFIG_BYTES as usize {
             return Err("configuration exceeds 64 KiB".into());
         }
         let config: Self = toml::from_str(source).map_err(|error| error.to_string())?;
+        if !(1000..=10000).contains(&config.nightlight.temperature_day)
+            || !(1000..=10000).contains(&config.nightlight.temperature_night)
+            || config.nightlight.temperature_day
+                < config.nightlight.temperature_night.saturating_add(100)
+        {
+            return Err("nightlight temperatures must be 1000..10000 Kelvin and day must exceed night by at least 100".into());
+        }
+        if config.location.address.len() > 1024
+            || config.location.address.chars().any(char::is_control)
+        {
+            return Err(
+                "location.address must be at most 1024 UTF-8 bytes without control characters"
+                    .into(),
+            );
+        }
+        for (key, value) in [
+            ("sunset", &config.location.sunset),
+            ("sunrise", &config.location.sunrise),
+        ] {
+            if !value.is_empty() && clock_minutes(value).is_none() {
+                return Err(format!("location.{key} must be empty or HH:MM"));
+            }
+        }
+        if config.location.custom_schedule {
+            let sunset = clock_minutes(&config.location.sunset)
+                .ok_or("location.sunset must be HH:MM when custom_schedule is true")?;
+            let sunrise = clock_minutes(&config.location.sunrise)
+                .ok_or("location.sunrise must be HH:MM when custom_schedule is true")?;
+            if sunrise == sunset {
+                return Err("custom sunrise and sunset must differ".into());
+            }
+        }
+        for (key, value, bound) in [
+            ("latitude", config.location.latitude, 90.0),
+            ("longitude", config.location.longitude, 180.0),
+        ] {
+            if value.is_some_and(|v| !v.is_finite() || v.abs() > bound) {
+                return Err(format!(
+                    "location.{key} must be finite and within -{bound}..{bound} degrees"
+                ));
+            }
+        }
+        if config.location.latitude.is_some() != config.location.longitude.is_some() {
+            return Err("location requires both latitude and longitude".into());
+        }
         if config.idle_lock_seconds > 86400 {
             return Err("idle_lock_seconds must be 0..86400 seconds".into());
         }
@@ -326,7 +409,10 @@ mod tests {
         let defaults = Config::parse("").unwrap();
         assert_eq!(defaults.bar_left, vec![Workspaces]);
         assert_eq!(defaults.bar_middle, vec![Clock]);
-        assert_eq!(defaults.bar_right, vec![Audio, Network, Bluetooth, Tray]);
+        assert_eq!(
+            defaults.bar_right,
+            vec![Audio, Network, Bluetooth, Nightlight, Tray]
+        );
         let custom = Config::parse(
             "bar_left=['tray','audio']\nbar_middle=[]\nbar_right=['clock','workspaces']",
         )
@@ -434,6 +520,31 @@ mod tests {
                 reference.contains(&format!("### `{key}`")),
                 "missing reference: {key}"
             );
+        }
+        for (section, keys) in [("nightlight", NIGHTLIGHT_KEYS), ("location", LOCATION_KEYS)] {
+            let values = table[section].as_table().unwrap();
+            assert!(values.len() <= keys.len());
+            for key in keys {
+                assert!(
+                    values.contains_key(*key)
+                        || std::fs::read_dir(root.join("examples/config"))
+                            .unwrap()
+                            .filter_map(|e| e.ok())
+                            .filter(|e| e.path().extension().is_some_and(|x| x == "toml"))
+                            .any(|e| std::fs::read_to_string(e.path())
+                                .ok()
+                                .and_then(|s| toml::from_str::<toml::Table>(&s).ok())
+                                .is_some_and(|t| t
+                                    .get(section)
+                                    .and_then(toml::Value::as_table)
+                                    .is_some_and(|v| v.contains_key(*key)))),
+                    "missing full nested example: {section}.{key}"
+                );
+                assert!(
+                    reference.contains(&format!("### `{section}.{key}`")),
+                    "missing nested reference: {section}.{key}"
+                );
+            }
         }
         let mut covered_widgets = std::collections::HashSet::new();
         let mut variants = Vec::new();

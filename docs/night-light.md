@@ -1,0 +1,27 @@
+# Night light
+
+Cabby follows Noctalia's night-light design: one native wlr-gamma-control object per output, RGB lookup tables uploaded through close-on-exec memory FDs, and restoration by releasing gamma ownership. No compositor-specific color command, GTK interface or additional daemon is used. The coordinator owns the worker independently of the desktop renderer. Missing protocol/output support and ownership conflicts are explicit unavailable/failure states; Cabby does not repeatedly fight another gamma client.
+
+Configuration lives in `[nightlight]` and `[location]` in `~/.config/cabby-shell/config.toml`. See the complete [reference](configuration.md#nightlight) and runnable [examples](../examples/config/README.md). Scheduled enable and force are separate: force holds night temperature regardless of enable or location, while schedule follows local custom times or astronomical sunrise/sunset from resolved coordinates. Day/night temperatures are 1000–10000 K with at least a 100 K gap. Defaults are disabled, 6500 K day and 4000 K night. The dotfiles integration preserves the user's enabled/4500 K/automatic-location preferences.
+
+Scheduled changes fade across a fixed hour centered on each boundary. The target derives from wall clock, so startup or resume halfway through a transition immediately chooses the correct temperature. Startup, reload, enabling and force changes apply immediately; only schedule progression fades. Unchanged tables are not uploaded again, and large transitions use bounded approximately 50 K steps with a two-second minimum cadence. Outside transitions, date/timezone/clock changes are reflected within a minute. Temperatures are approximate RGB multipliers, not measured monitor calibration.
+
+Location uses custom sunset/sunrise when explicitly selected. Otherwise automatic IP lookup takes precedence over address geocoding and manual coordinates when available. As in Noctalia, the optional endpoints are `https://api.noctalia.dev/geolocate` and `/geocode?city=...`. Automatic lookup exposes the connection IP to that provider; address mode sends the configured text. Both are opt-in, HTTPS-only and bounded; no lookup runs for a custom schedule or disabled night light. Responses are limited to 16 KiB, numeric ranges are validated, and coordinates remain in memory without content logging or disk caches. Successful IP results refresh after six hours; failures retry after five minutes while retaining prior valid coordinates. The memory cache survives enable/disable and Wayland reconnects, so toggling can apply immediately. Address results remain until their source changes; enabling/disabling retains the in-memory result, and resume refreshes while retaining the previous valid coordinates. Without a valid schedule, Cabby releases gamma and reports no-schedule; it does not invent fallback times.
+
+The default bar has a clickable night-light indicator before the tray. It shows off, scheduled daytime, active night, forced, no-schedule or unavailable state; its tooltip includes temperature and output failures. The shared commands are:
+
+```sh
+cabby nightlight-status
+cabby nightlight-toggle
+cabby nightlight-enable
+cabby nightlight-disable
+cabby nightlight-force-toggle
+```
+
+The niri dotfiles bind **Mod+Shift+G** to `~/.local/bin/cabby nightlight-toggle`. Toggle from force returns to scheduled-on; another toggle turns scheduling off. Explicit disable clears force. Runtime overrides do not rewrite preferences and survive desktop restarts; changing the matching persistent enable/force key resets its override. All commands accept `--runtime-dir PATH` for isolated coordinators.
+
+Output additions/removals update controls. Invalid/failed gamma controls are destroyed, with failures reported rather than retried continuously. Controls and their tables are bounded to 16 outputs and 65,536 entries per channel. Disabling, reload and graceful shutdown release ownership; connection loss relies on compositor resource cleanup. When night light is enabled, the coordinator observes logind resume even if lock-before-sleep is disabled; that observation acquires no inhibitor and initiates no locking. Resume rebuilds controls, reevaluates the schedule and re-resolves location. If logind is unavailable, clock checks still run; driver reset/wake behavior remains unverified.
+
+`python3 scripts/test_nightlight_protocol.py` runs against a private synthetic Wayland server, never a real display. It validates actual native gamma FD bytes, output hotplug, failure handling, force/schedule/off toggles, restoration, oversized-table rejection and config override resets. Rust tests cover schedule boundaries, astronomical seasons/polar conditions, bounded monotonic ramps, location helper ownership, parsing and override policy. Nested Vulkan/software checks render the indicator and exercise IPC changes; nested niri lacks gamma support, so supported-protocol testing uses the synthetic server. The live niri protocol was enumerated read-only and advertises gamma control, but no real gamma change, suspend or physical calibration was tested.
+
+The design, temperature approximation and solar schedule calculations were adapted from Noctalia at commit `c2215c19026865eda3bc11717cb68f0e8ec20f5e`, principally `src/system/gamma_service.cpp` and `day_night_schedule.cpp`. The upstream MIT notice is retained in [licenses/noctalia-MIT.txt](../licenses/noctalia-MIT.txt). Cabby's typed configuration, control transport, Rust ownership and protocol fixtures are repository implementations.
