@@ -21,6 +21,7 @@ use wayland_protocols::ext::idle_notify::v1::client::{
 
 #[derive(Default)]
 struct Desired {
+    epoch: u64,
     seconds: u32,
     display_seconds: u32,
     inhibited: bool,
@@ -53,6 +54,16 @@ impl Desired {
         }
     }
 }
+pub struct Resume {
+    desired: Arc<Mutex<Desired>>,
+    wake: UnixStream,
+}
+impl Resume {
+    pub fn resume(&self) {
+        self.desired.lock().unwrap().epoch += 1;
+        let _ = (&self.wake).write(&[1]);
+    }
+}
 pub struct Idle {
     desired: Arc<Mutex<Desired>>,
     wake: UnixStream,
@@ -77,6 +88,12 @@ impl Idle {
             desired,
             wake,
             thread: Some(thread),
+        }
+    }
+    pub fn resume_handle(&self) -> Resume {
+        Resume {
+            desired: self.desired.clone(),
+            wake: self.wake.try_clone().expect("resume wake socket"),
         }
     }
     fn wake(&self) {
@@ -338,7 +355,7 @@ fn wait(wake: &UnixStream, fd: i32, timeout: i32) -> std::io::Result<bool> {
 }
 fn worker(desired: Arc<Mutex<Desired>>, wake: UnixStream, executable: std::path::PathBuf) {
     loop {
-        let (seconds, display_seconds) = {
+        let (seconds, display_seconds, epoch) = {
             let mut d = desired.lock().unwrap();
             if d.stop {
                 return;
@@ -352,9 +369,18 @@ fn worker(desired: Arc<Mutex<Desired>>, wake: UnixStream, executable: std::path:
             }
             d.status = "connecting";
             d.publish();
-            (d.seconds, d.display_seconds)
+            (d.seconds, d.display_seconds, d.epoch)
         };
-        if connected(&desired, &wake, seconds, display_seconds, &executable).is_err() {
+        if connected(
+            &desired,
+            &wake,
+            seconds,
+            display_seconds,
+            epoch,
+            &executable,
+        )
+        .is_err()
+        {
             {
                 let mut d = desired.lock().unwrap();
                 d.status = "unavailable";
@@ -369,6 +395,7 @@ fn connected(
     wake: &UnixStream,
     seconds: u32,
     display_seconds: u32,
+    epoch: u64,
     executable: &std::path::Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let connection = Connection::connect_to_env()?;
@@ -395,7 +422,11 @@ fn connected(
     loop {
         {
             let d = desired.lock().unwrap();
-            if d.stop || d.inhibited || d.seconds != seconds || d.display_seconds != display_seconds
+            if d.stop
+                || d.inhibited
+                || d.seconds != seconds
+                || d.display_seconds != display_seconds
+                || d.epoch != epoch
             {
                 return Ok(());
             }

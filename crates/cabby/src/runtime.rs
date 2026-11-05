@@ -119,6 +119,7 @@ pub fn serve(
         store.active().idle_display_off_seconds,
         &path,
     );
+    let sleep = crate::sleep::Sleep::new(store.active().lock_before_sleep, idle.resume_handle());
     notify_ready()?;
     loop {
         let incoming = watcher
@@ -160,6 +161,7 @@ pub fn serve(
                 deadline = Some(Instant::now() + watch::DEBOUNCE);
             }
         }
+        sleep.configure(store.active().lock_before_sleep);
         idle.configure(
             store.active().idle_lock_seconds,
             store.active().idle_display_off_seconds,
@@ -181,7 +183,7 @@ pub fn serve(
         } else {
             match command.trim() {
                 "status" => {
-                    serde_json::json!({"ok": true, "source": store.source.path, "config": store.active(), "pid": std::process::id(), "idle": idle.status()})
+                    serde_json::json!({"ok": true, "source": store.source.path, "config": store.active(), "pid": std::process::id(), "idle": idle.status(), "sleep": sleep.status()})
                 }
                 "idle-status" | "idle-inhibit-on" | "idle-inhibit-off" | "idle-inhibit-toggle" => {
                     match command.trim() {
@@ -190,7 +192,7 @@ pub fn serve(
                         "idle-inhibit-toggle" => idle.inhibit(None),
                         _ => (),
                     }
-                    serde_json::json!({"ok": true, "idle": idle.status()})
+                    serde_json::json!({"ok": true, "idle": idle.status(), "sleep": sleep.status()})
                 }
                 "reload" => {
                     let response = reload(
@@ -209,6 +211,7 @@ pub fn serve(
                     {
                         deadline = Some(Instant::now() + watch::DEBOUNCE);
                     }
+                    sleep.configure(store.active().lock_before_sleep);
                     idle.configure(
                         store.active().idle_lock_seconds,
                         store.active().idle_display_off_seconds,

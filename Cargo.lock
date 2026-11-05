@@ -251,11 +251,14 @@ version = "0.1.0"
 dependencies = [
  "cabby-config",
  "cabby-launcher",
+ "futures-util",
  "libc",
  "serde_json",
  "tempfile",
+ "tokio",
  "wayland-client",
  "wayland-protocols",
+ "zbus",
 ]
 
 [[package]]

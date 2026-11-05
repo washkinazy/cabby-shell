@@ -57,3 +57,6 @@ idle_lock_seconds = 0
 
 # Display power-off timeout: 0 disables; otherwise greater than idle_lock_seconds.
 idle_display_off_seconds = 0
+
+# Observe logind sleep notifications and hold a bounded delay inhibitor.
+lock_before_sleep = false

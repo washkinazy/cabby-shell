@@ -1,6 +1,7 @@
 mod idle;
 mod power;
 mod runtime;
+mod sleep;
 mod watch;
 use cabby_config::{Result, Source};
 use std::ffi::OsString;
