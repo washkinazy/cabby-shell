@@ -39,3 +39,5 @@ Rust fixtures cover discovery precedence, visibility/localization, symlink handl
 Results prioritize exact names, name prefixes and name substrings, followed by fuzzy name matches and metadata matches. Fuzzy matching accepts characters in order (for example `ffx` finds Firefox), favors smaller gaps, and scans at most 512 name characters per token. All query tokens must match; metadata keeps substring matching. Unicode case folding uses Rust lowercase conversion, with deterministic catalog order for ties. Query length remains bounded to 256 characters.
 
 Desktop-entry `Icon` values appear beside results. Only the visible page requests icons; query/page changes discard obsolete results. The launcher reuses the bounded asynchronous PNG/SVG loader and 64-entry cache described in [tray.md](tray.md). Missing icons use a neutral placeholder. There is no icon download or persistent usage/history storage.
+
+Search, Close and result status stay fixed while results scroll. Overlay sizing accounts for the 24-pixel icons as well as font size, keeping the configured page visible when the output has enough space.

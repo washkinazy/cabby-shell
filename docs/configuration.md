@@ -172,7 +172,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Type/default:** integer; `8` when omitted.
 - **Values:** inclusive `4..12` rows; no pixel units.
 - **Example:** `launcher_rows = 8` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** overlay height follows this count and `font_size`. The panel scrolls when constrained; reduce rows/text size for very small outputs.
+- **Dependencies/interactions:** overlay height follows this count and `font_size`, with a 24-pixel minimum row-content height for icons. Search, Close and result status remain outside the scrolling result list. The results scroll when constrained; reduce rows/text size for very small outputs.
 - **Application:** applied at next opening after managed reload; direct invocation reads on startup.
 - **Migration:** new optional setting.
 
