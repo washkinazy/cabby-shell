@@ -19,6 +19,7 @@ The script uses DNF and requests sudo when needed. It installs packages only; it
 | Packages | Purpose |
 | --- | --- |
 | cargo, rust, rustfmt, clippy | Compiler, dependency/build tool, formatter, linting |
+| just | Build/install task runner (`just build`, `just install`) |
 | gcc, pkgconf-pkg-config | Native linker and library discovery |
 | wayland-devel, libxkbcommon-devel | Wayland and keyboard development libraries |
 | niri, wayland-utils | Nested compositor and protocol inspection |
@@ -161,3 +162,5 @@ The audio panel uses the existing desktop host. `cargo test -p cabby-shell plugi
 
 
 Bluetooth adds the Fedora `bluez` runtime package; `scripts/install-fedora-deps.sh --print` includes it without enabling services. The Rust backend reuses pinned zbus/Tokio dependencies. `cargo test -p cabby-bluetooth --locked` runs only private D-Bus fixtures, including a real 60-second discovery expiry test; allow at least 70 seconds. Process/socket isolation permissions are needed as for the existing service tests. Before graphical tests also run `cargo build -p cabby-bluetooth --example bluez-fixture --locked`. Both renderer harness modes now exercise a Bluetooth pairing prompt and owned discovery cleanup on the disposable session bus. Production never reads `CABBY_TEST_BLUEZ_BUS`; only the guarded test entrypoint uses it. No real adapter state changes are part of acceptance. See [bluetooth.md](bluetooth.md) for protocol bounds and hardware limitations.
+
+`just build` builds the six production binaries in release mode. `just install` builds them, installs them together in `$HOME/.local/bin`, reloads user systemd units, and validates the existing user configuration. It does not install units/configuration or start Cabby; apply the dotfiles unit/config setup first. The local units must point to `%h/.local/bin/cabby` rather than the upstream `/usr/bin/cabby`.
