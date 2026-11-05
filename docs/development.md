@@ -184,3 +184,5 @@ The three Waycrate 0.20.1 crates are patched locally for keyboard indicators; se
 ### Lock-before-suspend checks
 
 `cargo test -p cabby --locked` covers CLI power-request ordering, failed readiness/activity checks, rejection and helper timeout/reaping with intercepted commands. After `cargo build -p cabby --locked`, `python3 scripts/test_lock_lifecycle.py` exercises real isolated notify units and an intercepted suspend request, including rejection without locker teardown. It never submits a host power request. Systemd and Python are existing prerequisites; no package or unit change is needed. Actual sleep/resume and external logind coordination remain unverified.
+
+Native idle integration: `cargo build -p cabby --locked`, then `python3 scripts/test_idle_session.py`. The private nested compositor and intercepted systemctl helper test event delivery and reload/inhibition without locking the host. Existing Wayland/systemd/Python prerequisites suffice.

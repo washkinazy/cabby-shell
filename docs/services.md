@@ -89,6 +89,8 @@ Valid changed reloads reset the affected units’ start counters before `try-res
 
 ## Authenticated locker
 
-`cabby lock` starts the independent `cabby-lock.service` and waits for compositor-confirmed READY. It binds only to niri, survives ordinary shell stop/restart/reload, and refuses manual stop. Bounded crash recovery and session-end cleanup are defined in [locking.md](locking.md), along with opt-in installation and the remaining real-session evidence gaps. No idle service or automatic lock binding is installed.
+`cabby lock` starts the independent `cabby-lock.service` and waits for compositor-confirmed READY. It binds only to niri, survives ordinary shell stop/restart/reload, and refuses manual stop. Bounded crash recovery and session-end cleanup are defined in [locking.md](locking.md), along with opt-in installation and the remaining real-session evidence gaps. The coordinator owns opt-in native idle observation; no additional idle daemon or automatic binding is installed.
 
 `cabby suspend` waits for the independent locker’s confirmed READY, rechecks session/locker activity, then submits a non-interactive, inhibitor-respecting system suspend request. Lock failure prevents submission; suspend rejection leaves the locker active. See [locking.md](locking.md#explicit-lock-before-suspend) for deadlines, cancellation and the external-suspend coordination boundary.
+
+`idle-status` and `idle-inhibit-on|idle-inhibit-off|idle-inhibit-toggle` use the coordinator control socket. Its worker observes compositor idle events and owns bounded lock-request clients; desktop crashes do not lose the manual inhibitor. Coordinator restart clears it. `status` includes an `idle` object. See [configuration.md](configuration.md#idle_lock_seconds).

@@ -243,3 +243,13 @@ Renderer changes reset start counters before restarting active components. Other
 
 The [system tray](tray.md) shares desktop appearance. Ordinary reload preserves open menus and item ownership; renderer changes require a desktop restart. No tray-specific settings are added.
 Device panels and tray menus open beside the clicked widget on its output, below a top bar or above a bottom bar, clamped to the available space. Changing `bar_position` or `bar_height` moves an open panel in place. Escape, outside click, focus loss, close and removal of its output dismiss the panel.
+
+### `idle_lock_seconds`
+
+- **File/purpose:** `config.toml`; automatic lock after compositor-reported inactivity.
+- **Type/default:** integer seconds; `0` when omitted disables automatic locking.
+- **Values:** `0..86400` inclusive; positive values register inhibitor-aware idle notifications on all seats.
+- **Example:** `idle_lock_seconds = 600` in [idle.toml](../examples/config/idle.toml).
+- **Dependencies/interactions:** the coordinator owns observation; ext-idle-notify and a seat are required. All seats must be idle before locking. Compositor application inhibitors are respected. Requires the independent Cabby locker and PAM setup. A failed attempt waits for new activity before retrying; no repeated lock loop. Disconnection clears idle state and retries the connection after two seconds. Missing protocol/seat reports unsupported, without a fallback timer. Manual `cabby idle-inhibit-on`, `idle-inhibit-off`, or `idle-inhibit-toggle` affects automatic idle locking only; it lasts until coordinator restart. `cabby idle-status` reports status. Explicit lock/suspend commands remain available.
+- **Application:** valid reload recreates notifications and starts a full new countdown. Inhibition cancels observation and pending owned clients; releasing inhibition starts a fresh countdown. A lock job already accepted by systemd may still complete; no cleanup unlock occurs. Coordinator stop/disconnect cancels owned helper clients, while the independent active locker keeps its lifetime.
+- **Migration:** omitted setting preserves previous disabled behavior. No user config or bindings are changed on install.

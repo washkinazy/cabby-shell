@@ -66,6 +66,7 @@ macro_rules! configuration {
 }
 
 configuration! {
+    idle_lock_seconds: u32 = 0,
     renderer: Renderer = Renderer::Vulkan,
     bar_height: u16 = 40,
     bar_left: Vec<BarWidget> = vec![BarWidget::Workspaces],
@@ -126,6 +127,9 @@ impl Config {
             return Err("configuration exceeds 64 KiB".into());
         }
         let config: Self = toml::from_str(source).map_err(|error| error.to_string())?;
+        if config.idle_lock_seconds > 86400 {
+            return Err("idle_lock_seconds must be 0..86400 seconds".into());
+        }
         let mut widgets = std::collections::HashSet::new();
         for widget in config
             .bar_left
@@ -397,6 +401,9 @@ mod tests {
 
     #[test]
     fn every_example_and_setting_has_reference_coverage() {
+        assert!(Config::parse("idle_lock_seconds=86400").is_ok());
+        assert!(Config::parse("idle_lock_seconds=86401").is_err());
+        assert!(Config::parse("idle_lock_seconds=-1").is_err());
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let reference = std::fs::read_to_string(root.join("docs/configuration.md")).unwrap();
         let full = std::fs::read_to_string(root.join("examples/config/full.toml")).unwrap();

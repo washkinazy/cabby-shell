@@ -9,3 +9,5 @@
 # Managed desktop hosts bar + wallpaper together; restart-ui restarts both.
 # Notifications share renderer/theme settings; ordinary reloads preserve cards and active notices.
 # Empty configuration uses all built-in defaults: Vulkan and a 40px bar.
+
+# idle_lock_seconds is omitted: automatic locking stays disabled (0).

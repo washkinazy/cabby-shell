@@ -1,0 +1,2 @@
+# Requires installed Cabby lock support; applies live on valid reload.
+idle_lock_seconds = 600

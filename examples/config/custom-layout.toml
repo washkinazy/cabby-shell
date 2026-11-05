@@ -50,3 +50,5 @@ wallpaper_image = ""
 wallpaper_color = "#181b22"
 # Image placement: "fill", "fit", "stretch", or "center".
 wallpaper_mode = "fill"
+
+# idle_lock_seconds is omitted: automatic locking stays disabled (0).

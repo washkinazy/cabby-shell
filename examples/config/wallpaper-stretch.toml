@@ -10,3 +10,5 @@
 # Notifications share renderer/theme settings; ordinary reloads preserve cards and active notices.
 wallpaper_image = "assets/sample.png"
 wallpaper_mode = "stretch"
+
+# idle_lock_seconds is omitted: automatic locking stays disabled (0).
