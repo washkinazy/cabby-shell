@@ -1,3 +1,4 @@
+# The coordinator automatically reloads valid saves (300 ms debounce); invalid edits retain the old config.
 # Bluetooth shares theme/layout settings; reload closes the panel and its discovery/pairing.
 # Audio panel shares renderer/font/theme and bar clearance; reload closes the panel.
 # Managed desktop hosts bar + wallpaper together; restart-ui restarts both.
