@@ -25,7 +25,7 @@ References: [session-lock protocol](https://raw.githubusercontent.com/wayland-mi
 
 ### Installation and use
 
-After `just install`, run `just install-lock-support` to install the Fedora `system-auth` PAM include and the local user unit. This explicit task requires sudo for the system PAM policy; it refuses differing existing policies/units, never enables or starts a service, and leaves all bindings unchanged. The regular install task only installs binaries. Other distributions need a reviewed distro-appropriate PAM stack; the supplied policy targets Fedora.
+After `just install`, run `just install-lock-support` to install the Fedora `system-auth` PAM include. The regular installer already owns the local user unit. This explicit task requires sudo for the system PAM policy; it refuses a differing existing policy, never enables or starts a service, and leaves all bindings unchanged. The regular install task installs binaries and all user units, including the independent locker. Other distributions need a reviewed distro-appropriate PAM stack; the supplied policy targets Fedora.
 
 `cabby lock` starts `cabby-lock.service` and waits for compositor confirmation through systemd READY. It requires an active `niri.service` but does not require the ordinary Cabby shell target. Repeated requests use the existing instance. An explicit `cabby lock` request resets the unit start counter before starting, so rapid successful lock/unlock cycles do not exhaust the automatic recovery budget. Test/service overrides are `--lock-unit NAME.service` and `--session-unit NAME.service`. `cabby lock-ui [--config PATH]` is the unit entrypoint, not a standalone supervision replacement. There is no unlock command.
 
