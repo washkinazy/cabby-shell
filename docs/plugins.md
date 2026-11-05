@@ -86,3 +86,5 @@ The audio plugin is the first device-control contribution: the desktop host maps
 
 
 Audio and Bluetooth now share a typed device-panel slot in the desktop host. The host owns placement/focus/output lifetime and routes typed plugin messages; each plugin owns its view/state and backend subscription. Switching plugins drops the previous subscription. Bluetooth's backend remains independent of Iced. This concrete composition requires no dynamic registry, third-party API, or one-service-per-plugin convention.
+
+The tray plugin owns its session-bus worker and bar icons. The desktop host reuses the panel slot for its menu surface; closing that surface leaves tray observation active. `cabby-tray` contains the UI-independent StatusNotifier/DBusMenu adapter and fixtures.

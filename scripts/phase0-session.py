@@ -330,6 +330,40 @@ def inside(directory, interactive, renderer):
                     raise RuntimeError("Bluetooth dismissal stopped desktop")
                 fixture.terminate()
                 fixture.wait(timeout=5)
+            # StatusNotifier item and DBusMenu remain on the private session bus.
+            bar.terminate()
+            bar.wait(timeout=5)
+            with (directory / "tray.log").open("w") as tray_log, (directory / "tray-fixture.log").open("w") as fixture_log:
+                bar = subprocess.Popen([ROOT / "target/debug/tray-panel-probe", "--config", wallpaper_config], stdout=tray_log, stderr=tray_log)
+                children.append(bar)
+                deadline = time.monotonic() + 20
+                while ".attach(wl_buffer" not in (directory / "tray.log").read_text():
+                    if bar.poll() is not None or time.monotonic() > deadline:
+                        raise RuntimeError("Tray host did not render")
+                    time.sleep(0.05)
+                fixture = subprocess.Popen([ROOT / "target/debug/examples/tray-fixture"], stdout=fixture_log, stderr=fixture_log)
+                children.append(fixture)
+                deadline = time.monotonic() + 15
+                while True:
+                    trace = (directory / "tray.log").read_text()
+                    if "tray-probe-menu" in trace and re.search(r"wl_keyboard#\d+\.enter\(", trace):
+                        break
+                    if bar.poll() is not None or fixture.poll() is not None or time.monotonic() > deadline:
+                        raise RuntimeError("Tray menu did not open with keyboard focus")
+                    time.sleep(0.05)
+                time.sleep(0.5)
+                capture = directory / "tray.png"
+                subprocess.run(["grim", str(capture)], check=True, timeout=15)
+                run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(capture), "tray-top" if renderer == "gpu" else "tray-bottom")
+                deadline = time.monotonic() + 15
+                while any(layer.get("namespace") == "cabby-tray-menu" for layer in json.loads(run("niri", "msg", "--json", "layers"))):
+                    if time.monotonic() > deadline:
+                        raise RuntimeError("Tray menu did not dismiss")
+                    time.sleep(0.1)
+                if bar.poll() is not None:
+                    raise RuntimeError("Tray menu dismissal stopped desktop")
+                fixture.terminate()
+                fixture.wait(timeout=5)
             if interactive:
                 (directory / "interactive-ready").touch()
                 # User can inspect the bar before creating this request file.
@@ -359,7 +393,7 @@ def inside(directory, interactive, renderer):
                     lock.wait(timeout=180)
             adapters = {}
             if renderer == "gpu":
-                for client in ("bar", "launcher", "wallpaper", "notifications", "composition", "audio", "bluetooth", "lock"):
+                for client in ("bar", "launcher", "wallpaper", "notifications", "composition", "audio", "bluetooth", "tray", "lock"):
                     adapter = selected_adapter((directory / f"{client}.log").read_text())
                     if adapter["backend"] != "Vulkan" or adapter["device_type"] not in ("DiscreteGpu", "IntegratedGpu"):
                         raise RuntimeError(f"{client} did not use hardware Vulkan: {adapter}")
@@ -368,7 +402,7 @@ def inside(directory, interactive, renderer):
                 "status": "passed", "renderer_request": os.environ.get("ICED_BACKEND", "automatic"),
                 "adapters": adapters,
                 "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action", "launcher-mapped-with-keyboard-focus", "notifications-render-replace-queue-expire-conflict-passive", "wallpaper-solid-and-four-image-modes-pixels", "wallpaper-scaled-pixels",
-                "scale-change-process-survival", "composed-bar-wallpaper-pixels-scales", "audio-panel-fixture-focus-render-close-cleanup", "bluetooth-panel-pairing-discovery-close-cleanup", "lock-confirmed", "lock-survives-bar-crash"],
+                "scale-change-process-survival", "composed-bar-wallpaper-pixels-scales", "audio-panel-fixture-focus-render-close-cleanup", "bluetooth-panel-pairing-discovery-close-cleanup", "tray-item-menu-focus-render-close", "lock-confirmed", "lock-survives-bar-crash"],
                 "not_proven": ["popup-keyboard-focus", "focus-restoration", "multiple-outputs",
                 "PAM", "DRM-lock-security", "gamma", "suspend"],
             }, indent=2))
@@ -397,9 +431,9 @@ def main():
     if args.inside:
         inside(args.inside, args.interactive, args.renderer)
         return
-    for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe", "cabby-wallpaper", "wallpaper-pixel-probe", "cabby-notifications", "notification-probe", "cabby-desktop", "audio-panel-probe", "bluetooth-panel-probe", "examples/bluez-fixture"):
+    for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe", "cabby-wallpaper", "wallpaper-pixel-probe", "cabby-notifications", "notification-probe", "cabby-desktop", "audio-panel-probe", "bluetooth-panel-probe", "examples/bluez-fixture", "tray-panel-probe", "examples/tray-fixture"):
         if not (ROOT / "target/debug" / binary).is_file():
-            parser.error("Run cargo build --workspace --locked and cargo build -p cabby-bluetooth --example bluez-fixture --locked first")
+            parser.error("Run cargo build --workspace --locked and cargo build -p cabby-bluetooth --example bluez-fixture --locked and cargo build -p cabby-tray --example tray-fixture --locked first")
     parent_display = os.environ.get("WAYLAND_DISPLAY")
     if not parent_display:
         parser.error("Run inside an existing Wayland session")

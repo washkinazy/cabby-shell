@@ -46,6 +46,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 cargo build --workspace --locked
 cargo build -p cabby-bluetooth --example bluez-fixture --locked
+cargo build -p cabby-tray --example tray-fixture --locked
 python3 scripts/phase0-session.py
 python3 scripts/phase0-session.py --renderer software
 python3 -m unittest discover -s scripts -p 'test_*.py'
@@ -163,6 +164,9 @@ See [audio.md](audio.md) for scope, bounds and isolated fixture tests. The runti
 The audio panel uses the existing desktop host. `cargo test -p cabby-shell plugins::audio --locked` exercises the worker with copied private fixtures; consistent process visibility is needed for helper-reaping assertions. The standard nested GPU/software harness now runs `audio-panel-probe`, which requires `CABBY_TEST_WAYLAND` and an absolute `CABBY_TEST_AUDIO_HELPER` pointing to the private fixture. It captures `audio.png`/`audio.log`, verifies focus/rendering, and checks that helpers disappear on panel dismissal while the desktop stays alive. These fixture variables are test-only, not production configuration overrides.
 
 
-Bluetooth adds the Fedora `bluez` runtime package; `scripts/install-fedora-deps.sh --print` includes it without enabling services. The Rust backend reuses pinned zbus/Tokio dependencies. `cargo test -p cabby-bluetooth --locked` runs only private D-Bus fixtures, including a real 60-second discovery expiry test; allow at least 70 seconds. Process/socket isolation permissions are needed as for the existing service tests. Before graphical tests also run `cargo build -p cabby-bluetooth --example bluez-fixture --locked`. Both renderer harness modes now exercise a Bluetooth pairing prompt and owned discovery cleanup on the disposable session bus. Production never reads `CABBY_TEST_BLUEZ_BUS`; only the guarded test entrypoint uses it. No real adapter state changes are part of acceptance. See [bluetooth.md](bluetooth.md) for protocol bounds and hardware limitations.
+Bluetooth adds the Fedora `bluez` runtime package; `scripts/install-fedora-deps.sh --print` includes it without enabling services. The Rust backend reuses pinned zbus/Tokio dependencies. `cargo test -p cabby-bluetooth --locked` runs only private D-Bus fixtures, including a real 60-second discovery expiry test; allow at least 70 seconds. Process/socket isolation permissions are needed as for the existing service tests. Before graphical tests also run `cargo build -p cabby-bluetooth --example bluez-fixture --locked
+cargo build -p cabby-tray --example tray-fixture --locked`. Both renderer harness modes now exercise a Bluetooth pairing prompt and owned discovery cleanup on the disposable session bus. Production never reads `CABBY_TEST_BLUEZ_BUS`; only the guarded test entrypoint uses it. No real adapter state changes are part of acceptance. See [bluetooth.md](bluetooth.md) for protocol bounds and hardware limitations.
 
 `just build` builds the six production binaries in release mode. `just install` builds them, installs them together in `$HOME/.local/bin`, reloads user systemd units, and validates the existing user configuration. It does not install units/configuration or start Cabby; apply the dotfiles unit/config setup first. The local units must point to `%h/.local/bin/cabby` rather than the upstream `/usr/bin/cabby`.
+
+Tray tests use the existing dbus-daemon prerequisite and a guarded private-session fixture. PNG/SVG tray rendering adds pinned Rust dependencies through Iced’s SVG feature; no native development package is added.

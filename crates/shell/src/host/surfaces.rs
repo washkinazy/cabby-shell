@@ -1,7 +1,7 @@
 //! Output/surface ownership for passive desktop plugins and on-demand device panels.
 use super::Context;
 use crate::{
-    plugins::{audio, bar, bluetooth, wallpaper},
+    plugins::{audio, bar, bluetooth, tray, wallpaper},
     ui,
 };
 use cabby_config::{BarPosition, Config};
@@ -54,6 +54,7 @@ impl Surfaces {
 }
 
 enum PanelPlugin {
+    Tray,
     Audio(audio::Audio),
     Bluetooth(bluetooth::Bluetooth),
 }
@@ -72,6 +73,7 @@ struct Desktop {
     bluetooth_endpoint: cabby_bluetooth::Endpoint,
     open_bluetooth_on_output: bool,
     bluetooth_probe_stage: Option<u8>,
+    tray_probe_stage: Option<u8>,
     audio_client: cabby_audio::Client,
     open_audio_on_output: bool,
     output_sizes: BTreeMap<u32, (u32, u32)>,
@@ -82,6 +84,7 @@ enum Message {
     Bar(bar::Message),
     Audio(window::Id, audio::Message),
     Bluetooth(window::Id, bluetooth::Message),
+    Tray(window::Id, tray::Message),
     Escape(window::Id),
     ProbeClose(window::Id),
     Shell(ShellEvent),
@@ -102,14 +105,17 @@ pub(super) fn run_with_audio(
     with_wallpaper: bool,
     fixture: Option<cabby_audio::Client>,
 ) -> iced_exwlshell::Result {
-    run_with_panels(context, with_bar, with_wallpaper, fixture, None)
+    run_with_panels(context, with_bar, with_wallpaper, fixture, None, false)
 }
 
 pub(super) fn run_with_bluetooth(
     context: Context,
     endpoint: cabby_bluetooth::Endpoint,
 ) -> iced_exwlshell::Result {
-    run_with_panels(context, true, true, None, Some(endpoint))
+    run_with_panels(context, true, true, None, Some(endpoint), false)
+}
+pub(super) fn run_with_tray(context: Context) -> iced_exwlshell::Result {
+    run_with_panels(context, true, true, None, None, true)
 }
 fn run_with_panels(
     context: Context,
@@ -117,6 +123,7 @@ fn run_with_panels(
     with_wallpaper: bool,
     fixture: Option<cabby_audio::Client>,
     bluetooth_fixture: Option<cabby_bluetooth::Endpoint>,
+    tray_probe: bool,
 ) -> iced_exwlshell::Result {
     let config = context.config;
     let wallpaper = with_wallpaper
@@ -141,6 +148,7 @@ fn run_with_panels(
             bluetooth_endpoint: bluetooth_fixture.clone().unwrap_or_default(),
             open_bluetooth_on_output: bluetooth_fixture.is_some(),
             bluetooth_probe_stage: bluetooth_fixture.as_ref().map(|_| 0),
+            tray_probe_stage: tray_probe.then_some(0),
             output_sizes: BTreeMap::new(),
         },
         || "cabby-desktop".into(),
@@ -215,6 +223,7 @@ impl Desktop {
             self.panel
                 .as_ref()
                 .map(|panel| match &panel.plugin {
+                    PanelPlugin::Tray => Subscription::none(),
                     PanelPlugin::Audio(plugin) => plugin
                         .subscription()
                         .with(panel.id)
@@ -245,6 +254,14 @@ impl Desktop {
     }
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Tray(id, message)
+                if self
+                    .panel
+                    .as_ref()
+                    .is_some_and(|p| p.id == id && matches!(p.plugin, PanelPlugin::Tray)) =>
+            {
+                return self.update(Message::Bar(bar::Message::Tray(message)));
+            }
             Message::Bar(bar::Message::Audio) => return self.toggle_panel(false),
             Message::Bar(bar::Message::Bluetooth) => return self.toggle_panel(true),
             Message::Audio(id, message) => {
@@ -302,6 +319,43 @@ impl Desktop {
                     && panel.id == window
                 {
                     panel.output = output.map(|o| o.id);
+                }
+            }
+            Message::Bar(bar::Message::Tray(message)) => {
+                let closing = matches!(message, tray::Message::Close);
+                if let Some(bar) = &mut self.bar {
+                    bar.tray.update(message);
+                }
+                if let Some(stage) = &mut self.tray_probe_stage
+                    && let Some(bar) = &self.bar
+                {
+                    if *stage == 0
+                        && let Some(item) = bar.tray.state.items.first()
+                    {
+                        *stage = 1;
+                        return Task::done(Message::Bar(bar::Message::Tray(
+                            tray::Message::Action(cabby_tray::Command::Menu(item.token.clone(), 0)),
+                        )));
+                    }
+                    if *stage == 1 && bar.tray.state.menu.is_some() {
+                        *stage = 2;
+                        println!("tray-probe-menu");
+                    }
+                }
+                let menu = !closing
+                    && self
+                        .bar
+                        .as_ref()
+                        .is_some_and(|b| b.tray.state.menu.is_some());
+                let open = self
+                    .panel
+                    .as_ref()
+                    .is_some_and(|p| matches!(p.plugin, PanelPlugin::Tray));
+                if menu && !open {
+                    return self.open_tray_menu();
+                }
+                if !menu && open {
+                    return self.close_panel();
                 }
             }
             Message::Bar(message) => {
@@ -389,17 +443,69 @@ impl Desktop {
         Task::none()
     }
     fn close_panel(&mut self) -> Task<Message> {
+        if self
+            .panel
+            .as_ref()
+            .is_some_and(|p| matches!(p.plugin, PanelPlugin::Tray))
+            && let Some(bar) = &mut self.bar
+        {
+            bar.tray.update(tray::Message::Close);
+        }
         self.panel
             .take()
             .map(|panel| Task::done(Message::RemoveWindow(panel.id)))
             .unwrap_or_else(Task::none)
     }
+    fn open_tray_menu(&mut self) -> Task<Message> {
+        let previous = self.close_panel();
+        let id = window::Id::unique();
+        let (width, height, top) = panel_geometry(&self.config, &self.output_sizes);
+        self.panel = Some(DevicePanel {
+            id,
+            output: None,
+            plugin: PanelPlugin::Tray,
+        });
+        let probe_close = if self.tray_probe_stage.is_some() {
+            Task::perform(
+                async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(8)).await;
+                    id
+                },
+                Message::ProbeClose,
+            )
+        } else {
+            Task::none()
+        };
+        Task::batch([
+            previous,
+            probe_close,
+            Task::done(Message::NewLayerShell {
+                id,
+                settings: NewLayerShellSettings {
+                    namespace: Some("cabby-tray-menu".into()),
+                    output_option: OutputOption::Active,
+                    keyboard_interactivity: KeyboardInteractivity::Exclusive,
+                    layer: Layer::Overlay,
+                    anchor: Anchor::Top | Anchor::Right,
+                    size: LayerSize::px(width, height),
+                    margin: Some((top, 8, 8, 8)),
+                    exclusive_zone: Some(-1),
+                    ..Default::default()
+                },
+            }),
+        ])
+    }
     fn toggle_panel(&mut self, bluetooth: bool) -> Task<Message> {
-        if self
-            .panel
-            .as_ref()
-            .is_some_and(|p| matches!(p.plugin, PanelPlugin::Bluetooth(_)) == bluetooth)
-        {
+        if let Some(bar) = &mut self.bar {
+            bar.tray.update(tray::Message::Close);
+        }
+        if self.panel.as_ref().is_some_and(|p| {
+            if bluetooth {
+                matches!(p.plugin, PanelPlugin::Bluetooth(_))
+            } else {
+                matches!(p.plugin, PanelPlugin::Audio(_))
+            }
+        }) {
             return self.close_panel();
         }
         let previous = self.close_panel();
@@ -444,6 +550,13 @@ impl Desktop {
             && panel.id == id
         {
             return match &panel.plugin {
+                PanelPlugin::Tray => self
+                    .bar
+                    .as_ref()
+                    .expect("tray belongs to bar")
+                    .tray
+                    .menu_view()
+                    .map(move |m| Message::Tray(id, m)),
                 PanelPlugin::Audio(plugin) => plugin
                     .view()
                     .map(move |message| Message::Audio(id, message)),
@@ -496,6 +609,7 @@ mod tests {
             bluetooth_endpoint: cabby_bluetooth::Endpoint::System,
             open_bluetooth_on_output: false,
             bluetooth_probe_stage: None,
+            tray_probe_stage: None,
             output_sizes: BTreeMap::from([(1, (320, 400))]),
         };
         let _ = state.toggle_panel(false);
@@ -524,6 +638,19 @@ mod tests {
         let _ = state.update(Message::Audio(old, audio::Message::Close));
         assert_eq!(state.panel.as_ref().unwrap().id, new);
         let _ = state.update(Message::Bluetooth(new, bluetooth::Message::Close));
+        assert!(state.panel.is_none());
+        let _ = state.open_tray_menu();
+        let old_menu = state.panel.as_ref().unwrap().id;
+        let _ = state.toggle_panel(false);
+        assert!(matches!(
+            state.panel.as_ref().unwrap().plugin,
+            PanelPlugin::Audio(_)
+        ));
+        let _ = state.open_tray_menu();
+        let current_menu = state.panel.as_ref().unwrap().id;
+        let _ = state.update(Message::Tray(old_menu, tray::Message::Close));
+        assert_eq!(state.panel.as_ref().unwrap().id, current_menu);
+        let _ = state.update(Message::Escape(current_menu));
         assert!(state.panel.is_none());
     }
     #[test]

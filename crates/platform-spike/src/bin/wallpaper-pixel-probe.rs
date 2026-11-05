@@ -20,10 +20,10 @@ fn main() {
     let left = [40, 90, 130];
     let right = [180, 130, 60];
     match args[2].as_str() {
-        mode if mode.starts_with("audio-") => {
+        mode if mode.starts_with("audio-") || mode.starts_with("tray-") => {
             // The nested audio probe runs after scale 1.5 is established.
             let scale = 1.5f32;
-            let top = if mode == "audio-top" { 48.0 } else { 8.0 };
+            let top = if mode.ends_with("-top") { 48.0 } else { 8.0 };
             let left_x = w.saturating_sub((448.0 * scale) as u32);
             let mut text_pixels = 0;
             for y in ((top + 12.0) * scale) as u32..((top + 300.0) * scale).min(h as f32) as u32 {
@@ -37,6 +37,23 @@ fn main() {
                         text_pixels += 1;
                     }
                 }
+            }
+            if mode.starts_with("tray-") {
+                let rows = if mode.ends_with("-top") {
+                    0..60
+                } else {
+                    h - 60..h
+                };
+                let icon_pixels = rows
+                    .flat_map(|y| (0..w).map(move |x| (y * w + x) as usize * 4))
+                    .filter(|offset| {
+                        asset.rgba[*offset..*offset + 3]
+                            .iter()
+                            .zip([40u8, 50, 60])
+                            .all(|(a, b)| a.abs_diff(b) < 3)
+                    })
+                    .count();
+                assert!(icon_pixels > 4, "tray icon missing: {icon_pixels} pixels");
             }
             assert!(
                 text_pixels > 300,

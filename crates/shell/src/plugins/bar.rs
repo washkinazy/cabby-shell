@@ -9,6 +9,7 @@ use std::time::Duration;
 
 pub(crate) struct Bar {
     config: Config,
+    pub(crate) tray: super::tray::Tray,
     model: Model,
     action_pending: bool,
     action_failed: bool,
@@ -16,6 +17,7 @@ pub(crate) struct Bar {
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     Niri(niri::Event),
+    Tray(super::tray::Message),
     Disconnected,
     Focus(u64),
     Launcher,
@@ -53,17 +55,22 @@ impl Bar {
     pub(crate) fn new(config: Config) -> Self {
         Self {
             config,
+            tray: super::tray::Tray::default(),
             model: Model::default(),
             action_pending: false,
             action_failed: false,
         }
     }
     pub(crate) fn subscription(&self) -> Subscription<Message> {
-        Subscription::run(events)
+        Subscription::batch([
+            Subscription::run(events),
+            self.tray.subscription().map(Message::Tray),
+        ])
     }
 
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Tray(message) => self.tray.update(message),
             Message::Launcher => {
                 return Task::perform(
                     ui::command(vec!["launcher".into()]),
@@ -153,7 +160,8 @@ impl Bar {
             )
             .clip(true)
             .width(Length::FillPortion(2)),
-            text(status).line_height(1.0)
+            text(status).line_height(1.0),
+            self.tray.view().map(Message::Tray)
         ]
         .spacing(f32::from(self.config.bar_spacing))
         .align_y(iced::Alignment::Center);

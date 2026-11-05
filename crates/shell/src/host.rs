@@ -91,3 +91,11 @@ pub fn bluetooth_probe() -> iced_exwlshell::Result {
         cabby_bluetooth::Endpoint::Private(address),
     )
 }
+
+/// Private-session tray rendering and dismissal probe.
+pub fn tray_probe() -> iced_exwlshell::Result {
+    let guard = std::env::var("CABBY_TEST_WAYLAND").expect("disposable display required");
+    assert!(!guard.is_empty());
+    assert_eq!(Some(guard), std::env::var("WAYLAND_DISPLAY").ok());
+    surfaces::run_with_tray(prepare(Plugin::Desktop))
+}
