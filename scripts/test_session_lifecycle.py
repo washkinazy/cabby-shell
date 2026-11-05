@@ -177,12 +177,18 @@ def main():
             old_ui = pid('ui')
             ctl('kill', '--kill-whom=main', '--signal=KILL', names['ui'])
             wait_for(lambda: (active('ui') and pid('ui') not in (0, old_ui)) or
-                     ctl('show', names['ui'], '-p', 'Result', '--value').stdout.strip() == 'start-limit-hit',
+                     ctl('show', names['ui'], '-p', 'SubState', '--value').stdout.strip() == 'failed',
                      'bounded UI restart')
             if not active('ui'):
                 break
-        assert ctl('show', names['ui'], '-p', 'Result', '--value').stdout.strip() == 'start-limit-hit'
+        assert ctl('show', names['ui'], '-p', 'SubState', '--value').stdout.strip() == 'failed'
+        assert int(ctl('show', names['ui'], '-p', 'NRestarts', '--value').stdout.strip()) >= 3
         assert active('session')
+        time.sleep(1.5)
+        assert not active('ui') and pid('ui') == 0
+        assert ctl('show', names['ui'], '-p', 'SubState', '--value').stdout.strip() == 'failed'
+        crash_log = call('journalctl', '--user', '--no-pager', '-u', names['ui']).stdout
+        assert 'Start request repeated too quickly' in crash_log
         results.append('repeated crashes hit restart limit without killing coordinator')
         ctl('reset-failed', names['ui'])
         ctl('start', names['ui'])
