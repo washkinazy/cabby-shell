@@ -79,6 +79,7 @@ impl Token {
     }
 }
 
+#[derive(Clone)]
 pub struct Entry {
     token: Token,
     pub app_name: String,
