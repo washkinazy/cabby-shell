@@ -165,14 +165,14 @@ impl Launcher {
         if !self.picker.pending {
             input = input.on_input(Message::Query);
         }
-        let mut content = column![
-            row![
-                text("Applications").width(Length::Fill),
-                button("Close").on_press(Message::Close)
-            ],
-            input
-        ]
-        .spacing(8);
+        let header = row![
+            text("Applications").width(Length::Fill),
+            button("Close").on_press(Message::Close)
+        ];
+        let mut content = column![].spacing(8).padding(iced::Padding {
+            right: 12.0,
+            ..Default::default()
+        });
         let page = self.picker.selected / usize::from(self.config.launcher_rows)
             * usize::from(self.config.launcher_rows);
         for (index, &app_index) in self
@@ -243,14 +243,21 @@ impl Launcher {
                 self.picker.matches.len()
             )
         };
-        content = content.push(text(status));
-        container(scrollable(content))
-            .padding(16)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .clip(true)
-            .style(container::rounded_box)
-            .into()
+        container(
+            column![
+                header,
+                input,
+                scrollable(content).height(Length::Fill),
+                text(status)
+            ]
+            .spacing(8),
+        )
+        .padding(16)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .clip(true)
+        .style(container::rounded_box)
+        .into()
     }
 }
 

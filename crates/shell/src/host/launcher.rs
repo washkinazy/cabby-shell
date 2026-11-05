@@ -44,7 +44,7 @@ pub(super) fn run(context: Context) -> iced_exwlshell::Result {
             layer: Layer::Overlay,
             size: LayerSize::px(
                 u32::from(config.launcher_width),
-                u32::from(config.launcher_rows + 3) * u32::from(config.font_size + 20) + 64,
+                u32::from(config.launcher_rows + 3) * u32::from(config.font_size.max(24) + 20) + 64,
             ),
             exclusive_zone: 0,
             keyboard_interactivity: KeyboardInteractivity::Exclusive,
