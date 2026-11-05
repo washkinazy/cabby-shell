@@ -19,7 +19,7 @@ def inside(directory, renderer):
     helper.write_text("#!/usr/bin/python3\nimport sys\nfrom pathlib import Path\np=Path(__file__).resolve().parents[1]/'requests'\nwith p.open('a') as f: f.write(repr(sys.argv[1:])+'\\n')\nsys.exit(0)\n")
     helper.chmod(0o700)
     log=(directory/'idle.log').open('w')
-    env=os.environ | {'PATH':str(bindir)+':'+os.environ['PATH'], 'WAYLAND_DEBUG':'1'}
+    env=os.environ | {'PATH':str(bindir)+':'+os.environ['PATH'], 'WAYLAND_DEBUG':'1','DBUS_SYSTEM_BUS_ADDRESS':'unix:path='+str(directory/'no-system-bus')}
     executable=directory/'cabby'
     shutil.copy2(ROOT/'target/debug/cabby',executable)
     child=subprocess.Popen([executable,'serve','--config',config,'--runtime-dir',runtime],env=env,stdout=log,stderr=log)

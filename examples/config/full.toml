@@ -20,8 +20,9 @@ bar_height = 40
 # Widget order within each independent region. [] leaves a region empty.
 # A widget may occur only once across all three lists.
 bar_left = ["workspaces"]
+# Middle uses its content width; equal sides share the remaining bar space.
 bar_middle = ["clock"]
-bar_right = ["audio", "network", "bluetooth", "nightlight", "tray"]
+bar_right = ["audio", "network", "bluetooth", "caffeine", "nightlight", "tray"]
 
 # Bar edge: "top" or "bottom". Reserved space follows the edge.
 bar_position = "top"
@@ -76,3 +77,12 @@ custom_schedule = false
 sunset = ""
 sunrise = ""
 # Optional coordinates are omitted by default; see nightlight-location.toml.
+
+[caffeine]
+audio = false
+fullscreen = false
+fullscreen_requires_focus = true
+inhibit_idle = true
+inhibit_sleep = true
+manual_pause_nightlight = false
+fullscreen_pause_nightlight = true

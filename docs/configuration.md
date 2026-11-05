@@ -36,9 +36,9 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 
 - **File/purpose:** `config.toml`; ordered widgets aligned to the left of the bar.
 - **Type/default:** array of strings; `["workspaces"]` when omitted. No units.
-- **Values:** any subset of `"workspaces"`, `"clock"`, `"audio"`, `"network"`, `"bluetooth"`, `"tray"`, `"apps"`, `"title"`, `"status"`, `"idle"`, `"nightlight"`, in the desired order. Unknown names and duplicate widgets anywhere across the three regions are errors. `[]` leaves this region empty.
+- **Values:** any subset of `"workspaces"`, `"clock"`, `"audio"`, `"network"`, `"bluetooth"`, `"tray"`, `"apps"`, `"title"`, `"status"`, `"idle"`, `"nightlight"`, `"caffeine"`, in the desired order. Unknown names and duplicate widgets anywhere across the three regions are errors. `[]` leaves this region empty.
 - **Example:** `bar_left = ["workspaces"]`; optional Apps/title/status placement is demonstrated in [custom-layout.toml](../examples/config/custom-layout.toml).
-- **Dependencies/interactions:** the three regions occupy equal widths. Overflow scrolls horizontally within its region; it cannot shift or cover another region. Each array replaces that region's default, while omitted regions still use their defaults. Widgets omitted from all regions disappear; omitted clock/network/tray widgets do not start their background subscriptions. See the widget behavior below.
+- **Dependencies/interactions:** the middle uses its content width and equal side regions divide the remaining space. Overflow scrolls horizontally within its region; it cannot shift or cover another region. Each array replaces that region's default, while omitted regions still use their defaults. Widgets omitted from all regions disappear; omitted clock/network/tray widgets do not start their background subscriptions. See the widget behavior below.
 - **Application:** valid config reload updates regions in place.
 - **Migration:** defaults change from the former fixed Apps/device/workspace/title/status row to the user-requested three-region layout. Existing files inherit these defaults without adding keys. Include `apps`, `title` or `status` explicitly to restore those optional contributions; the launcher command/keybinding remains available.
 
@@ -48,23 +48,23 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Type/default:** array of strings; `["clock"]` when omitted. No units.
 - **Values:** the same widget names and uniqueness rules as `bar_left`; `[]` leaves this region empty.
 - **Example:** `bar_middle = ["clock"]` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** uses the middle third of the content area; oversized contents scroll within that region. To move the clock elsewhere, explicitly remove it from this list as well as adding it to the destination.
+- **Dependencies/interactions:** uses its content width, centered between equal side regions; oversized contents scroll within its available region. To move the clock elsewhere, explicitly remove it from this list as well as adding it to the destination.
 - **Application:** valid config reload updates regions in place.
 - **Migration:** omitted values now show local clock/date in the middle.
 
 ### `bar_right`
 
 - **File/purpose:** `config.toml`; ordered widgets aligned to the right of the bar.
-- **Type/default:** array of strings; `["audio", "network", "bluetooth", "nightlight", "tray"]` when omitted. No units.
+- **Type/default:** array of strings; `["audio", "network", "bluetooth", "caffeine", "nightlight", "tray"]` when omitted. No units.
 - **Values:** the same widget names and uniqueness rules as `bar_left`; `[]` leaves this region empty.
-- **Example:** `bar_right = ["audio", "network", "bluetooth", "tray"]` in [full.toml](../examples/config/full.toml).
-- **Dependencies/interactions:** uses the right third; a large tray or long status scrolls within the region. Audio/Bluetooth keep their existing on-demand panels. Network is read-only status; it does not change connections or radio state.
+- **Example:** `bar_right = ["audio", "network", "bluetooth", "caffeine", "nightlight", "tray"]` in [full.toml](../examples/config/full.toml).
+- **Dependencies/interactions:** uses half of the space remaining beside the middle region; a large tray or long status scrolls within the region. Audio/Bluetooth keep their existing on-demand panels. Network is read-only status; it does not change connections or radio state.
 - **Application:** valid config reload updates regions in place.
-- **Migration:** the default order is audio, network, Bluetooth, night light, system tray.
+- **Migration:** the default order is audio, network, Bluetooth, Caffeine, night light, system tray. Existing explicit arrays keep their order; add `caffeine` to show its indicator. The middle now uses content width rather than an equal third, leaving equal wider side regions without a config change.
 
 #### Widget behavior
 
-`workspaces` follows niri and shows an unavailable label if disconnected. `clock` shows local date and 24-hour time (for example `Thu 05 Nov  09:07`) and updates at minute boundaries; wall-clock jumps are reflected within a minute. Timezone/format configuration is not exposed; restart after changing the process timezone. `audio` and `bluetooth` show event-driven status and open their device panels. Audio reports default-output volume/mute; Bluetooth reports power/connected count. Omitting either widget stops its observation when its panel is closed. Bluetooth registers its agent only while the panel is open; passive observation never starts discovery. `network` reads NetworkManager's connection type/state and connectivity events on the system bus, including offline, connecting, local-only, limited and captive-portal states. Missing NetworkManager shows `Network ?`; owner/bus loss clears status and reconnects after two seconds. No network scan or connectivity-check command is issued. `tray` hosts [StatusNotifier items and menus](tray.md). `idle` shows automatic-lock status (`Idle lock`, `Idle disabled`, `Locking`, `Idle failed`, or unavailable `Idle ?`) and toggles a coordinator-lifetime manual inhibitor; `Keep awake` means inhibited. Changes from CLI controls appear through atomic runtime status updates. No subscription starts when omitted. The default regions do not include it; see [idle.toml](../examples/config/idle.toml). `nightlight` shows off/scheduled/night/forced/unavailable state and toggles the same coordinator-owned state as `cabby nightlight-toggle`; its tooltip reports temperature/output failures. Forced mode returns to scheduled-on on toggle, then the next toggle disables it. It is included before the tray by default; explicit old bar lists must add it to show the indicator. `apps` opens the launcher. `title` shows the output's active window title when `show_window_title` is true. `status` shows niri connection/action errors. Shared typography, colors, spacing and the bar's top/bottom placement apply to every region.
+`workspaces` follows niri and shows an unavailable label if disconnected. `clock` shows local date and 24-hour time (for example `Thu 05 Nov  09:07`) and updates at minute boundaries; wall-clock jumps are reflected within a minute. Timezone/format configuration is not exposed; restart after changing the process timezone. `audio` and `bluetooth` show event-driven status and open their device panels. Audio reports default-output volume/mute; Bluetooth reports power/connected count. Omitting either widget stops its observation when its panel is closed. Bluetooth registers its agent only while the panel is open; passive observation never starts discovery. `network` reads NetworkManager's connection type/state and connectivity events on the system bus, including offline, connecting, local-only, limited and captive-portal states. Missing NetworkManager shows `Network ?`; owner/bus loss clears status and reconnects after two seconds. No network scan or connectivity-check command is issued. `tray` hosts [StatusNotifier items and menus](tray.md). `caffeine` shows off/manual/automatic state and sleep-inhibitor failures, with a tooltip listing reasons and source availability. Clicking toggles only the manual reason. `idle` shows automatic-lock status (`Idle lock`, `Idle disabled`, `Locking`, `Idle failed`, or unavailable `Idle ?`) and toggles a coordinator-lifetime manual Caffeine reason; `Keep awake` means inhibited. Changes from CLI controls appear through atomic runtime status updates. No subscription starts when omitted. The default regions do not include it; see [idle.toml](../examples/config/idle.toml). `nightlight` shows off/scheduled/night/forced/unavailable state and toggles the same coordinator-owned state as `cabby nightlight-toggle`; its tooltip reports temperature/output failures. Forced mode returns to scheduled-on on toggle, then the next toggle disables it. It is included before the tray by default; explicit old bar lists must add it to show the indicator. `apps` opens the launcher. `title` shows the output's active window title when `show_window_title` is true. `status` shows niri connection/action errors. The middle region uses its content width; equal side regions share the remaining space, keeping the middle centered while leaving room for side indicators. Overflow scrolls horizontally within its region. Shared typography, colors, spacing and the bar's top/bottom placement apply to every region.
 
 ### `bar_height`
 
@@ -366,3 +366,60 @@ Device panels and tray menus open beside the clicked widget on its output, below
 - **Values/example:** finite `-180..180`; `longitude = 13.405` in [nightlight-location.toml](../examples/config/nightlight-location.toml).
 - **Interactions:** requires latitude; no schedule is assumed when neither coordinates nor custom times resolve. Examples use public city coordinates.
 - **Application:** immediate valid reload; no restart.
+
+### `caffeine`
+
+- **File/type/purpose:** `[caffeine]` table in `config.toml`; combines independent manual, audio and fullscreen inhibition reasons. Omission uses child defaults below; unknown keys fail validation.
+- **Example:** [caffeine.toml](../examples/config/caffeine.toml). The `caffeine` bar widget is included before night light by default; explicit existing bar lists must add it.
+- **Interactions:** with default effects, each active reason prevents Cabby's automatic idle lock/display-off and holds a logind sleep/block inhibitor; the child switches below can disable either effect. Manual off removes only the manual reason. Qualifying fullscreen pauses night light on affected outputs by default; manual pause is separately opt-in and audio never pauses it. Explicit locking remains available; explicit suspend honors block inhibitors and can be rejected until reasons clear. Sleep/block failure is reported independently of idle/night policy; there is no authorization prompt or service management.
+- **Application:** live reload; enabling/disabling sources owns/cancels their subscriptions and starts fresh idle countdowns when the last reason clears. No preferences are rewritten. `caffeine-on|off|toggle|status` use coordinator-lifetime state; the old idle-inhibit commands are aliases for the same manual reason and now also apply configured sleep/night-light effects.
+- **Migration:** automatic sources default off; dotfiles opt into both to replace the external audio helper. Manual control is always available. No extra daemon or production unit.
+
+### `caffeine.audio`
+
+- **File/type/default:** `[caffeine]`, boolean `false`; inhibit for any running output or non-monitor recording input.
+- **Values/example:** `audio = true` in [caffeine.toml](../examples/config/caffeine.toml); no units.
+- **Interactions:** event-driven pactl subscription/snapshots work with PipeWire's PulseAudio compatibility service. RUNNING state counts even when muted; monitor sources are excluded. Paused/suspended/unknown devices do not hold a reason. Disconnect/error clears this reason and reconnects after two seconds, preserving all other reasons. No audio content/device names are logged; no sound state is changed. Observation is independent of the bar/device panel.
+- **Application:** valid reload starts/cancels owned helpers. Disabling clears only this reason; helper cleanup stays in the coordinator cgroup. No restart.
+
+### `caffeine.fullscreen`
+
+- **File/type/default:** `[caffeine]`, boolean `false`; react to actual fullscreen windows, requiring focus by default.
+- **Values/example:** `fullscreen = true` in [caffeine.toml](../examples/config/caffeine.toml); no units.
+- **Interactions:** uses foreign-toplevel fullscreen/minimized state and output-enter/leave events, committed at protocol done. Maximized/minimized and off-output windows do not qualify. Focus is required by default, so niri fullscreen windows on hidden workspaces cannot keep inhibition active. Opting out of focus gating also includes background/hidden fullscreen windows. Qualifying windows contribute output names, so reasons/outputs compose. Output names map across the independent gamma connection. If names are unavailable, night-light pause conservatively covers all outputs until mapping resolves. Missing protocol/disconnect is reported and clears this source; no geometry guessing, title logging or polling. Bounds: 512 windows, 32 observed outputs; connection recovery after two seconds.
+- **Application:** valid reload starts/cancels observation. Ending fullscreen, minimizing/closing a window, losing its output or losing focus when required removes its contribution without disturbing manual/audio reasons. When fullscreen pause is enabled, night light restores the current schedule/force target. No restart.
+
+### `caffeine.fullscreen_requires_focus`
+
+- **File/type/default:** `[caffeine]` in `config.toml`, boolean `true`; fullscreen windows must have compositor-reported keyboard focus.
+- **Values/example:** `fullscreen_requires_focus = false` in [background example](../examples/config/caffeine-background.toml); no units.
+- **Interactions:** requires `caffeine.fullscreen = true`. Niri reports output membership even on hidden workspaces; focus gating prevents these windows from holding inhibition. False includes background fullscreen windows on other outputs and hidden workspaces. It still excludes minimized/off-output windows; this setting does not infer visibility from geometry or titles.
+- **Application:** live reload recomputes the existing observation without reconnecting. No restart.
+
+### `caffeine.inhibit_idle`
+
+- **File/type/default:** `[caffeine]` in `config.toml`, boolean `true`; active reasons prevent automatic idle lock/display-off.
+- **Values/example:** `inhibit_idle = false` keeps automatic idle actions enabled during Caffeine. No units.
+- **Interactions:** affects all reasons; explicit lock is always available. Disabling or releasing inhibition starts fresh idle countdowns. Existing compositor application inhibitors remain independent.
+- **Application:** live reload, no restart. [Full example](../examples/config/full.toml) uses true; [effects example](../examples/config/caffeine-effects.toml) uses false.
+
+### `caffeine.inhibit_sleep`
+
+- **File/type/default:** `[caffeine]` in `config.toml`, boolean `true`; active reasons acquire a logind `sleep/block` FD.
+- **Values/example:** `inhibit_sleep = false` permits sleep while retaining other configured effects. No units.
+- **Interactions:** independent of lock-before-sleep's delay lease. Block acquisition requires logind authorization; failures are reported, never claimed as protection. Explicit suspend also respects this inhibitor; clear reasons to suspend, or disable this setting.
+- **Application:** live reload acquires/releases the lease; no restart. [Full example](../examples/config/full.toml) uses true; [effects example](../examples/config/caffeine-effects.toml) uses false.
+
+### `caffeine.manual_pause_nightlight`
+
+- **File/type/default:** `[caffeine]` in `config.toml`, boolean `false`; manual caffeine temporarily pauses night light on all outputs.
+- **Values/example:** `manual_pause_nightlight = true` in [effects example](../examples/config/caffeine-effects.toml); no units.
+- **Interactions:** independent of fullscreen-specific pause. Audio never pauses night light. Pauses release gamma ownership and never edit enabled/force/temperature preferences; changes made while paused apply when inhibition ends.
+- **Application:** live reload recomputes effective policy immediately. No restart or persistent manual-state write.
+
+### `caffeine.fullscreen_pause_nightlight`
+
+- **File/type/default:** `[caffeine]` in `config.toml`, boolean `true`; fullscreen automation temporarily pauses night light on affected outputs.
+- **Values/example:** `fullscreen_pause_nightlight = false` in [effects example](../examples/config/caffeine-effects.toml); no units.
+- **Interactions:** requires `caffeine.fullscreen = true`; missing output names conservatively pause all outputs. Independent of manual pause and idle/sleep effects. Ending fullscreen restores the current schedule or forced target.
+- **Application:** live reload, no restart. Disable this to retain night light while fullscreen windows still inhibit idle/sleep.

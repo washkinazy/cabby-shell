@@ -1,3 +1,5 @@
+mod caffeine;
+mod fullscreen;
 mod idle;
 mod location;
 mod night;
@@ -19,6 +21,7 @@ const HELP: &str = "Usage:
   cabby restart-ui [--ui-unit UNIT] [--session-unit UNIT]
   cabby launcher [--launcher-unit UNIT] [--target UNIT] [--session-unit UNIT]
   cabby launcher-ui [--config PATH]
+  cabby caffeine-status|caffeine-on|caffeine-off|caffeine-toggle [--runtime-dir PATH]
   cabby nightlight-status|nightlight-enable|nightlight-disable|nightlight-toggle|nightlight-force-toggle [--runtime-dir PATH]
   cabby lock|suspend|display-off [--lock-unit UNIT] [--session-unit UNIT]
   cabby display-on
@@ -148,6 +151,10 @@ fn run() -> Result<()> {
         | "idle-inhibit-on"
         | "idle-inhibit-off"
         | "idle-inhibit-toggle"
+        | "caffeine-status"
+        | "caffeine-on"
+        | "caffeine-off"
+        | "caffeine-toggle"
         | "nightlight-status"
         | "nightlight-enable"
         | "nightlight-disable"
@@ -229,6 +236,10 @@ fn run() -> Result<()> {
         | "idle-inhibit-on"
         | "idle-inhibit-off"
         | "idle-inhibit-toggle"
+        | "caffeine-status"
+        | "caffeine-on"
+        | "caffeine-off"
+        | "caffeine-toggle"
         | "nightlight-status"
         | "nightlight-enable"
         | "nightlight-disable"

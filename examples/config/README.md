@@ -21,3 +21,7 @@ The lock UI uses shared `renderer`, `font_size`, `background`, `foreground` and 
 [idle.toml](idle.toml) enables a ten-minute idle lock after installing lock support; other examples leave automatic locking disabled.
 
 Night light examples cover [custom times](nightlight-custom.toml), [manual coordinates](nightlight-location.toml), [automatic IP lookup](nightlight-auto.toml), [address geocoding](nightlight-address.toml), and [forced mode](nightlight-forced.toml). Network lookup is opt-in and no example executes it merely by validation. The default right bar now includes the night-light toggle before the system tray.
+
+[caffeine.toml](caffeine.toml) enables automatic audio/fullscreen reasons with default effects; [caffeine-effects.toml](caffeine-effects.toml) demonstrates independent idle/sleep and manual/fullscreen night-light switches. All settings live in `[caffeine]` and reload live. Explicit bar lists must add `caffeine` for its indicator.
+
+[caffeine-background.toml](caffeine-background.toml) explicitly includes background/hidden fullscreen windows; the default requires keyboard focus.

@@ -1,0 +1,9 @@
+# Independent event-driven automatic reasons, plus the bar/CLI manual toggle.
+[caffeine]
+audio = true
+fullscreen = true
+fullscreen_requires_focus = true
+inhibit_idle = true
+inhibit_sleep = true
+manual_pause_nightlight = false
+fullscreen_pause_nightlight = true

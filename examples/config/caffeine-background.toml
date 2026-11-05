@@ -1,0 +1,4 @@
+# Include background fullscreen windows, including niri hidden workspaces.
+[caffeine]
+fullscreen = true
+fullscreen_requires_focus = false

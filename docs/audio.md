@@ -35,3 +35,5 @@ No new settings are added. Renderer, base font size and theme colors come from t
 The nested renderer harness uses `audio-panel-probe` with an explicit private fixture helper under the disposable-session guard. It verifies a populated panel, keyboard focus, rendered text pixels, and passive status after a probe-only one-shot dismissal and helper cleanup after removing the contribution; abrupt process exit uses the enclosing service cgroup. The same host close path is used by the UI. Worker fixtures cover default selection, volume, input mute, rejected commands, external changes, disconnect/reconnect and cleanup; policy tests cover pending controls and stale panel events. No test invokes live audio mutations.
 
 Ordinary configuration reload now updates the existing host in place and preserves its active UI state. Renderer changes still restart it. See [configuration](configuration.md) for the current reload contract.
+
+[Caffeine](caffeine.md) adds coordinator-owned playback/recording inhibition using this backend, independent of the desktop panel. Its subscription starts only with `caffeine.audio = true`; no extra daemon or sound-state change is involved.

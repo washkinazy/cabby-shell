@@ -21,7 +21,7 @@ bar_height = 40
 # A widget may occur only once across all three lists.
 bar_left = ["apps", "workspaces"]
 bar_middle = ["title"]
-bar_right = ["audio", "network", "bluetooth", "nightlight", "tray", "status"]
+bar_right = ["audio", "network", "bluetooth", "caffeine", "nightlight", "tray", "status"]
 
 # Bar edge: "top" or "bottom". Reserved space follows the edge.
 bar_position = "top"

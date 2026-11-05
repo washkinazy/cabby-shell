@@ -18,3 +18,5 @@ pub(crate) mod lock;
 mod idle;
 
 mod nightlight;
+
+mod caffeine;

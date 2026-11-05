@@ -127,6 +127,8 @@ fn upload(control: &ZwlrGammaControlV1, size: u32, temperature: u16) -> std::io:
 }
 struct Desired {
     settings: Settings,
+    suppressed: std::collections::BTreeSet<String>,
+    suppress_all: bool,
     enabled_override: Option<bool>,
     force_override: Option<bool>,
     epoch: u64,
@@ -148,6 +150,22 @@ impl Resume {
         let _ = (&self.wake).write(&[1]);
     }
 }
+pub struct Inhibit {
+    desired: Arc<Mutex<Desired>>,
+    wake: UnixStream,
+}
+impl Inhibit {
+    pub fn apply(&self, outputs: std::collections::BTreeSet<String>, all: bool) {
+        let mut d = self.desired.lock().unwrap();
+        if d.suppressed == outputs && d.suppress_all == all {
+            return;
+        }
+        d.suppressed = outputs;
+        d.suppress_all = all;
+        drop(d);
+        let _ = (&self.wake).write(&[1]);
+    }
+}
 pub struct Night {
     desired: Arc<Mutex<Desired>>,
     wake: UnixStream,
@@ -161,6 +179,8 @@ impl Night {
         reader.set_nonblocking(true).unwrap();
         let desired = Arc::new(Mutex::new(Desired {
             settings: config.into(),
+            suppressed: Default::default(),
+            suppress_all: false,
             enabled_override: None,
             force_override: None,
             epoch: 0,
@@ -193,6 +213,12 @@ impl Night {
         d.settings = settings;
         drop(d);
         let _ = (&self.wake).write(&[1]);
+    }
+    pub fn policy_handle(&self) -> Inhibit {
+        Inhibit {
+            desired: self.desired.clone(),
+            wake: self.wake.try_clone().expect("gamma policy wake"),
+        }
     }
     pub fn observing(&self) -> bool {
         let s = effective(&self.desired.lock().unwrap());
@@ -241,6 +267,7 @@ impl Drop for Night {
     }
 }
 struct Output {
+    name: String,
     output: wl_output::WlOutput,
     control: Option<ZwlrGammaControlV1>,
     size: u32,
@@ -251,11 +278,16 @@ struct State {
     manager: Option<(u32, ZwlrGammaControlManagerV1)>,
     outputs: HashMap<u32, Output>,
     temperature: Option<u16>,
+    suppressed: std::collections::BTreeSet<String>,
+    suppress_all: bool,
 }
 impl State {
     fn apply(&mut self, qh: &QueueHandle<Self>) {
         for (id, out) in &mut self.outputs {
-            let Some(temperature) = self.temperature else {
+            let Some(temperature) = self
+                .temperature
+                .filter(|_| !self.suppress_all && !self.suppressed.contains(&out.name))
+            else {
                 if let Some(c) = out.control.take() {
                     c.destroy();
                 }
@@ -299,7 +331,7 @@ impl State {
             .values()
             .filter(|o| o.control.is_some() && !o.failed && o.last.is_some())
             .count();
-        serde_json::json!({"state":if self.manager.is_none(){"unsupported"}else if failed>0{"output-failed"}else if self.temperature.is_none(){"no-schedule"}else if applied>0{"active"}else{"waiting"},"temperature":self.temperature,"outputs":self.outputs.len(),"applied":applied,"failed":failed})
+        serde_json::json!({"state":if self.manager.is_none(){"unsupported"}else if failed>0{"output-failed"}else if self.temperature.is_none(){"no-schedule"}else if applied>0{"active"}else{"waiting"},"inhibited_outputs":self.outputs.values().filter(|out|self.suppress_all||self.suppressed.contains(&out.name)).count(),"temperature":self.temperature,"outputs":self.outputs.len(),"applied":applied,"failed":failed})
     }
 }
 impl Dispatch<wl_registry::WlRegistry, ()> for State {
@@ -325,7 +357,8 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
                         s.outputs.insert(
                             name,
                             Output {
-                                output: r.bind(name, version.min(4), qh, ()),
+                                output: r.bind(name, version.min(4), qh, name),
+                                name: String::new(),
                                 control: None,
                                 size: 0,
                                 failed: false,
@@ -388,7 +421,23 @@ impl Dispatch<ZwlrGammaControlV1, u32> for State {
         s.apply(qh);
     }
 }
-delegate_noop!(State: ignore wl_output::WlOutput);
+impl Dispatch<wl_output::WlOutput, u32> for State {
+    fn event(
+        s: &mut Self,
+        _: &wl_output::WlOutput,
+        e: wl_output::Event,
+        id: &u32,
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+    ) {
+        if let wl_output::Event::Name { name } = e
+            && let Some(out) = s.outputs.get_mut(id)
+        {
+            out.name = name;
+            s.apply(qh);
+        }
+    }
+}
 delegate_noop!(State: ignore ZwlrGammaControlManagerV1);
 struct LocationCache {
     source: Option<cabby_config::Location>,
@@ -477,6 +526,8 @@ fn connected(
         manager: None,
         outputs: HashMap::new(),
         temperature: now_target(&scene),
+        suppressed: Default::default(),
+        suppress_all: false,
     };
     let mut fetch: Option<crate::location::Fetch> = None;
     let network = !settings.location.custom_schedule
@@ -485,6 +536,12 @@ fn connected(
     loop {
         {
             let d = desired.lock().unwrap();
+            if state.suppressed != d.suppressed || state.suppress_all != d.suppress_all {
+                state.suppressed = d.suppressed.clone();
+                state.suppress_all = d.suppress_all;
+                state.temperature = now_target(&scene);
+                state.apply(&qh);
+            }
             if d.stop || effective(&d) != *settings || d.epoch != epoch {
                 state.release();
                 conn.flush()?;
@@ -672,6 +729,8 @@ mod tests {
         let night = Night {
             desired: Arc::new(Mutex::new(Desired {
                 settings: (&c).into(),
+                suppressed: Default::default(),
+                suppress_all: false,
                 enabled_override: None,
                 force_override: None,
                 epoch: 0,

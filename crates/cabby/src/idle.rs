@@ -64,6 +64,22 @@ impl Resume {
         let _ = (&self.wake).write(&[1]);
     }
 }
+pub struct Inhibit {
+    desired: Arc<Mutex<Desired>>,
+    wake: UnixStream,
+}
+impl Inhibit {
+    pub fn active(&self, value: bool) {
+        let mut d = self.desired.lock().unwrap();
+        if d.inhibited == value {
+            return;
+        }
+        d.inhibited = value;
+        d.publish();
+        drop(d);
+        let _ = (&self.wake).write(&[1]);
+    }
+}
 pub struct Idle {
     desired: Arc<Mutex<Desired>>,
     wake: UnixStream,
@@ -90,6 +106,12 @@ impl Idle {
             thread: Some(thread),
         }
     }
+    pub fn policy_handle(&self) -> Inhibit {
+        Inhibit {
+            desired: self.desired.clone(),
+            wake: self.wake.try_clone().expect("policy wake"),
+        }
+    }
     pub fn resume_handle(&self) -> Resume {
         Resume {
             desired: self.desired.clone(),
@@ -110,6 +132,7 @@ impl Idle {
         drop(state);
         self.wake();
     }
+    #[cfg(test)]
     pub fn inhibit(&self, value: Option<bool>) {
         let mut state = self.desired.lock().unwrap();
         state.inhibited = value.unwrap_or(!state.inhibited);
