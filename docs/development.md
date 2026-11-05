@@ -5,8 +5,10 @@
 Install the development and test packages with:
 
 ```sh
-bash scripts/install-fedora-deps.sh
+just deps
 ```
+
+If `just` is not installed yet, run `bash scripts/install-fedora-deps.sh` directly; it also installs just.
 
 Inspect the package list without installing anything:
 
