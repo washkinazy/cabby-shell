@@ -2,7 +2,7 @@
 # Development and isolated integration-test dependencies. No services are enabled.
 set -euo pipefail
 packages=(
-    cargo rust rustfmt clippy gcc pkgconf-pkg-config
+    cargo rust rustfmt clippy just gcc pkgconf-pkg-config
     wayland-devel libxkbcommon-devel
     niri wayland-utils grim dbus-daemon systemd python3 util-linux pulseaudio-utils bluez
     mesa-dri-drivers mesa-vulkan-drivers
