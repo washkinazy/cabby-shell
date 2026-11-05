@@ -59,7 +59,11 @@ fn main() {
         mode if mode.starts_with("audio-") || mode.starts_with("tray-") => {
             // The nested audio probe runs after scale 1.5 is established.
             let scale = 1.5f32;
-            let top = if mode.ends_with("-top") { 48.0 } else { 8.0 };
+            let top = if mode.ends_with("-top") {
+                48.0
+            } else {
+                (h as f32 / scale - 548.0).max(8.0)
+            };
             let left_x = w.saturating_sub((448.0 * scale) as u32);
             let mut text_pixels = 0;
             for y in ((top + 12.0) * scale) as u32..((top + 300.0) * scale).min(h as f32) as u32 {

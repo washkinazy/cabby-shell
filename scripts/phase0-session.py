@@ -323,7 +323,7 @@ def inside(directory, interactive, renderer):
                 run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(capture), "audio-top" if renderer == "gpu" else "audio-bottom")
                 # Probe-only one-shot dismissal uses the same close path as the UI.
                 deadline = time.monotonic() + 15
-                while any(layer.get("namespace") == "cabby-audio" for layer in json.loads(run("niri", "msg", "--json", "layers"))):
+                while any(layer.get("namespace") in ("cabby-audio", "cabby-panel-shield") for layer in json.loads(run("niri", "msg", "--json", "layers"))):
                     if time.monotonic() > deadline:
                         raise RuntimeError("Audio panel did not dismiss")
                     time.sleep(0.1)

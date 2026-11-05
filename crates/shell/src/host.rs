@@ -7,6 +7,7 @@ mod launcher;
 mod live_config;
 mod lock;
 mod notifications;
+mod panel;
 mod surfaces;
 use cabby_config::{Config, Source};
 

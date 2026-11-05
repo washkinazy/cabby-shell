@@ -59,7 +59,7 @@ The existing `cabby ui` and `cabby wallpaper` wrappers each use this same host w
 
 `host/notifications.rs` owns card window IDs, output geometry, layer creation/removal, redraw acknowledgement, and process exit codes. The feature owns the service subscription, snapshots, commands, action errors, and card content. It exposes bounded visible revision tokens and typed changes/failures; it does not know window IDs or exit the process. The host passes the token of a drawn revision back to the feature, preserving stale-draw protection and presentation-triggered expiry.
 
-The subscription still owns the D-Bus service future directly, with no detached backend task. Ownership conflicts remain exit 73 in the standalone host. In-memory retention, queue bounds, action semantics, shared theme, and reload discarding notices are unchanged. Specialized host adapters keep these lifecycle differences explicit instead of forcing every feature into one trait.
+The subscription still owns the D-Bus service future directly, with no detached backend task. Ownership conflicts remain exit 73 in the standalone host. In-memory retention, queue bounds, action semantics, shared theme, and ordinary reload preserving notices are unchanged. Specialized host adapters keep these lifecycle differences explicit instead of forcing every feature into one trait.
 
 ## Remaining design work
 
@@ -92,3 +92,7 @@ The tray plugin owns its session-bus worker and bar icons. The desktop host reus
 Bar contributions are selected by typed `BarWidget` values in three ordered config lists. Clock formatting and the read-only NetworkManager adapter remain independent of view construction; the bar starts subscriptions only for configured contributions. This is static in-repository composition, with no public plugin-loading API.
 
 The lock plugin owns credential editing and authentication state; its dedicated host owns compositor confirmation, READY and the sole authenticated unlock exit. `cabby-lock` is a UI-independent PAM/policy crate, `cabby-auth` is its bounded helper process, and the `cabby-lock` executable belongs to `cabby-shell`. A separate compositor-bound service protects active locks from ordinary shell lifecycle changes.
+
+## Shared panel interaction
+
+Audio, Bluetooth and tray menus use one host-owned panel slot. A bar click carries its output and pointer position; shared geometry clamps the panel to that output beside the configured top or bottom bar. Output/config updates reposition the same panel. Escape, focus loss after focus acquisition, outside clicks, explicit close and output removal dismiss it. A transparent, non-keyboard overlay catches outside clicks while leaving the bar available for switching panels. Both surfaces are removed together; stale callbacks cannot close a replacement. Pointer delivery and application focus restoration on physical outputs remain unverified.
