@@ -11,3 +11,5 @@ The backend retains at most 64 items, accepts item property replies up to 4 MiB 
 The tray uses shared styling and the desktop restart/reload policy in [configuration.md](configuration.md). Include `"tray"` in one bar region to enable it (the default is last in `bar_right`); omitting it from all regions disables its bus subscription. Physical input and application-specific menu compatibility remain unverified; private protocol fixtures and nested renderer tests cover the implemented behavior.
 
 Protocol references: KDE's [StatusNotifierItem interface](https://raw.githubusercontent.com/KDE/kstatusnotifieritem/master/src/org.kde.StatusNotifierItem.xml), [watcher interface](https://raw.githubusercontent.com/KDE/kstatusnotifieritem/master/src/org.kde.StatusNotifierWatcher.xml), and [DBusMenu interface](https://raw.githubusercontent.com/KDE/plasma-workspace/master/libdbusmenuqt/com.canonical.dbusmenu.xml).
+
+Ordinary configuration reload now updates the existing host in place and preserves its active UI state. Renderer changes still restart it. See [configuration](configuration.md) for the current reload contract.

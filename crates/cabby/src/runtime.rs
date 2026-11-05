@@ -208,12 +208,14 @@ fn reload(
     wallpaper_unit: &Option<String>,
     notifications_unit: &Option<String>,
 ) -> serde_json::Value {
+    let previous = store.active().clone();
     match store.reload_with(|candidate| publish(path, candidate)) {
         Ok(changed) => {
-            // Intentional edits must not consume the crash-recovery budget.
+            let changes = cabby_config::changes::Changes::between(&previous, store.active());
+            // Only renderer changes require process recreation.
             // try-restart still leaves stopped/conflicted services stopped.
             let restart_unit = |unit: &Option<String>| {
-                changed
+                (changed && changes.renderer)
                     .then(|| {
                         unit.as_ref().map(|unit| {
                             let reset = std::process::Command::new("systemctl")
@@ -232,7 +234,7 @@ fn reload(
             let restart = restart_unit(ui_unit);
             let wallpaper_restart = restart_unit(wallpaper_unit);
             let notifications_restart = restart_unit(notifications_unit);
-            serde_json::json!({"ok": true, "changed": changed, "ui_restart_queued": restart, "wallpaper_restart_queued": wallpaper_restart, "notifications_restart_queued": notifications_restart, "config": store.active()})
+            serde_json::json!({"ok": true, "changed": changed, "live_update": changed && !changes.renderer, "ui_restart_queued": restart, "wallpaper_restart_queued": wallpaper_restart, "notifications_restart_queued": notifications_restart, "config": store.active()})
         }
         Err(error) => serde_json::json!({"ok": false, "error": error}),
     }

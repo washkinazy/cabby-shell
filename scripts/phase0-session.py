@@ -267,6 +267,24 @@ def inside(directory, interactive, renderer):
                     run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(capture), "bar-top" if renderer == "gpu" else "bar-bottom")
                     if bar.poll() is not None:
                         raise RuntimeError("Composed host exited after scale change")
+                # Replace wallpaper in-place, then reject an invalid candidate.
+                original_config = wallpaper_config.read_text()
+                wallpaper_config.write_text(original_config.replace('wallpaper_mode = "center"', 'wallpaper_mode = "stretch"'))
+                capture = directory / "live-wallpaper.png"
+                deadline = time.monotonic() + 10
+                while True:
+                    subprocess.run(["grim", str(capture)], check=True, timeout=15)
+                    pixels = subprocess.run([ROOT / "target/debug/wallpaper-pixel-probe", capture, "stretch"], capture_output=True, text=True, timeout=15)
+                    if pixels.returncode == 0: break
+                    if time.monotonic() > deadline: raise RuntimeError("Live wallpaper did not update: " + pixels.stderr)
+                    time.sleep(.1)
+                wallpaper_config.write_text('invalid = true\n')
+                time.sleep(.7)
+                subprocess.run(["grim", str(capture)], check=True, timeout=15)
+                run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(capture), "stretch")
+                assert bar.poll() is None
+                wallpaper_config.write_text(original_config)
+                time.sleep(.7)
                 run(str(ROOT / "target/debug/bar-ipc-probe"))
             # Run the real panel/worker with an explicit private helper, never live audio.
             bar.terminate()
@@ -293,7 +311,13 @@ def inside(directory, interactive, renderer):
                     time.sleep(0.1)
                 else:
                     raise RuntimeError("Audio panel did not connect and receive keyboard focus")
-                time.sleep(0.5)
+                original_config = wallpaper_config.read_text()
+                wallpaper_config.write_text(original_config.replace('bar_height = 40', 'bar_height = 42'))
+                time.sleep(.7)
+                assert bar.poll() is None
+                assert any(layer.get("namespace") == "cabby-audio" for layer in json.loads(run("niri", "msg", "--json", "layers")))
+                wallpaper_config.write_text(original_config)
+                time.sleep(.7)
                 capture = directory / "audio.png"
                 subprocess.run(["grim", str(capture)], check=True, timeout=15)
                 run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(capture), "audio-top" if renderer == "gpu" else "audio-bottom")
@@ -495,7 +519,7 @@ def main():
     with (directory / "session.log").open("w") as log:
         session = subprocess.Popen(command, stdout=log, stderr=log, start_new_session=True)
         try:
-            deadline = time.monotonic() + (300 if args.interactive else 90)
+            deadline = time.monotonic() + (300 if args.interactive else 120)
             while not (directory / "finished").exists():
                 if session.poll() is not None:
                     raise RuntimeError("Nested compositor exited; see session.log")

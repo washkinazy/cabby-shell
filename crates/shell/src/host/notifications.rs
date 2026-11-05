@@ -16,12 +16,14 @@ use std::sync::atomic::{AtomicI32, Ordering};
 
 static EXIT_CODE: AtomicI32 = AtomicI32::new(0);
 pub(crate) fn run(context: crate::host::Context) -> iced_exwlshell::Result {
+    let config_path = context.source.path;
     let config = context.config;
     let (sender, receiver) = shell::channel();
     let text_size = iced::Pixels(f32::from(config.font_size));
     let result = daemon(
         move || Notifications {
             config: config.clone(),
+            config_path: Some(config_path.clone()),
             shell: receiver.clone(),
             plugin: notifications::Notifications::default(),
             cards: BTreeMap::new(),
@@ -57,6 +59,7 @@ struct Card {
 }
 struct Notifications {
     config: Config,
+    config_path: Option<std::path::PathBuf>,
     shell: ShellReceiver,
     plugin: notifications::Notifications,
     cards: BTreeMap<window::Id, Card>,
@@ -68,6 +71,7 @@ enum Message {
     Plugin(notifications::Message),
     Shell(ShellEvent),
     Drawn(window::Id, Token),
+    Config(super::live_config::Update),
 }
 fn geometry(config: &Config, outputs: &BTreeMap<u32, (u32, u32)>) -> (u32, u32, i32) {
     let width = outputs.values().map(|s| s.0).min().unwrap_or(400);
@@ -102,6 +106,10 @@ impl Notifications {
             .map(|(id, card)| (*id, card.token))
             .collect();
         Subscription::batch([
+            self.config_path
+                .as_ref()
+                .map(|p| super::live_config::subscription(p.clone(), false).map(Message::Config))
+                .unwrap_or_else(Subscription::none),
             self.plugin.subscription().map(Message::Plugin),
             self.shell.listen().map(Message::Shell),
             iced::event::listen_raw(|event, _, id| {
@@ -184,6 +192,10 @@ impl Notifications {
     }
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Config(update) if update.config.renderer == self.config.renderer => {
+                self.config = update.config;
+                return self.reconcile();
+            }
             Message::Plugin(message) => match self.plugin.update(message) {
                 Action::Update(task) => return task.map(Message::Plugin),
                 Action::Changed => return self.reconcile(),
@@ -244,7 +256,10 @@ impl Notifications {
     }
     fn view(&self, id: window::Id) -> Element<'_, Message> {
         match self.cards.get(&id) {
-            Some(card) => self.plugin.view(card.token).map(Message::Plugin),
+            Some(card) => self
+                .plugin
+                .view(card.token, &self.config)
+                .map(Message::Plugin),
             None => Space::new().into(),
         }
     }
@@ -255,6 +270,7 @@ mod tests {
     fn state() -> Notifications {
         Notifications {
             config: Config::default(),
+            config_path: None,
             shell: shell::channel().1,
             plugin: notifications::Notifications::default(),
             cards: BTreeMap::new(),

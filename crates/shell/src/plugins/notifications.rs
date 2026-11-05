@@ -2,7 +2,7 @@
 use cabby_notification_service::{Command, Error, Handle, Service};
 use cabby_notifications::{Entry, MAX_VISIBLE, Token};
 use iced::futures::SinkExt;
-use iced::widget::{Space, button, column, container, row, scrollable, text};
+use iced::widget::{Space, button, column, container, row, scrollable};
 use iced::{Element, Length, Subscription, Task};
 
 #[derive(Default)]
@@ -112,27 +112,29 @@ impl Notifications {
             Message::Result,
         )
     }
-    pub(crate) fn view(&self, token: Token) -> Element<'_, Message> {
+    pub(crate) fn view(&self, token: Token, config: &cabby_config::Config) -> Element<'_, Message> {
         let Some(entry) = self.entries.iter().find(|e| e.token() == token) else {
             return Space::new().into();
         };
         let token = entry.token();
         let mut content = column![
             row![
-                text(&entry.app_name).width(Length::Fill),
+                crate::ui::body(config, &entry.app_name).width(Length::Fill),
                 button("Close").on_press(Message::Dismiss(token))
             ]
             .spacing(8),
-            text(&entry.summary),
-            text(&entry.body)
+            crate::ui::body(config, &entry.summary),
+            crate::ui::body(config, &entry.body)
         ]
         .spacing(6);
         for (index, action) in entry.actions.iter().enumerate() {
-            content =
-                content.push(button(text(&action.label)).on_press(Message::Invoke(token, index)));
+            content = content.push(
+                button(crate::ui::body(config, &action.label))
+                    .on_press(Message::Invoke(token, index)),
+            );
         }
         if self.failed {
-            content = content.push(text("Action unavailable; retry"));
+            content = content.push(crate::ui::body(config, "Action unavailable; retry"));
         }
         container(scrollable(content))
             .padding(8)
