@@ -110,6 +110,27 @@ pub fn request(session: &str, locker: &str, suspend: bool) -> Result<()> {
     Ok(())
 }
 
+/// Niri retains output configuration; this is DPMS, never output removal.
+pub fn monitors(off: bool) -> Result<()> {
+    bounded(
+        Command::new("niri").args([
+            "msg",
+            "action",
+            if off {
+                "power-off-monitors"
+            } else {
+                "power-on-monitors"
+            },
+        ]),
+        Duration::from_secs(5),
+        if off {
+            "requesting display power off"
+        } else {
+            "restoring display power"
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
