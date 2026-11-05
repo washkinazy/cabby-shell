@@ -68,6 +68,7 @@ macro_rules! configuration {
 }
 
 configuration! {
+    lock_before_sleep: bool = false,
     idle_lock_seconds: u32 = 0,
     idle_display_off_seconds: u32 = 0,
     renderer: Renderer = Renderer::Vulkan,
