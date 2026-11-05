@@ -287,6 +287,17 @@ name = "cabby-platform-spike"
 version = "0.0.0"
 dependencies = [
  "cabby-config",
+ "cabby-shell",
+ "iced",
+ "iced_exwlshell",
+ "tokio",
+]
+
+[[package]]
+name = "cabby-shell"
+version = "0.1.0"
+dependencies = [
+ "cabby-config",
  "cabby-launcher",
  "cabby-notification-service",
  "cabby-notifications",

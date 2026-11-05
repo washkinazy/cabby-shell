@@ -1,5 +1,5 @@
 //! Destructive only to a guarded disposable compositor; never the live session.
-use cabby_platform_spike::niri::{Events, Model, focus};
+use cabby_shell::niri::{Events, Model, focus};
 use std::{path::PathBuf, time::Duration};
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
