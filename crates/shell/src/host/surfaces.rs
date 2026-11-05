@@ -1,10 +1,14 @@
 //! Output/surface ownership for passive desktop plugins and on-demand device panels.
-use super::Context;
+use super::{
+    Context,
+    panel::{self, Origin},
+};
 use crate::{
     plugins::{audio, bar, bluetooth, tray, wallpaper},
     ui,
 };
 use cabby_config::{BarPosition, Config};
+use iced::widget::{Space, mouse_area};
 use iced::{Element, Subscription, Task, window};
 use iced_exwlshell::reexport::{
     Anchor, KeyboardInteractivity, Layer, LayerSize, NewLayerShellSettings, OutputOption,
@@ -61,6 +65,9 @@ enum PanelPlugin {
 struct DevicePanel {
     id: window::Id,
     output: Option<u32>,
+    origin: Origin,
+    shield: window::Id,
+    focused: bool,
     plugin: PanelPlugin,
 }
 struct Desktop {
@@ -71,6 +78,8 @@ struct Desktop {
     wallpaper: Option<wallpaper::Wallpaper>,
     surfaces: Surfaces,
     panel: Option<DevicePanel>,
+    origin: Option<Origin>,
+    pointers: BTreeMap<window::Id, f32>,
     bluetooth_endpoint: cabby_bluetooth::Endpoint,
     open_bluetooth_on_output: bool,
     bluetooth_probe_stage: Option<u8>,
@@ -83,6 +92,10 @@ struct Desktop {
 #[derive(Clone, Debug)]
 enum Message {
     Bar(bar::Message),
+    FromBar(window::Id, bar::Message),
+    Pointer(window::Id, iced::Point),
+    Outside(window::Id),
+    Focus(window::Id, bool),
     Audio(window::Id, audio::Message),
     Bluetooth(window::Id, bluetooth::Message),
     Tray(window::Id, tray::Message),
@@ -147,6 +160,8 @@ fn run_with_panels(
             wallpaper: wallpaper.clone(),
             surfaces: Surfaces::default(),
             panel: None,
+            origin: None,
+            pointers: BTreeMap::new(),
             audio_client: fixture.clone().unwrap_or_default(),
             open_audio_on_output: fixture.is_some(),
             bluetooth_endpoint: bluetooth_fixture.clone().unwrap_or_default(),
@@ -161,6 +176,10 @@ fn run_with_panels(
     )
     .subscription(Desktop::subscription)
     .theme(|state: &Desktop, _| ui::theme(&state.config))
+    .style(|_: &Desktop, theme: &iced::Theme| iced::theme::Style {
+        background_color: iced::Color::TRANSPARENT,
+        text_color: theme.palette().text,
+    })
     .settings(Settings {
         shell_broadcast: sender,
         default_text_size: text_size,
@@ -171,23 +190,6 @@ fn run_with_panels(
         ..Default::default()
     })
     .run()
-}
-
-fn panel_geometry(config: &Config, outputs: &BTreeMap<u32, (u32, u32)>) -> (u32, u32, i32) {
-    let width = outputs.values().map(|s| s.0).min().unwrap_or(800);
-    let height = outputs.values().map(|s| s.1).min().unwrap_or(600);
-    let top = if config.bar_position == BarPosition::Top {
-        u32::from(config.bar_height) + 8
-    } else {
-        8
-    };
-    (
-        width.saturating_sub(16).clamp(1, 440),
-        height
-            .saturating_sub(u32::from(config.bar_height) + 16)
-            .clamp(1, 500),
-        top as i32,
-    )
 }
 
 fn settings(kind: Kind, output: u32, config: &Config) -> NewLayerShellSettings {
@@ -246,6 +248,12 @@ impl Desktop {
                 })
                 .unwrap_or_else(Subscription::none),
             iced::event::listen_raw(|event, _, id| {
+                if matches!(event, iced::Event::Window(window::Event::Focused)) {
+                    return Some(Message::Focus(id, true));
+                }
+                if matches!(event, iced::Event::Window(window::Event::Unfocused)) {
+                    return Some(Message::Focus(id, false));
+                }
                 matches!(
                     event,
                     iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
@@ -265,6 +273,28 @@ impl Desktop {
     }
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Pointer(id, point) => {
+                self.pointers.insert(id, point.x);
+            }
+            Message::FromBar(id, message) => {
+                if let Some((output, Kind::Bar)) = self.surfaces.windows.get(&id) {
+                    self.origin = Some(Origin {
+                        output: *output,
+                        x: self.pointers.get(&id).copied().unwrap_or(0.0),
+                    });
+                }
+                return self.update(Message::Bar(message));
+            }
+            Message::Outside(id) if self.panel.as_ref().is_some_and(|p| p.shield == id) => {
+                return self.close_panel();
+            }
+            Message::Focus(id, focused) if self.panel.as_ref().is_some_and(|p| p.id == id) => {
+                let panel = self.panel.as_mut().unwrap();
+                if !focused && panel.focused {
+                    return self.close_panel();
+                }
+                panel.focused = focused;
+            }
             Message::Config(update) if update.config.renderer == self.config.renderer => {
                 let changes = cabby_config::changes::Changes::between(&self.config, &update.config);
                 if let Some(bar) = &mut self.bar {
@@ -277,28 +307,33 @@ impl Desktop {
                     ));
                 }
                 self.config = update.config;
+                let panel_task = self.layout_panel();
                 if changes.bar_geometry {
-                    return Task::batch(
-                        self.surfaces
-                            .windows
-                            .iter()
-                            .filter(|(_, (_, kind))| *kind == Kind::Bar)
-                            .flat_map(|(id, (output, kind))| {
-                                let settings = settings(*kind, *output, &self.config);
-                                [
-                                    Task::done(Message::LayoutChange {
-                                        id: *id,
-                                        anchor: settings.anchor,
-                                        size: settings.size,
-                                    }),
-                                    Task::done(Message::ExclusiveZoneChange {
-                                        id: *id,
-                                        zone_size: i32::from(self.config.bar_height),
-                                    }),
-                                ]
-                            }),
-                    );
+                    return Task::batch([
+                        panel_task,
+                        Task::batch(
+                            self.surfaces
+                                .windows
+                                .iter()
+                                .filter(|(_, (_, kind))| *kind == Kind::Bar)
+                                .flat_map(|(id, (output, kind))| {
+                                    let settings = settings(*kind, *output, &self.config);
+                                    [
+                                        Task::done(Message::LayoutChange {
+                                            id: *id,
+                                            anchor: settings.anchor,
+                                            size: settings.size,
+                                        }),
+                                        Task::done(Message::ExclusiveZoneChange {
+                                            id: *id,
+                                            zone_size: i32::from(self.config.bar_height),
+                                        }),
+                                    ]
+                                }),
+                        ),
+                    ]);
                 }
+                return panel_task;
             }
             Message::Tray(id, message)
                 if self
@@ -439,15 +474,8 @@ impl Desktop {
                             Message::ProbeClose,
                         ),
                     ])
-                } else if let Some(panel) = &self.panel {
-                    let (width, height, _) = panel_geometry(&self.config, &self.output_sizes);
-                    Task::done(Message::LayoutChange {
-                        id: panel.id,
-                        anchor: Anchor::Top | Anchor::Right,
-                        size: LayerSize::px(width, height),
-                    })
                 } else {
-                    Task::none()
+                    self.layout_panel()
                 };
                 return Task::batch([
                     open,
@@ -480,8 +508,13 @@ impl Desktop {
             }
             Message::Shell(ShellEvent::Closed(id)) => {
                 self.surfaces.windows.remove(&id);
-                if self.panel.as_ref().is_some_and(|panel| panel.id == id) {
-                    self.panel = None;
+                self.pointers.remove(&id);
+                if self
+                    .panel
+                    .as_ref()
+                    .is_some_and(|panel| panel.id == id || panel.shield == id)
+                {
+                    return self.close_panel();
                 }
             }
             _ => (),
@@ -499,16 +532,98 @@ impl Desktop {
         }
         self.panel
             .take()
-            .map(|panel| Task::done(Message::RemoveWindow(panel.id)))
+            .map(|panel| {
+                Task::batch([
+                    Task::done(Message::RemoveWindow(panel.id)),
+                    Task::done(Message::RemoveWindow(panel.shield)),
+                ])
+            })
             .unwrap_or_else(Task::none)
+    }
+    fn selected_origin(&self) -> Option<Origin> {
+        self.origin
+            .filter(|o| self.output_sizes.contains_key(&o.output))
+            .or_else(|| {
+                self.output_sizes
+                    .first_key_value()
+                    .map(|(output, size)| Origin {
+                        output: *output,
+                        x: size.0 as f32,
+                    })
+            })
+    }
+    fn layout_panel(&self) -> Task<Message> {
+        let Some(p) = &self.panel else {
+            return Task::none();
+        };
+        let Some(size) = self.output_sizes.get(&p.origin.output) else {
+            return Task::none();
+        };
+        let g = panel::geometry(&self.config, *size, p.origin.x);
+        Task::batch([
+            Task::done(Message::LayoutChange {
+                id: p.id,
+                anchor: g.anchor,
+                size: LayerSize::px(g.width, g.height),
+            }),
+            Task::done(Message::MarginChange {
+                id: p.id,
+                margin: g.margin,
+            }),
+            Task::done(Message::LayoutChange {
+                id: p.shield,
+                anchor: g.shield_anchor,
+                size: g.shield_size,
+            }),
+        ])
+    }
+    fn create_panel(&self, namespace: &str) -> Task<Message> {
+        let p = self.panel.as_ref().unwrap();
+        let g = panel::geometry(
+            &self.config,
+            self.output_sizes[&p.origin.output],
+            p.origin.x,
+        );
+        Task::done(Message::NewLayerShell {
+            id: p.shield,
+            settings: NewLayerShellSettings {
+                namespace: Some("cabby-panel-shield".into()),
+                output_option: OutputOption::GlobalName(p.origin.output),
+                layer: Layer::Overlay,
+                keyboard_interactivity: KeyboardInteractivity::None,
+                anchor: g.shield_anchor,
+                size: g.shield_size,
+                exclusive_zone: Some(-1),
+                ..Default::default()
+            },
+        })
+        .chain(Task::done(Message::NewLayerShell {
+            id: p.id,
+            settings: NewLayerShellSettings {
+                namespace: Some(namespace.into()),
+                output_option: OutputOption::GlobalName(p.origin.output),
+                layer: Layer::Overlay,
+                keyboard_interactivity: KeyboardInteractivity::Exclusive,
+                anchor: g.anchor,
+                size: LayerSize::px(g.width, g.height),
+                margin: Some(g.margin),
+                exclusive_zone: Some(-1),
+                ..Default::default()
+            },
+        }))
     }
     fn open_tray_menu(&mut self) -> Task<Message> {
         let previous = self.close_panel();
         let id = window::Id::unique();
-        let (width, height, top) = panel_geometry(&self.config, &self.output_sizes);
+        let Some(origin) = self.selected_origin() else {
+            return previous;
+        };
         self.panel = Some(DevicePanel {
             id,
-            output: None,
+            output: Some(origin.output),
+            origin,
+            shield: window::Id::unique(),
+            focused: false,
             plugin: PanelPlugin::Tray,
         });
         let probe_close = if self.tray_probe_stage.is_some() {
@@ -522,24 +637,7 @@ impl Desktop {
         } else {
             Task::none()
         };
-        Task::batch([
-            previous,
-            probe_close,
-            Task::done(Message::NewLayerShell {
-                id,
-                settings: NewLayerShellSettings {
-                    namespace: Some("cabby-tray-menu".into()),
-                    output_option: OutputOption::Active,
-                    keyboard_interactivity: KeyboardInteractivity::Exclusive,
-                    layer: Layer::Overlay,
-                    anchor: Anchor::Top | Anchor::Right,
-                    size: LayerSize::px(width, height),
-                    margin: Some((top, 8, 8, 8)),
-                    exclusive_zone: Some(-1),
-                    ..Default::default()
-                },
-            }),
-        ])
+        Task::batch([previous, probe_close, self.create_panel("cabby-tray-menu")])
     }
     fn toggle_panel(&mut self, bluetooth: bool) -> Task<Message> {
         if let Some(bar) = &mut self.bar {
@@ -556,10 +654,15 @@ impl Desktop {
         }
         let previous = self.close_panel();
         let id = window::Id::unique();
-        let (width, height, top) = panel_geometry(&self.config, &self.output_sizes);
+        let Some(origin) = self.selected_origin() else {
+            return previous;
+        };
         self.panel = Some(DevicePanel {
             id,
-            output: None,
+            output: Some(origin.output),
+            origin,
+            shield: window::Id::unique(),
+            focused: false,
             plugin: if bluetooth {
                 PanelPlugin::Bluetooth(bluetooth::Bluetooth::new(self.bluetooth_endpoint.clone()))
             } else {
@@ -568,30 +671,25 @@ impl Desktop {
         });
         Task::batch([
             previous,
-            Task::done(Message::NewLayerShell {
-                id,
-                settings: NewLayerShellSettings {
-                    namespace: Some(
-                        if bluetooth {
-                            "cabby-bluetooth"
-                        } else {
-                            "cabby-audio"
-                        }
-                        .into(),
-                    ),
-                    output_option: OutputOption::Active,
-                    keyboard_interactivity: KeyboardInteractivity::Exclusive,
-                    layer: Layer::Overlay,
-                    anchor: Anchor::Top | Anchor::Right,
-                    size: LayerSize::px(width, height),
-                    margin: Some((top, 8, 8, 8)),
-                    exclusive_zone: Some(-1),
-                    ..Default::default()
-                },
+            self.create_panel(if bluetooth {
+                "cabby-bluetooth"
+            } else {
+                "cabby-audio"
             }),
         ])
     }
     fn view(&self, id: window::Id) -> Element<'_, Message> {
+        if self.panel.as_ref().is_some_and(|p| p.shield == id) {
+            return mouse_area(
+                Space::new()
+                    .width(iced::Length::Fill)
+                    .height(iced::Length::Fill),
+            )
+            .on_press(Message::Outside(id))
+            .on_right_press(Message::Outside(id))
+            .on_middle_press(Message::Outside(id))
+            .into();
+        }
         if let Some(panel) = &self.panel
             && panel.id == id
         {
@@ -616,15 +714,18 @@ impl Desktop {
             match kind {
                 Kind::Bar => {
                     if let Some(bar) = &self.bar {
-                        return bar
-                            .view(
+                        return mouse_area(
+                            bar.view(
                                 self.surfaces
                                     .outputs
                                     .get(output)
                                     .map(String::as_str)
                                     .unwrap_or(""),
                             )
-                            .map(Message::Bar);
+                            .map(move |message| Message::FromBar(id, message)),
+                        )
+                        .on_move(move |point| Message::Pointer(id, point))
+                        .into();
                     }
                 }
                 Kind::Wallpaper => {
@@ -651,6 +752,8 @@ mod tests {
             wallpaper: None,
             surfaces: Surfaces::default(),
             panel: None,
+            origin: None,
+            pointers: BTreeMap::new(),
             audio_client: cabby_audio::Client::default(),
             open_audio_on_output: false,
             bluetooth_endpoint: cabby_bluetooth::Endpoint::System,
@@ -680,8 +783,15 @@ mod tests {
         let _ = state.update(Message::Audio(first, audio::Message::Close));
         let _ = state.update(Message::Shell(ShellEvent::Closed(first)));
         assert_eq!(state.panel.as_ref().unwrap().id, second);
-        let (w, h, top) = panel_geometry(&state.config, &state.output_sizes);
-        assert!(w <= 304 && h + top as u32 + 8 <= 400);
+        let g = panel::geometry(&state.config, (320, 400), 320.0);
+        assert!(g.width <= 304 && g.height + g.margin.0 as u32 + 8 <= 400);
+        let old_shield = state.panel.as_ref().unwrap().shield;
+        let _ = state.update(Message::Outside(old_shield));
+        assert!(state.panel.is_none());
+        let _ = state.toggle_panel(false);
+        let second = state.panel.as_ref().unwrap().id;
+        let _ = state.update(Message::Outside(old_shield));
+        assert_eq!(state.panel.as_ref().unwrap().id, second);
         let _ = state.update(Message::Escape(second));
         assert!(state.panel.is_none());
         assert!(state.bar.is_some());
@@ -708,8 +818,20 @@ mod tests {
         let current_menu = state.panel.as_ref().unwrap().id;
         let _ = state.update(Message::Tray(old_menu, tray::Message::Close));
         assert_eq!(state.panel.as_ref().unwrap().id, current_menu);
-        let _ = state.update(Message::Escape(current_menu));
+        let _ = state.update(Message::Focus(current_menu, false));
+        assert!(state.panel.is_some());
+        let _ = state.update(Message::Focus(current_menu, true));
+        let _ = state.update(Message::Focus(old_menu, false));
+        assert!(state.panel.is_some());
+        let _ = state.update(Message::Focus(current_menu, false));
         assert!(state.panel.is_none());
+        state.output_sizes.insert(2, (1920, 1080));
+        state.origin = Some(Origin {
+            output: 2,
+            x: 500.0,
+        });
+        let _ = state.toggle_panel(false);
+        assert_eq!(state.panel.as_ref().unwrap().output, Some(2));
     }
     #[test]
     fn output_updates_preserve_windows_and_removal_is_scoped() {
