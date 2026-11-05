@@ -86,4 +86,4 @@ Screenshots need a small but complete graphical workflow. Flameshot is more elab
 
 A proposed starting workflow is to choose a capture target, capture it, preview the result, and copy or save it. Capture modes and any editing or annotation features remain to be decided.
 
-After applying the local dotfiles setup, run `just install` to build/install Cabby, reload user units, and validate configuration. Use `just build` to build only.
+Run `just deps` once to install Fedora dependencies, including Rust/Cargo and native development headers. After applying the local dotfiles setup, run `just install` to build/install Cabby, reload user units, and validate configuration. Use `just build` to build only.

@@ -12,3 +12,7 @@ install: build
     done
     systemctl --user daemon-reload
     "$HOME/.local/bin/cabby" validate
+
+# Install Fedora build/runtime/test dependencies (uses sudo when needed).
+deps:
+    bash scripts/install-fedora-deps.sh
