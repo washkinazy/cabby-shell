@@ -55,6 +55,7 @@ pub struct Device {
     pub name: String,
     pub paired: bool,
     pub connected: bool,
+    pub battery: Option<u8>,
 }
 #[derive(Clone, PartialEq, Eq)]
 pub enum PromptKind {
@@ -167,6 +168,11 @@ fn parse(objects: ManagedObjects) -> Result<(Vec<Adapter>, Vec<Device>)> {
                 },
                 paired: boolean(p, "Paired"),
                 connected: boolean(p, "Connected"),
+                battery: interfaces
+                    .get("org.bluez.Battery1")
+                    .and_then(|p| p.get("Percentage"))
+                    .and_then(|v| u8::try_from(v).ok())
+                    .filter(|v| *v <= 100),
             });
         }
     }
@@ -217,9 +223,10 @@ struct Session {
     state: State,
     scan_deadline: Option<Instant>,
     pending: Option<Message>,
+    interactive: bool,
 }
 impl Session {
-    async fn connect(endpoint: &Endpoint) -> Result<Self> {
+    async fn connect(endpoint: &Endpoint, interactive: bool) -> Result<Self> {
         let builder = match endpoint {
             Endpoint::System => Builder::system(),
             Endpoint::Private(address) => Builder::address(address.as_str()),
@@ -273,25 +280,27 @@ impl Session {
         )
         .await
         .map_err(|_| Error::Unavailable)?;
-        let proxy = Proxy::new(
-            &connection,
-            owner.as_str(),
-            "/org/bluez",
-            "org.bluez.AgentManager1",
-        )
-        .await
-        .map_err(|_| Error::Unavailable)?;
-        let _: () = proxy
-            .call(
-                "RegisterAgent",
-                &(
-                    zbus::zvariant::ObjectPath::try_from(AGENT).unwrap(),
-                    "KeyboardDisplay",
-                ),
+        if interactive {
+            let proxy = Proxy::new(
+                &connection,
+                owner.as_str(),
+                "/org/bluez",
+                "org.bluez.AgentManager1",
             )
             .await
-            .map_err(|_| Error::Rejected)?;
-        drop(proxy);
+            .map_err(|_| Error::Unavailable)?;
+            let _: () = proxy
+                .call(
+                    "RegisterAgent",
+                    &(
+                        zbus::zvariant::ObjectPath::try_from(AGENT).unwrap(),
+                        "KeyboardDisplay",
+                    ),
+                )
+                .await
+                .map_err(|_| Error::Rejected)?;
+            drop(proxy);
+        }
         let (adapters, devices) = snapshot(&connection, &owner).await?;
         Ok(Self {
             connection,
@@ -307,6 +316,7 @@ impl Session {
             },
             scan_deadline: None,
             pending: None,
+            interactive,
         })
     }
     async fn reject(&self, message: &Message) {
@@ -616,6 +626,7 @@ impl Session {
                 }
                 command = commands.recv() => {
                     let Some(command) = command else { return Ok(()); };
+                    if !self.interactive { self.state.error = Some(Error::Rejected); continue; }
                     match command {
                         Command::Reply(id,response) => self.reply(id,response).await,
                         Command::CancelPair if self.state.pairing.is_some() => { operation = None; self.cancel_pair().await; self.state.busy = false; }
@@ -634,24 +645,26 @@ impl Session {
     async fn shutdown(mut self) {
         self.cancel_pair().await;
         let _ = self.stop_scan().await;
-        let _ = tokio::time::timeout(TIMEOUT, async {
-            if let Ok(proxy) = Proxy::new(
-                &self.connection,
-                self.owner.as_str(),
-                "/org/bluez",
-                "org.bluez.AgentManager1",
-            )
-            .await
-            {
-                let _: zbus::Result<()> = proxy
-                    .call(
-                        "UnregisterAgent",
-                        &(zbus::zvariant::ObjectPath::try_from(AGENT).unwrap(),),
-                    )
-                    .await;
-            }
-        })
-        .await;
+        if self.interactive {
+            let _ = tokio::time::timeout(TIMEOUT, async {
+                if let Ok(proxy) = Proxy::new(
+                    &self.connection,
+                    self.owner.as_str(),
+                    "/org/bluez",
+                    "org.bluez.AgentManager1",
+                )
+                .await
+                {
+                    let _: zbus::Result<()> = proxy
+                        .call(
+                            "UnregisterAgent",
+                            &(zbus::zvariant::ObjectPath::try_from(AGENT).unwrap(),),
+                        )
+                        .await;
+                }
+            })
+            .await;
+        }
         let _ = self.connection.close().await;
     }
 }
@@ -659,11 +672,21 @@ impl Session {
 /// which releases BlueZ's caller-scoped agent/discovery. Closing commands is graceful.
 pub async fn run(
     endpoint: Endpoint,
-    mut commands: mpsc::Receiver<Command>,
+    commands: mpsc::Receiver<Command>,
     states: watch::Sender<State>,
 ) {
+    run_mode(endpoint, commands, states, true).await;
+}
+/// Passive mode only observes BlueZ; it registers no agent and rejects all commands.
+/// Changing mode replaces the caller-owned connection, releasing interaction leases.
+pub async fn run_mode(
+    endpoint: Endpoint,
+    mut commands: mpsc::Receiver<Command>,
+    states: watch::Sender<State>,
+    interactive: bool,
+) {
     loop {
-        let result = tokio::time::timeout(TIMEOUT, Session::connect(&endpoint)).await;
+        let result = tokio::time::timeout(TIMEOUT, Session::connect(&endpoint, interactive)).await;
         let error = match result {
             Ok(Ok(mut session)) => {
                 while commands.try_recv().is_ok() {} // never replay queued commands after recovery

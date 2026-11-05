@@ -12,6 +12,8 @@ pub(crate) struct Bar {
     pub(crate) tray: super::tray::Tray,
     model: Model,
     clock: String,
+    pub(crate) audio_label: String,
+    pub(crate) bluetooth_label: String,
     network: crate::network::Status,
     action_pending: bool,
     action_failed: bool,
@@ -62,6 +64,8 @@ impl Bar {
             tray: super::tray::Tray::default(),
             model: Model::default(),
             clock: super::clock::now(),
+            audio_label: "Audio ?".into(),
+            bluetooth_label: "Bluetooth ?".into(),
             network: crate::network::Status::default(),
             action_pending: false,
             action_failed: false,
@@ -179,8 +183,12 @@ impl Bar {
         match widget {
             BarWidget::Workspaces => self.workspaces(output),
             BarWidget::Clock => label(self.clock.clone()).into(),
-            BarWidget::Audio => button("Audio").on_press(Message::Audio).into(),
-            BarWidget::Bluetooth => button("Bluetooth").on_press(Message::Bluetooth).into(),
+            BarWidget::Audio => button(ui::body(&self.config, &self.audio_label))
+                .on_press(Message::Audio)
+                .into(),
+            BarWidget::Bluetooth => button(ui::body(&self.config, &self.bluetooth_label))
+                .on_press(Message::Bluetooth)
+                .into(),
             BarWidget::Apps => button(if self.action_failed {
                 "Action failed"
             } else {

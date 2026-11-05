@@ -59,8 +59,8 @@ impl Surfaces {
 
 enum PanelPlugin {
     Tray,
-    Audio(audio::Audio),
-    Bluetooth(bluetooth::Bluetooth),
+    Audio,
+    Bluetooth,
 }
 struct DevicePanel {
     id: window::Id,
@@ -80,11 +80,12 @@ struct Desktop {
     panel: Option<DevicePanel>,
     origin: Option<Origin>,
     pointers: BTreeMap<window::Id, f32>,
-    bluetooth_endpoint: cabby_bluetooth::Endpoint,
+    bluetooth: bluetooth::Bluetooth,
+    bluetooth_generation: u64,
     open_bluetooth_on_output: bool,
     bluetooth_probe_stage: Option<u8>,
     tray_probe_stage: Option<u8>,
-    audio_client: cabby_audio::Client,
+    audio: audio::Audio,
     open_audio_on_output: bool,
     output_sizes: BTreeMap<u32, (u32, u32)>,
 }
@@ -97,6 +98,8 @@ enum Message {
     Outside(window::Id),
     Focus(window::Id, bool),
     Audio(window::Id, audio::Message),
+    AudioState(audio::Message),
+    BluetoothState(u64, bluetooth::Message),
     Bluetooth(window::Id, bluetooth::Message),
     Tray(window::Id, tray::Message),
     Escape(window::Id),
@@ -162,9 +165,10 @@ fn run_with_panels(
             panel: None,
             origin: None,
             pointers: BTreeMap::new(),
-            audio_client: fixture.clone().unwrap_or_default(),
+            audio: audio::Audio::new(fixture.clone().unwrap_or_default()),
             open_audio_on_output: fixture.is_some(),
-            bluetooth_endpoint: bluetooth_fixture.clone().unwrap_or_default(),
+            bluetooth: bluetooth::Bluetooth::new(bluetooth_fixture.clone().unwrap_or_default()),
+            bluetooth_generation: 0,
             open_bluetooth_on_output: bluetooth_fixture.is_some(),
             bluetooth_probe_stage: bluetooth_fixture.as_ref().map(|_| 0),
             tray_probe_stage: tray_probe.then_some(0),
@@ -223,6 +227,22 @@ fn settings(kind: Kind, output: u32, config: &Config) -> NewLayerShellSettings {
     settings
 }
 impl Desktop {
+    fn audio_open(&self) -> bool {
+        self.panel
+            .as_ref()
+            .is_some_and(|p| matches!(p.plugin, PanelPlugin::Audio))
+    }
+    fn bluetooth_open(&self) -> bool {
+        self.panel
+            .as_ref()
+            .is_some_and(|p| matches!(p.plugin, PanelPlugin::Bluetooth))
+    }
+    fn refresh_labels(&mut self) {
+        if let Some(bar) = &mut self.bar {
+            bar.audio_label = self.audio.label();
+            bar.bluetooth_label = self.bluetooth.label();
+        }
+    }
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
             self.config_path
@@ -233,20 +253,24 @@ impl Desktop {
                 })
                 .unwrap_or_else(Subscription::none),
             self.shell.listen().map(Message::Shell),
-            self.panel
-                .as_ref()
-                .map(|panel| match &panel.plugin {
-                    PanelPlugin::Tray => Subscription::none(),
-                    PanelPlugin::Audio(plugin) => plugin
-                        .subscription()
-                        .with(panel.id)
-                        .map(|(id, message)| Message::Audio(id, message)),
-                    PanelPlugin::Bluetooth(plugin) => plugin
-                        .subscription()
-                        .with(panel.id)
-                        .map(|(id, message)| Message::Bluetooth(id, message)),
-                })
-                .unwrap_or_else(Subscription::none),
+            if self.bar.is_some()
+                && (self.config.has_widget(cabby_config::BarWidget::Audio) || self.audio_open())
+            {
+                self.audio.subscription().map(Message::AudioState)
+            } else {
+                Subscription::none()
+            },
+            if self.bar.is_some()
+                && (self.config.has_widget(cabby_config::BarWidget::Bluetooth)
+                    || self.bluetooth_open())
+            {
+                self.bluetooth
+                    .subscription(self.bluetooth_open(), self.bluetooth_generation)
+                    .with(self.bluetooth_generation)
+                    .map(|(generation, message)| Message::BluetoothState(generation, message))
+            } else {
+                Subscription::none()
+            },
             iced::event::listen_raw(|event, _, id| {
                 if matches!(event, iced::Event::Window(window::Event::Focused)) {
                     return Some(Message::Focus(id, true));
@@ -345,14 +369,29 @@ impl Desktop {
             }
             Message::Bar(bar::Message::Audio) => return self.toggle_panel(false),
             Message::Bar(bar::Message::Bluetooth) => return self.toggle_panel(true),
+            Message::AudioState(message) => {
+                self.audio.update(message);
+                self.refresh_labels();
+            }
+            Message::BluetoothState(generation, message)
+                if generation == self.bluetooth_generation =>
+            {
+                if let Some(panel) = &self.panel
+                    && self.bluetooth_open()
+                {
+                    return self.update(Message::Bluetooth(panel.id, message));
+                }
+                self.bluetooth.update(message);
+                self.refresh_labels();
+            }
             Message::Audio(id, message) => {
-                if let Some(panel) = &mut self.panel
-                    && panel.id == id
-                    && let PanelPlugin::Audio(plugin) = &mut panel.plugin
-                    && plugin.update(message)
+                if self.panel.as_ref().is_some_and(|p| p.id == id)
+                    && self.audio_open()
+                    && self.audio.update(message)
                 {
                     return self.close_panel();
                 }
+                self.refresh_labels();
             }
             Message::Bluetooth(id, message) => {
                 let mut probe_action = None;
@@ -379,13 +418,13 @@ impl Desktop {
                         println!("bluetooth-probe-prompt");
                     }
                 }
-                if let Some(panel) = &mut self.panel
-                    && panel.id == id
-                    && let PanelPlugin::Bluetooth(plugin) = &mut panel.plugin
-                    && plugin.update(message)
+                if self.panel.as_ref().is_some_and(|p| p.id == id)
+                    && self.bluetooth_open()
+                    && self.bluetooth.update(message)
                 {
                     return self.close_panel();
                 }
+                self.refresh_labels();
                 if let Some(command) = probe_action {
                     return Task::done(Message::Bluetooth(id, bluetooth::Message::Action(command)));
                 }
@@ -522,6 +561,11 @@ impl Desktop {
         Task::none()
     }
     fn close_panel(&mut self) -> Task<Message> {
+        self.audio.close();
+        if self.bluetooth_open() {
+            self.bluetooth_generation = self.bluetooth_generation.wrapping_add(1);
+            self.bluetooth.reset_interaction();
+        }
         if self
             .panel
             .as_ref()
@@ -645,9 +689,9 @@ impl Desktop {
         }
         if self.panel.as_ref().is_some_and(|p| {
             if bluetooth {
-                matches!(p.plugin, PanelPlugin::Bluetooth(_))
+                matches!(p.plugin, PanelPlugin::Bluetooth)
             } else {
-                matches!(p.plugin, PanelPlugin::Audio(_))
+                matches!(p.plugin, PanelPlugin::Audio)
             }
         }) {
             return self.close_panel();
@@ -657,6 +701,10 @@ impl Desktop {
         let Some(origin) = self.selected_origin() else {
             return previous;
         };
+        if bluetooth {
+            self.bluetooth_generation = self.bluetooth_generation.wrapping_add(1);
+            self.bluetooth.reset_interaction();
+        }
         self.panel = Some(DevicePanel {
             id,
             output: Some(origin.output),
@@ -664,9 +712,9 @@ impl Desktop {
             shield: window::Id::unique(),
             focused: false,
             plugin: if bluetooth {
-                PanelPlugin::Bluetooth(bluetooth::Bluetooth::new(self.bluetooth_endpoint.clone()))
+                PanelPlugin::Bluetooth
             } else {
-                PanelPlugin::Audio(audio::Audio::new(self.audio_client.clone()))
+                PanelPlugin::Audio
             },
         });
         Task::batch([
@@ -701,10 +749,12 @@ impl Desktop {
                     .tray
                     .menu_view(&self.config)
                     .map(move |m| Message::Tray(id, m)),
-                PanelPlugin::Audio(plugin) => plugin
+                PanelPlugin::Audio => self
+                    .audio
                     .view(&self.config)
                     .map(move |message| Message::Audio(id, message)),
-                PanelPlugin::Bluetooth(plugin) => plugin
+                PanelPlugin::Bluetooth => self
+                    .bluetooth
                     .view(&self.config)
                     .map(move |message| Message::Bluetooth(id, message)),
             };
@@ -754,9 +804,10 @@ mod tests {
             panel: None,
             origin: None,
             pointers: BTreeMap::new(),
-            audio_client: cabby_audio::Client::default(),
+            audio: audio::Audio::new(cabby_audio::Client::default()),
             open_audio_on_output: false,
-            bluetooth_endpoint: cabby_bluetooth::Endpoint::System,
+            bluetooth: bluetooth::Bluetooth::new(cabby_bluetooth::Endpoint::System),
+            bluetooth_generation: 0,
             open_bluetooth_on_output: false,
             bluetooth_probe_stage: None,
             tray_probe_stage: None,
@@ -799,9 +850,15 @@ mod tests {
         let old = state.panel.as_ref().unwrap().id;
         let _ = state.toggle_panel(true);
         let new = state.panel.as_ref().unwrap().id;
+        let generation = state.bluetooth_generation;
+        let _ = state.update(Message::BluetoothState(
+            generation.wrapping_sub(1),
+            bluetooth::Message::Close,
+        ));
+        assert_eq!(state.panel.as_ref().unwrap().id, new);
         assert!(matches!(
             state.panel.as_ref().unwrap().plugin,
-            PanelPlugin::Bluetooth(_)
+            PanelPlugin::Bluetooth
         ));
         let _ = state.update(Message::Audio(old, audio::Message::Close));
         assert_eq!(state.panel.as_ref().unwrap().id, new);
@@ -812,7 +869,7 @@ mod tests {
         let _ = state.toggle_panel(false);
         assert!(matches!(
             state.panel.as_ref().unwrap().plugin,
-            PanelPlugin::Audio(_)
+            PanelPlugin::Audio
         ));
         let _ = state.open_tray_menu();
         let current_menu = state.panel.as_ref().unwrap().id;

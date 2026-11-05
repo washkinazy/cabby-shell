@@ -248,3 +248,33 @@ async fn discovery_expires_without_user_action_and_bus_loss_clears_state() {
         .unwrap()
         .unwrap();
 }
+
+#[tokio::test]
+async fn passive_observation_has_battery_without_agent_or_control() {
+    let bus = Bus::start().await;
+    let fixture = support::Fixture::start(&bus.address).await;
+    let (tx, commands) = mpsc::channel(8);
+    let (states, mut rx) = watch::channel(State::default());
+    let task = tokio::spawn(cabby_bluetooth::run_mode(
+        Endpoint::Private(bus.address.clone()),
+        commands,
+        states,
+        false,
+    ));
+    let s = state(&mut rx, |s| s.available).await;
+    assert_eq!(s.devices[0].battery, Some(83));
+    assert!(fixture.data.lock().unwrap().agent.is_none());
+    tx.send(Command::Scan(support::ADAPTER.into()))
+        .await
+        .unwrap();
+    state(&mut rx, |s| {
+        s.error == Some(cabby_bluetooth::Error::Rejected)
+    })
+    .await;
+    assert!(fixture.data.lock().unwrap().scans.is_empty());
+    drop(tx);
+    tokio::time::timeout(Duration::from_secs(3), task)
+        .await
+        .unwrap()
+        .unwrap();
+}
