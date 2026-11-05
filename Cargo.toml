@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/tray", "crates/bluetooth", "crates/audio", "crates/platform-spike", "crates/shell", "crates/config", "crates/cabby", "crates/launcher", "crates/notifications", "crates/notification-service"]
+members = ["crates/lock", "crates/tray", "crates/bluetooth", "crates/audio", "crates/platform-spike", "crates/shell", "crates/config", "crates/cabby", "crates/launcher", "crates/notifications", "crates/notification-service"]
 resolver = "3"
 
 [workspace.package]

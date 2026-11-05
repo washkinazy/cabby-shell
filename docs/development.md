@@ -29,6 +29,7 @@ The script uses DNF and requests sudo when needed. It installs packages only; it
 | dbus-daemon, systemd | Private D-Bus session and service lifecycle tooling |
 | python3 | Isolated-session and lifecycle harnesses |
 | pulseaudio-utils | pactl audio snapshots, event subscription, and controls |
+| pam | Linux-PAM runtime plus permit/deny modules for private authentication tests; no real-user authentication is performed |
 | NetworkManager | Read-only network status/events for the bar; never enabled by the installer |
 | bluez | System Bluetooth service/API dependency; never enabled by the installer |
 | util-linux | setsid for detached-descendant cleanup tests |
@@ -173,3 +174,5 @@ cargo build -p cabby-tray --example tray-fixture --locked`. Both renderer harnes
 Tray tests use the existing dbus-daemon prerequisite and a guarded private-session fixture. PNG/SVG tray rendering adds pinned Rust dependencies through Iced’s SVG feature; no native development package is added.
 
 The bar’s network adapter reads NetworkManager’s [root properties and change signals](https://networkmanager.dev/docs/api/latest/gdbus-org.freedesktop.NetworkManager.html) and maps its [state/connectivity values](https://networkmanager.dev/docs/api/latest/nm-dbus-types.html). Private D-Bus fixtures exercise property updates, owner replacement, and bus loss; the UI never invokes connection/radio operations. The clock uses local libc time conversion and a minute-boundary timer. Neither subscription starts when its widget is omitted.
+
+`cargo test -p cabby-lock --locked` exercises private Linux-PAM stacks and helper cancellation without using `/etc/pam.d` or authenticating the logged-in account. The helper links the stable `libpam.so.0` ABI; no PAM development headers are required. Locker rendering/lifecycle validation is separate from these backend tests.
