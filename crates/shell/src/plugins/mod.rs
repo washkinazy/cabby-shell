@@ -14,3 +14,5 @@ pub(crate) mod tray;
 mod clock;
 
 pub(crate) mod lock;
+
+mod idle;

@@ -12,3 +12,4 @@ wallpaper_image = "assets/sample.png"
 wallpaper_mode = "center"
 
 # idle_lock_seconds is omitted: automatic locking stays disabled (0).
+# Optional "idle" bar widget toggles the manual idle inhibitor; not in defaults.

@@ -38,6 +38,7 @@ pub enum BarWidget {
     Apps,
     Title,
     Status,
+    Idle,
 }
 pub const BAR_WIDGETS: &[BarWidget] = &[
     BarWidget::Workspaces,
@@ -49,6 +50,7 @@ pub const BAR_WIDGETS: &[BarWidget] = &[
     BarWidget::Apps,
     BarWidget::Title,
     BarWidget::Status,
+    BarWidget::Idle,
 ];
 
 // Field names for coverage are generated from the same declaration as the

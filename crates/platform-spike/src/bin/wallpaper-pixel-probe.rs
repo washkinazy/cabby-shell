@@ -20,6 +20,31 @@ fn main() {
     let left = [40, 90, 130];
     let right = [180, 130, 60];
     match args[2].as_str() {
+        mode if mode.starts_with("idle-") => {
+            let start = if mode.ends_with("top") { 0 } else { h - 40 };
+            let mut accent = 0;
+            let mut letters = 0;
+            for y in start + 8..start + 32 {
+                for x in 16..100 {
+                    let offset = ((y * w + x) * 4) as usize;
+                    let rgb = &asset.rgba[offset..offset + 3];
+                    if rgb
+                        .iter()
+                        .zip([136u8, 192, 208])
+                        .all(|(a, b)| a.abs_diff(b) < 8)
+                    {
+                        accent += 1;
+                    }
+                    if rgb.iter().all(|a| *a < 90) {
+                        letters += 1;
+                    }
+                }
+            }
+            assert!(
+                accent > 500 && letters > 60,
+                "idle button/text missing: {accent}/{letters}"
+            );
+        }
         mode if mode.starts_with("clock-") => {
             let rows = if mode.ends_with("top") {
                 0..40

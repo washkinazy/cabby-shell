@@ -15,6 +15,9 @@ pub(crate) struct Bar {
     pub(crate) audio_label: String,
     pub(crate) bluetooth_label: String,
     network: crate::network::Status,
+    idle: super::idle::Status,
+    idle_pending: bool,
+    idle_failed: bool,
     action_pending: bool,
     action_failed: bool,
 }
@@ -24,6 +27,9 @@ pub(crate) enum Message {
     Tray(super::tray::Message),
     Disconnected,
     Clock(String),
+    IdleState(super::idle::Status),
+    IdleToggle,
+    IdleResult(Result<(), String>),
     Network(crate::network::Status),
     Focus(u64),
     Launcher,
@@ -67,6 +73,9 @@ impl Bar {
             audio_label: "Audio ?".into(),
             bluetooth_label: "Bluetooth ?".into(),
             network: crate::network::Status::default(),
+            idle: super::idle::Status::default(),
+            idle_pending: false,
+            idle_failed: false,
             action_pending: false,
             action_failed: false,
         }
@@ -91,11 +100,26 @@ impl Bar {
         if self.config.has_widget(BarWidget::Network) {
             subscriptions.push(Subscription::run(network_events));
         }
+        if self.config.has_widget(BarWidget::Idle) {
+            subscriptions.push(Subscription::run(super::idle::events).map(Message::IdleState));
+        }
         Subscription::batch(subscriptions)
     }
 
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::IdleState(state) => self.idle = state,
+            Message::IdleToggle if !self.idle_pending => {
+                self.idle_pending = true;
+                return Task::perform(
+                    ui::command(vec!["idle-inhibit-toggle".into()]),
+                    Message::IdleResult,
+                );
+            }
+            Message::IdleResult(result) => {
+                self.idle_pending = false;
+                self.idle_failed = result.is_err();
+            }
             Message::Clock(clock) => self.clock = clock,
             Message::Network(network) => self.network = network,
             Message::Tray(message) => return self.tray.update(message).map(Message::Tray),
@@ -182,6 +206,19 @@ impl Bar {
         };
         match widget {
             BarWidget::Workspaces => self.workspaces(output),
+            BarWidget::Idle => {
+                let label = if self.idle_failed {
+                    "Idle action failed"
+                } else {
+                    self.idle.label()
+                };
+                let control = button(ui::body(&self.config, label));
+                if self.idle_pending {
+                    control.into()
+                } else {
+                    control.on_press(Message::IdleToggle).into()
+                }
+            }
             BarWidget::Clock => label(self.clock.clone()).into(),
             BarWidget::Audio => button(ui::body(&self.config, &self.audio_label))
                 .on_press(Message::Audio)
