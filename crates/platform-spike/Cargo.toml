@@ -6,6 +6,8 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+cabby-notifications = { path = "../notifications" }
+cabby-notification-service = { path = "../notification-service" }
 cabby-launcher.workspace = true
 cabby-config.workspace = true
 iced.workspace = true

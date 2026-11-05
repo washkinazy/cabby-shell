@@ -14,8 +14,8 @@ const HELP: &str = "Usage:
   cabby launcher-ui [--config PATH]
   cabby launch-app --desktop-id ID [--config PATH] [--session-unit UNIT]
   cabby launch [--session-unit UNIT] [--working-directory PATH] -- PROGRAM [ARG...]
-  cabby serve [--config PATH] [--runtime-dir PATH] [--ui-unit UNIT] [--wallpaper-unit UNIT]
-  cabby ui|wallpaper [--config PATH]
+  cabby serve [--config PATH] [--runtime-dir PATH] [--ui-unit UNIT] [--wallpaper-unit UNIT] [--notifications-unit UNIT]
+  cabby ui|wallpaper|notifications [--config PATH]
 
 Defaults: target=cabby.target, session-unit=niri.service, ui-unit=cabby-ui.service.
 No command installs or enables services. Paths and arguments are passed without shell evaluation.";
@@ -122,8 +122,14 @@ fn run() -> Result<()> {
     }
     let command = command.to_str().ok_or("command must be UTF-8")?;
     let allowed: &[&str] = match command {
-        "validate" | "ui" | "launcher-ui" | "wallpaper" => &["--config"],
-        "serve" => &["--config", "--runtime-dir", "--ui-unit", "--wallpaper-unit"],
+        "validate" | "ui" | "launcher-ui" | "wallpaper" | "notifications" => &["--config"],
+        "serve" => &[
+            "--config",
+            "--runtime-dir",
+            "--ui-unit",
+            "--wallpaper-unit",
+            "--notifications-unit",
+        ],
         "status" | "reload" => &["--runtime-dir"],
         "start" | "stop" | "restart" => &["--target", "--session-unit"],
         "restart-ui" => &["--ui-unit", "--session-unit"],
@@ -185,6 +191,13 @@ fn run() -> Result<()> {
             } else {
                 None
             },
+            if options.contains_key("--notifications-unit") {
+                let name = text_option("--notifications-unit", "cabby-notifications.service")?;
+                unit(&name, ".service")?;
+                Some(name)
+            } else {
+                None
+            },
         )?,
         "status" | "reload" => {
             let result = runtime::request(&runtime::directory(directory)?, command)?;
@@ -192,13 +205,16 @@ fn run() -> Result<()> {
             if result["ok"] != true {
                 return Err("request failed".into());
             }
-            if result["ui_restart_queued"] == false || result["wallpaper_restart_queued"] == false {
+            if result["ui_restart_queued"] == false
+                || result["wallpaper_restart_queued"] == false
+                || result["notifications_restart_queued"] == false
+            {
                 return Err(
                     "configuration accepted, but a component restart could not be queued".into(),
                 );
             }
         }
-        "ui" | "launcher-ui" | "wallpaper" => {
+        "ui" | "launcher-ui" | "wallpaper" | "notifications" => {
             let source = Source::from_env(config.as_deref())?;
             source.load(true)?;
             let executable = std::env::current_exe()
@@ -207,6 +223,8 @@ fn run() -> Result<()> {
                     "cabby-platform-spike"
                 } else if command == "launcher-ui" {
                     "cabby-launcher"
+                } else if command == "notifications" {
+                    "cabby-notifications"
                 } else {
                     "cabby-wallpaper"
                 });

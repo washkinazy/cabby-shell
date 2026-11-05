@@ -20,6 +20,37 @@ fn main() {
     let left = [40, 90, 130];
     let right = [180, 130, 60];
     match args[2].as_str() {
+        mode if mode.starts_with("notifications-") => {
+            let scale = if mode.contains("scaled") { 1.5f32 } else { 1.0 };
+            let top = if mode.ends_with("top") { 48.0 } else { 8.0 };
+            let bottom = if mode.ends_with("bottom") { 40.0 } else { 0.0 };
+            let card_height = ((h as f32 / scale - top - 24.0 - bottom) / 3.0)
+                .clamp(1.0, 180.0)
+                .floor();
+            let x = w - (24.0 * scale) as u32;
+            let pixel = |y: f32| {
+                let offset = (((y * scale) as u32 * w + x) * 4) as usize;
+                [
+                    asset.rgba[offset],
+                    asset.rgba[offset + 1],
+                    asset.rgba[offset + 2],
+                ]
+            };
+            let card = pixel(top + card_height - 16.0);
+            assert_ne!(card, background, "first card missing");
+            for slot in 1..3 {
+                check(
+                    x,
+                    ((top + slot as f32 * (card_height + 8.0) + card_height - 16.0) * scale) as u32,
+                    card,
+                );
+                check(
+                    x,
+                    ((top + slot as f32 * (card_height + 8.0) - 4.0) * scale) as u32,
+                    background,
+                );
+            }
+        }
         "solid" => {
             check(w / 4, h / 2, background);
             check(w * 3 / 4, h - 80, background);

@@ -49,9 +49,15 @@ struct Envelope {
 }
 
 /// In-process UI bridge. Snapshots coalesce; commands use a bounded queue.
+#[derive(Clone)]
 pub struct Handle {
     commands: mpsc::Sender<Envelope>,
     pub snapshots: watch::Receiver<Vec<Entry>>,
+}
+impl std::fmt::Debug for Handle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("NotificationHandle")
+    }
 }
 impl Handle {
     pub async fn command(&self, command: Command) -> Result<(), Error> {
@@ -75,6 +81,7 @@ impl Handle {
 }
 
 pub struct Service {
+    presentation: bool,
     connection: Connection,
     messages: MessageStream,
     store: Store,
@@ -119,6 +126,7 @@ impl Service {
         let (snapshots, receiver) = watch::channel(Vec::new());
         Ok((
             Self {
+                presentation: false,
                 connection,
                 messages,
                 store: Store::default(),
@@ -131,6 +139,12 @@ impl Service {
             },
         ))
     }
+    /// Enable body/action capabilities when owned by the card-rendering frontend.
+    pub fn with_presentation(mut self) -> Self {
+        self.presentation = true;
+        self
+    }
+
     /// Run in the owning UI task. Drop the handle for orderly shutdown; bus loss
     /// returns an error for the future supervisor. Always clears retained snapshots.
     pub async fn run(mut self) -> Result<(), Error> {
@@ -267,8 +281,17 @@ impl Service {
                 .await;
         }
         match member {
-            // No visible UI yet: do not advertise body/actions prematurely.
-            "GetCapabilities" if empty => self.reply(message, &Vec::<String>::new()).await,
+            "GetCapabilities" if empty => {
+                self.reply(
+                    message,
+                    &if self.presentation {
+                        vec!["body", "actions"]
+                    } else {
+                        vec![]
+                    },
+                )
+                .await
+            }
             "GetServerInformation" if empty => {
                 self.reply(
                     message,

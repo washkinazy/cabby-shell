@@ -32,7 +32,7 @@ def wait_for(test, label):
 
 def main():
     prefix = f'cabby-test-{uuid.uuid4().hex[:10]}'
-    names = {key: f'{prefix}-{key}.service' for key in ('compositor', 'session', 'ui', 'lock', 'app', 'launcher', 'wallpaper')}
+    names = {key: f'{prefix}-{key}.service' for key in ('compositor', 'session', 'ui', 'lock', 'app', 'launcher', 'wallpaper', 'notifications')}
     names['target'] = f'{prefix}.target'
     runtime_root = Path(os.environ['XDG_RUNTIME_DIR'])
     runtime = runtime_root / prefix
@@ -43,7 +43,7 @@ def main():
     config = work / 'config.toml'
     config.write_text('renderer = "software"\nbar_height = 40\n')
     mappings = {'niri.service': names['compositor'], 'cabby-session.service': names['session'],
-                'cabby-ui.service': names['ui'], 'cabby-wallpaper.service': names['wallpaper'], 'cabby-launcher.service': names['launcher'], 'cabby.target': names['target']}
+                'cabby-notifications.service': names['notifications'], 'cabby-ui.service': names['ui'], 'cabby-wallpaper.service': names['wallpaper'], 'cabby-launcher.service': names['launcher'], 'cabby.target': names['target']}
     for source in (ROOT / 'systemd/user').iterdir():
         content = source.read_text()
         for old, new in mappings.items():
@@ -52,7 +52,7 @@ def main():
         content = content.replace(f'serve --ui-unit {names["ui"]}',
                                   f'serve --ui-unit {names["ui"]} --config {config} --runtime-dir {runtime}')
         content = content.replace('RuntimeDirectory=cabby-shell', f'RuntimeDirectory={prefix}')
-        if source.name in ('cabby-ui.service', 'cabby-launcher.service', 'cabby-wallpaper.service'):
+        if source.name in ('cabby-ui.service', 'cabby-launcher.service', 'cabby-wallpaper.service', 'cabby-notifications.service'):
             # Synthetic UI launches a descendant in another process group. The
             # production bar/rendering is tested separately in nested niri.
             content = '\n'.join('ExecStart=/bin/sh -c "setsid sleep 360 & wait"' if line.startswith('ExecStart=') else line for line in content.splitlines())+'\n'
@@ -89,7 +89,7 @@ def main():
         assert call(str(BIN), 'validate', '--ui-unit', names['ui'], check=False).returncode != 0
         ctl('start', names['compositor'])
         control('start')
-        wait_for(lambda: active('session') and active('ui') and active('wallpaper'), 'services start')
+        wait_for(lambda: active('session') and active('ui') and active('wallpaper') and active('notifications'), 'services start')
         assert not active('launcher')
         open_launcher()
         first_launcher = pid('launcher')
@@ -115,8 +115,10 @@ def main():
         config.write_text('renderer = "software"\nbar_height = 64\n')
         old_ui = pid('ui')
         old_wallpaper = pid('wallpaper')
+        old_notifications = pid('notifications')
         reloaded = request('reload')
-        assert reloaded['ui_restart_queued'] and reloaded['wallpaper_restart_queued']
+        assert reloaded['ui_restart_queued'] and reloaded['wallpaper_restart_queued'] and reloaded['notifications_restart_queued']
+        wait_for(lambda: active('notifications') and pid('notifications') != old_notifications, 'notification reload')
         wait_for(lambda: active('wallpaper') and pid('wallpaper') != old_wallpaper, 'wallpaper reload')
         wait_for(lambda: active('ui') and pid('ui') != old_ui, 'UI restart after valid reload')
         assert request('status')['config']['bar_height'] == 64
@@ -135,9 +137,11 @@ def main():
         assert not active('launcher')
         results.append('coordinator crash rebuilds IPC and restarts UI; launcher stays closed')
         ctl('reset-failed', names['ui'])
+        notification_pid = pid('notifications')
         old_ui = pid('ui')
         call(str(BIN), 'restart-ui', '--ui-unit', names['ui'], '--session-unit', names['compositor'])
         assert active('ui') and pid('ui') != old_ui and pid('session') != 0
+        assert pid('notifications') == notification_pid and notification_pid != 0
         app_data = work / 'data'
         (app_data / 'applications').mkdir(parents=True)
         (app_data / 'applications/cabby-test.desktop').write_text(f'[Desktop Entry]\nType=Application\nName=Cabby Test\nExec=/usr/bin/sleep 360\nPath={work}\n')
@@ -159,11 +163,35 @@ def main():
         wait_for(lambda: active('wallpaper') and pid('wallpaper') not in (0, old_wallpaper), 'wallpaper crash recovery')
         assert active('ui') and active('session')
         results.append('wallpaper reload and independent crash recovery pass')
+        ctl('reset-failed', names['notifications'])
+        previous_notification = pid('notifications')
+        ctl('kill', '--kill-whom=main', '--signal=KILL', names['notifications'])
+        wait_for(lambda: active('notifications') and pid('notifications') not in (0, previous_notification), 'notification crash recovery')
+        assert active('ui') and active('session')
+        results.append('notifications survive bar restart and recover independently')
+        # Exercise the production conflict exit policy without a real bus owner.
+        notification_unit = work / names['notifications']
+        original_unit = notification_unit.read_text()
+        ctl('stop', names['notifications'])
+        notification_unit.write_text('\n'.join('ExecStart=/bin/sh -c "exit 73"' if line.startswith('ExecStart=') else line for line in original_unit.splitlines()) + '\n')
+        ctl('daemon-reload')
+        ctl('reset-failed', names['notifications'])
+        ctl('start', names['notifications'], check=False)
+        wait_for(lambda: ctl('show', names['notifications'], '-p', 'ExecMainStatus', '--value').stdout.strip() == '73', 'notification conflict exit')
+        time.sleep(1.5)
+        assert not active('notifications')
+        assert ctl('show', names['notifications'], '-p', 'NRestarts', '--value').stdout.strip() == '0'
+        notification_unit.write_text(original_unit)
+        ctl('daemon-reload')
+        ctl('reset-failed', names['notifications'])
+        ctl('start', names['notifications'])
+        wait_for(lambda: active('notifications'), 'explicit notification retry')
+        results.append('notification owner conflict stays stopped until explicit retry')
         ctl('start', names['lock'], names['app'])
         group = ctl('show', names['ui'], '-p', 'ControlGroup', '--value').stdout.strip()
         descendants = (Path('/sys/fs/cgroup') / group.lstrip('/') / 'cgroup.procs').read_text().split()
         control('stop')
-        wait_for(lambda: not active('session') and not active('ui') and not active('launcher') and not active('wallpaper'), 'shell stop')
+        wait_for(lambda: not active('session') and not active('ui') and not active('launcher') and not active('wallpaper') and not active('notifications'), 'shell stop')
         assert all(not Path('/proc', child).exists() for child in descendants)
         assert active('lock') and active('app')
         assert ctl('is-active', launched_app).stdout.strip() == 'active'
@@ -199,12 +227,12 @@ def main():
         assert ctl('is-active', launched_app).stdout.strip() == 'active'
         open_launcher()
         ctl('kill', '--kill-whom=main', '--signal=KILL', names['compositor'])
-        wait_for(lambda: all(not active(key) for key in ('target', 'session', 'ui', 'lock', 'app', 'launcher', 'wallpaper')), 'compositor loss')
+        wait_for(lambda: all(not active(key) for key in ('target', 'session', 'ui', 'lock', 'app', 'launcher', 'wallpaper', 'notifications')), 'compositor loss')
         wait_for(lambda: ctl('is-active', launched_app, check=False).stdout.strip() != 'active', 'launched app session cleanup')
         time.sleep(1.5)
         assert not active('session') and not active('ui') and not runtime.exists()
         results.append('compositor crash stops every dependent without restart loop')
-        (work / 'result.json').write_text(json.dumps({'passed': results, 'stand_ins': ['compositor', 'ui', 'lock', 'app', 'launcher', 'wallpaper']}, indent=2))
+        (work / 'result.json').write_text(json.dumps({'passed': results, 'stand_ins': ['compositor', 'ui', 'lock', 'app', 'launcher', 'wallpaper', 'notifications']}, indent=2))
         print(json.dumps(results, indent=2))
     finally:
         journal = call('journalctl', '--user', '--no-pager', '-n', '150',

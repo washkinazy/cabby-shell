@@ -84,7 +84,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 
 ### `background`
 
-- **Purpose:** Shared bar and launcher background color.
+- **Purpose:** Shared bar, launcher, and notification background color.
 - **Type/default:** string; `"#181b22"` when omitted.
 - **Values:** Opaque #RRGGBB hexadecimal RGB, case-insensitive digits.
 - **Example:** `background = "#181b22"` in [full.toml](../examples/config/full.toml).
@@ -94,7 +94,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 
 ### `foreground`
 
-- **Purpose:** Shared bar and launcher normal text color.
+- **Purpose:** Shared bar, launcher, and notification normal text color.
 - **Type/default:** string; `"#e5e9f0"` when omitted.
 - **Values:** Opaque #RRGGBB hexadecimal RGB, case-insensitive digits.
 - **Example:** `foreground = "#e5e9f0"` in [full.toml](../examples/config/full.toml).
@@ -104,7 +104,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 
 ### `accent`
 
-- **Purpose:** Active workspace and selected launcher-result color. Iced derives contrasting button text.
+- **Purpose:** Active workspace and selected launcher-result and notification button color. Iced derives contrasting button text.
 - **Type/default:** string; `"#88c0d0"` when omitted.
 - **Values:** Opaque #RRGGBB hexadecimal RGB, case-insensitive digits.
 - **Example:** `accent = "#88c0d0"` in [full.toml](../examples/config/full.toml).
@@ -185,3 +185,9 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 ## Keeping this reference complete
 
 The configuration type and its setting-key metadata come from the same Rust declaration. Tests require every key in this reference and the full example, parse/validate every `.toml` example with the production parser, check enum alternatives, and compare the full example with actual defaults. Additions, removals, renames, new values, default changes, and changed behavior must update code, reference, examples, and relevant tests in the same branch.
+
+## Notification component interactions
+
+The notification UI uses `config.toml` and the existing `renderer`, `font_size`, `background`, `foreground`, and `accent` settings with their documented types, defaults, ranges, and examples. `bar_position` and `bar_height` also determine notification top clearance and available vertical space. No separate notification settings are supported. All outputs share the theme; card placement and retention limits are fixed policies documented in [notifications.md](notifications.md).
+
+Managed reload now queues a notification-service restart for any accepted changed configuration or wallpaper asset, alongside the bar and wallpaper restarts. This applies even when the changed key does not affect notifications. A restart discards active and queued notifications because there is no history. Invalid or unchanged reloads leave notifications intact; an open launcher still uses its startup snapshot. Direct `cabby notifications --config PATH` reads settings at startup and needs a restart for changes. Existing configurations remain valid; no key migration is required. New installations of the unit set start the notification owner with the shell, so an already-running notification daemon causes a reported ownership conflict rather than replacement.

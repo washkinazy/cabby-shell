@@ -288,6 +288,8 @@ version = "0.0.0"
 dependencies = [
  "cabby-config",
  "cabby-launcher",
+ "cabby-notification-service",
+ "cabby-notifications",
  "iced",
  "iced_exwlshell",
  "log",
