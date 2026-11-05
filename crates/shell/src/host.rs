@@ -61,3 +61,20 @@ pub fn run(plugin: Plugin) -> iced_exwlshell::Result {
         Plugin::Notifications => notifications::run(context),
     }
 }
+
+/// Exercise the actual audio panel with an explicitly injected fixture helper.
+pub fn audio_probe() -> iced_exwlshell::Result {
+    let guard = std::env::var("CABBY_TEST_WAYLAND").expect("disposable session guard required");
+    assert!(!guard.is_empty());
+    assert_eq!(Some(guard), std::env::var("WAYLAND_DISPLAY").ok());
+    let helper = std::path::PathBuf::from(
+        std::env::var_os("CABBY_TEST_AUDIO_HELPER").expect("private audio helper required"),
+    );
+    assert!(helper.is_absolute());
+    surfaces::run_with_audio(
+        prepare(Plugin::Desktop),
+        true,
+        true,
+        Some(cabby_audio::Client::with_executable(helper)),
+    )
+}

@@ -154,3 +154,5 @@ Production UI binaries can be built independently with `cargo build -p cabby-she
 ## Audio backend validation
 
 See [audio.md](audio.md) for scope, bounds and isolated fixture tests. The runtime helper is pactl from `pulseaudio-utils` (tested format 17.0). Python fixture helpers are launched through explicit paths; tests never invoke the live helper for mutations. The installer lists the prerequisite but does not enable audio services.
+
+The audio panel uses the existing desktop host. `cargo test -p cabby-shell plugins::audio --locked` exercises the worker with copied private fixtures; consistent process visibility is needed for helper-reaping assertions. The standard nested GPU/software harness now runs `audio-panel-probe`, which requires `CABBY_TEST_WAYLAND` and an absolute `CABBY_TEST_AUDIO_HELPER` pointing to the private fixture. It captures `audio.png`/`audio.log`, verifies focus/rendering, and checks that helpers disappear on panel dismissal while the desktop stays alive. These fixture variables are test-only, not production configuration overrides.

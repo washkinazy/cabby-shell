@@ -1,0 +1,11 @@
+{
+  "version": 0,
+  "info": {"default_sink_name": "fixture.speakers", "default_source_name": "fixture.mic"},
+  "sinks": [
+    {"name": "fixture.speakers", "description": "Fixture speakers", "mute": false, "volume": {"left": {"value": 32768}, "right": {"value": 32768}}, "monitor_source": "fixture.monitor"},
+    {"name": "fixture.headphones", "description": "Fixture headphones", "mute": false, "volume": {"left": {"value": 16384}}, "monitor_source": null}
+  ],
+  "sources": [
+    {"name": "fixture.mic", "description": "Fixture microphone", "mute": true, "volume": {"mono": {"value": 26214}}, "monitor_source": null}
+  ]
+}

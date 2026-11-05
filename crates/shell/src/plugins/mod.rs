@@ -4,3 +4,5 @@ pub(crate) mod bar;
 pub(crate) mod launcher;
 pub(crate) mod notifications;
 pub(crate) mod wallpaper;
+
+pub(crate) mod audio;

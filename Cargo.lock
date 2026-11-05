@@ -307,6 +307,7 @@ dependencies = [
 name = "cabby-shell"
 version = "0.1.0"
 dependencies = [
+ "cabby-audio",
  "cabby-config",
  "cabby-launcher",
  "cabby-notification-service",

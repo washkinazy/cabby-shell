@@ -1,7 +1,7 @@
 //! Output/surface ownership for passive desktop plugins.
 use super::Context;
 use crate::{
-    plugins::{bar, wallpaper},
+    plugins::{audio, bar, wallpaper},
     ui,
 };
 use cabby_config::{BarPosition, Config};
@@ -53,17 +53,29 @@ impl Surfaces {
     }
 }
 
+struct AudioPanel {
+    id: window::Id,
+    output: Option<u32>,
+    plugin: audio::Audio,
+}
 struct Desktop {
     config: Config,
     shell: ShellReceiver,
     bar: Option<bar::Bar>,
     wallpaper: Option<wallpaper::Wallpaper>,
     surfaces: Surfaces,
+    audio: Option<AudioPanel>,
+    audio_client: cabby_audio::Client,
+    open_audio_on_output: bool,
+    output_sizes: BTreeMap<u32, (u32, u32)>,
 }
 #[to_exwlshell_message]
 #[derive(Clone, Debug)]
 enum Message {
     Bar(bar::Message),
+    Audio(window::Id, audio::Message),
+    Escape(window::Id),
+    ProbeClose(window::Id),
     Shell(ShellEvent),
     Resized,
 }
@@ -72,6 +84,15 @@ pub(super) fn run(
     context: Context,
     with_bar: bool,
     with_wallpaper: bool,
+) -> iced_exwlshell::Result {
+    run_with_audio(context, with_bar, with_wallpaper, None)
+}
+
+pub(super) fn run_with_audio(
+    context: Context,
+    with_bar: bool,
+    with_wallpaper: bool,
+    fixture: Option<cabby_audio::Client>,
 ) -> iced_exwlshell::Result {
     let config = context.config;
     let wallpaper = with_wallpaper
@@ -90,6 +111,10 @@ pub(super) fn run(
             bar: with_bar.then(|| bar::Bar::new(config.clone())),
             wallpaper: wallpaper.clone(),
             surfaces: Surfaces::default(),
+            audio: None,
+            audio_client: fixture.clone().unwrap_or_default(),
+            open_audio_on_output: fixture.is_some(),
+            output_sizes: BTreeMap::new(),
         },
         || "cabby-desktop".into(),
         Desktop::update,
@@ -107,6 +132,23 @@ pub(super) fn run(
         ..Default::default()
     })
     .run()
+}
+
+fn audio_geometry(config: &Config, outputs: &BTreeMap<u32, (u32, u32)>) -> (u32, u32, i32) {
+    let width = outputs.values().map(|s| s.0).min().unwrap_or(800);
+    let height = outputs.values().map(|s| s.1).min().unwrap_or(600);
+    let top = if config.bar_position == BarPosition::Top {
+        u32::from(config.bar_height) + 8
+    } else {
+        8
+    };
+    (
+        width.saturating_sub(16).clamp(1, 440),
+        height
+            .saturating_sub(u32::from(config.bar_height) + 16)
+            .clamp(1, 500),
+        top as i32,
+    )
 }
 
 fn settings(kind: Kind, output: u32, config: &Config) -> NewLayerShellSettings {
@@ -143,6 +185,26 @@ impl Desktop {
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
             self.shell.listen().map(Message::Shell),
+            self.audio
+                .as_ref()
+                .map(|panel| {
+                    panel
+                        .plugin
+                        .subscription()
+                        .with(panel.id)
+                        .map(|(id, message)| Message::Audio(id, message))
+                })
+                .unwrap_or_else(Subscription::none),
+            iced::event::listen_raw(|event, _, id| {
+                matches!(
+                    event,
+                    iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                        key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                        ..
+                    })
+                )
+                .then_some(Message::Escape(id))
+            }),
             self.bar
                 .as_ref()
                 .map(|bar| bar.subscription().map(Message::Bar))
@@ -153,12 +215,36 @@ impl Desktop {
     }
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Bar(bar::Message::Audio) => return self.toggle_audio(),
+            Message::Audio(id, message) => {
+                if let Some(panel) = &mut self.audio
+                    && panel.id == id
+                    && panel.plugin.update(message)
+                {
+                    return self.close_audio();
+                }
+            }
+            Message::Escape(id) | Message::ProbeClose(id)
+                if self.audio.as_ref().is_some_and(|panel| panel.id == id) =>
+            {
+                return self.close_audio();
+            }
+            Message::Shell(ShellEvent::WindowOutputChanged { window, output }) => {
+                if let Some(panel) = &mut self.audio
+                    && panel.id == window
+                {
+                    panel.output = output.map(|o| o.id);
+                }
+            }
             Message::Bar(message) => {
                 if let Some(bar) = &mut self.bar {
                     return bar.update(message).map(Message::Bar);
                 }
             }
             Message::Shell(ShellEvent::OutputAdded(info) | ShellEvent::OutputUpdated(info)) => {
+                let size = info.logical_size.unwrap_or((800, 600));
+                self.output_sizes
+                    .insert(info.id, (size.0.max(1) as u32, size.1.max(1) as u32));
                 let mut kinds = Vec::new();
                 if self.wallpaper.is_some() {
                     kinds.push(Kind::Wallpaper);
@@ -169,29 +255,111 @@ impl Desktop {
                 let added = self
                     .surfaces
                     .add(info.id, info.name.unwrap_or_default(), &kinds);
-                return Task::batch(added.into_iter().map(|(id, kind)| {
-                    Task::done(Message::NewLayerShell {
-                        id,
-                        settings: settings(kind, info.id, &self.config),
+                let open = if self.open_audio_on_output {
+                    self.open_audio_on_output = false;
+                    let open = self.toggle_audio();
+                    let id = self.audio.as_ref().expect("probe panel opened").id;
+                    Task::batch([
+                        open,
+                        Task::perform(
+                            async move {
+                                tokio::time::sleep(std::time::Duration::from_secs(8)).await;
+                                id
+                            },
+                            Message::ProbeClose,
+                        ),
+                    ])
+                } else if let Some(panel) = &self.audio {
+                    let (width, height, _) = audio_geometry(&self.config, &self.output_sizes);
+                    Task::done(Message::LayoutChange {
+                        id: panel.id,
+                        anchor: Anchor::Top | Anchor::Right,
+                        size: LayerSize::px(width, height),
                     })
-                }));
+                } else {
+                    Task::none()
+                };
+                return Task::batch([
+                    open,
+                    Task::batch(added.into_iter().map(|(id, kind)| {
+                        Task::done(Message::NewLayerShell {
+                            id,
+                            settings: settings(kind, info.id, &self.config),
+                        })
+                    })),
+                ]);
             }
             Message::Shell(ShellEvent::OutputRemoved(info)) => {
-                return Task::batch(
-                    self.surfaces
-                        .remove_output(info.id)
-                        .into_iter()
-                        .map(|id| Task::done(Message::RemoveWindow(id))),
-                );
+                self.output_sizes.remove(&info.id);
+                let close = if self.audio.as_ref().is_some_and(|panel| {
+                    panel.output == Some(info.id) || self.output_sizes.is_empty()
+                }) {
+                    self.close_audio()
+                } else {
+                    Task::none()
+                };
+                return Task::batch([
+                    close,
+                    Task::batch(
+                        self.surfaces
+                            .remove_output(info.id)
+                            .into_iter()
+                            .map(|id| Task::done(Message::RemoveWindow(id))),
+                    ),
+                ]);
             }
             Message::Shell(ShellEvent::Closed(id)) => {
                 self.surfaces.windows.remove(&id);
+                if self.audio.as_ref().is_some_and(|panel| panel.id == id) {
+                    self.audio = None;
+                }
             }
             _ => (),
         }
         Task::none()
     }
+    fn close_audio(&mut self) -> Task<Message> {
+        self.audio
+            .take()
+            .map(|panel| Task::done(Message::RemoveWindow(panel.id)))
+            .unwrap_or_else(Task::none)
+    }
+    fn toggle_audio(&mut self) -> Task<Message> {
+        if self.audio.is_some() {
+            return self.close_audio();
+        }
+        let id = window::Id::unique();
+        let (width, height, top) = audio_geometry(&self.config, &self.output_sizes);
+        self.audio = Some(AudioPanel {
+            id,
+            output: None,
+            plugin: audio::Audio::new(self.audio_client.clone()),
+        });
+        Task::done(Message::NewLayerShell {
+            id,
+            settings: NewLayerShellSettings {
+                namespace: Some("cabby-audio".into()),
+                output_option: OutputOption::Active,
+                keyboard_interactivity: KeyboardInteractivity::Exclusive,
+                layer: Layer::Overlay,
+                anchor: Anchor::Top | Anchor::Right,
+                size: LayerSize::px(width, height),
+                margin: Some((top, 8, 8, 8)),
+                exclusive_zone: Some(-1),
+                ..Default::default()
+            },
+        })
+    }
     fn view(&self, id: window::Id) -> Element<'_, Message> {
+        if let Some(panel) = &self.audio
+            && panel.id == id
+        {
+            return panel
+                .plugin
+                .view()
+                .map(move |message| Message::Audio(id, message));
+        }
+
         if let Some((output, kind)) = self.surfaces.windows.get(&id) {
             match kind {
                 Kind::Bar => {
@@ -221,6 +389,35 @@ impl Desktop {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn audio_panel_toggle_and_stale_callbacks_preserve_desktop_plugins() {
+        let mut state = Desktop {
+            config: Config::default(),
+            shell: shell::channel().1,
+            bar: Some(bar::Bar::new(Config::default())),
+            wallpaper: None,
+            surfaces: Surfaces::default(),
+            audio: None,
+            audio_client: cabby_audio::Client::default(),
+            open_audio_on_output: false,
+            output_sizes: BTreeMap::from([(1, (320, 400))]),
+        };
+        let _ = state.toggle_audio();
+        let first = state.audio.as_ref().unwrap().id;
+        let _ = state.toggle_audio();
+        assert!(state.audio.is_none());
+        let _ = state.toggle_audio();
+        let second = state.audio.as_ref().unwrap().id;
+        assert_ne!(first, second);
+        let _ = state.update(Message::Audio(first, audio::Message::Close));
+        let _ = state.update(Message::Shell(ShellEvent::Closed(first)));
+        assert_eq!(state.audio.as_ref().unwrap().id, second);
+        let (w, h, top) = audio_geometry(&state.config, &state.output_sizes);
+        assert!(w <= 304 && h + top as u32 + 8 <= 400);
+        let _ = state.update(Message::Escape(second));
+        assert!(state.audio.is_none());
+        assert!(state.bar.is_some());
+    }
     #[test]
     fn output_updates_preserve_windows_and_removal_is_scoped() {
         let mut surfaces = Surfaces::default();

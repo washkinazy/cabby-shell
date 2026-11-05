@@ -244,6 +244,49 @@ def inside(directory, interactive, renderer):
                     if bar.poll() is not None:
                         raise RuntimeError("Composed host exited after scale change")
                 run(str(ROOT / "target/debug/bar-ipc-probe"))
+            # Run the real panel/worker with an explicit private helper, never live audio.
+            bar.terminate()
+            bar.wait(timeout=5)
+            audio_fixture = directory / "audio-fixture"
+            audio_fixture.mkdir()
+            for name in ("audio-helper.py", "audio-state.json"):
+                (audio_fixture / name).write_bytes((ROOT / "scripts/fixtures" / name).read_bytes())
+            helper = audio_fixture / "audio-helper.py"
+            helper.chmod(0o700)
+            audio_env = dict(os.environ, CABBY_TEST_AUDIO_HELPER=str(helper))
+            with (directory / "audio.log").open("w") as audio_log:
+                bar = subprocess.Popen([ROOT / "target/debug/audio-panel-probe", "--config", wallpaper_config], env=audio_env, stdout=audio_log, stderr=audio_log)
+                children.append(bar)
+                deadline = time.monotonic() + 20
+                while time.monotonic() < deadline:
+                    trace = (directory / "audio.log").read_text()
+                    audio_layers = json.loads(run("niri", "msg", "--json", "layers"))
+                    args_path = audio_fixture / "audio-args"
+                    if any(layer.get("namespace") == "cabby-audio" for layer in audio_layers) and args_path.exists() and '"sources"' in args_path.read_text() and re.search(r"wl_keyboard#\d+\.enter\(", trace):
+                        break
+                    if bar.poll() is not None:
+                        raise RuntimeError("Audio panel probe exited")
+                    time.sleep(0.1)
+                else:
+                    raise RuntimeError("Audio panel did not connect and receive keyboard focus")
+                time.sleep(0.5)
+                capture = directory / "audio.png"
+                subprocess.run(["grim", str(capture)], check=True, timeout=15)
+                run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(capture), "audio-top" if renderer == "gpu" else "audio-bottom")
+                # Probe-only one-shot dismissal uses the same close path as the UI.
+                deadline = time.monotonic() + 15
+                while any(layer.get("namespace") == "cabby-audio" for layer in json.loads(run("niri", "msg", "--json", "layers"))):
+                    if time.monotonic() > deadline:
+                        raise RuntimeError("Audio panel did not dismiss")
+                    time.sleep(0.1)
+                pids = (audio_fixture / "audio-pids").read_text().splitlines()
+                deadline = time.monotonic() + 3
+                while any(Path("/proc", pid).exists() for pid in pids):
+                    if time.monotonic() > deadline:
+                        raise RuntimeError("Audio helpers survived panel dismissal")
+                    time.sleep(0.05)
+                if bar.poll() is not None:
+                    raise RuntimeError("Panel dismissal stopped desktop")
             if interactive:
                 (directory / "interactive-ready").touch()
                 # User can inspect the bar before creating this request file.
@@ -273,7 +316,7 @@ def inside(directory, interactive, renderer):
                     lock.wait(timeout=180)
             adapters = {}
             if renderer == "gpu":
-                for client in ("bar", "launcher", "wallpaper", "notifications", "composition", "lock"):
+                for client in ("bar", "launcher", "wallpaper", "notifications", "composition", "audio", "lock"):
                     adapter = selected_adapter((directory / f"{client}.log").read_text())
                     if adapter["backend"] != "Vulkan" or adapter["device_type"] not in ("DiscreteGpu", "IntegratedGpu"):
                         raise RuntimeError(f"{client} did not use hardware Vulkan: {adapter}")
@@ -282,7 +325,7 @@ def inside(directory, interactive, renderer):
                 "status": "passed", "renderer_request": os.environ.get("ICED_BACKEND", "automatic"),
                 "adapters": adapters,
                 "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action", "launcher-mapped-with-keyboard-focus", "notifications-render-replace-queue-expire-conflict-passive", "wallpaper-solid-and-four-image-modes-pixels", "wallpaper-scaled-pixels",
-                "scale-change-process-survival", "composed-bar-wallpaper-pixels-scales", "lock-confirmed", "lock-survives-bar-crash"],
+                "scale-change-process-survival", "composed-bar-wallpaper-pixels-scales", "audio-panel-fixture-focus-render-close-cleanup", "lock-confirmed", "lock-survives-bar-crash"],
                 "not_proven": ["popup-keyboard-focus", "focus-restoration", "multiple-outputs",
                 "PAM", "DRM-lock-security", "gamma", "suspend"],
             }, indent=2))
@@ -311,7 +354,7 @@ def main():
     if args.inside:
         inside(args.inside, args.interactive, args.renderer)
         return
-    for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe", "cabby-wallpaper", "wallpaper-pixel-probe", "cabby-notifications", "notification-probe", "cabby-desktop"):
+    for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe", "cabby-wallpaper", "wallpaper-pixel-probe", "cabby-notifications", "notification-probe", "cabby-desktop", "audio-panel-probe"):
         if not (ROOT / "target/debug" / binary).is_file():
             parser.error("Run cargo build --workspace --locked first")
     parent_display = os.environ.get("WAYLAND_DISPLAY")
