@@ -1,6 +1,7 @@
 [workspace]
 members = ["crates/lock", "crates/tray", "crates/bluetooth", "crates/audio", "crates/platform-spike", "crates/shell", "crates/config", "crates/cabby", "crates/launcher", "crates/notifications", "crates/notification-service"]
 resolver = "3"
+exclude = ["vendor/exwlshellev", "vendor/iced_exwlshell", "vendor/iced_wayland_subscriber"]
 
 [workspace.package]
 edition = "2024"
@@ -16,3 +17,8 @@ iced_exwlshell = { version = "=0.20.1", default-features = false, features = ["m
 
 [profile.dev]
 debug = 1
+
+[patch.crates-io]
+exwlshellev = { path = "vendor/exwlshellev" }
+iced_exwlshell = { path = "vendor/iced_exwlshell" }
+iced_wayland_subscriber = { path = "vendor/iced_wayland_subscriber" }

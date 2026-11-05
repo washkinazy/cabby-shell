@@ -87,6 +87,7 @@ struct Desktop {
     tray_probe_stage: Option<u8>,
     audio: audio::Audio,
     open_audio_on_output: bool,
+    panel_probe: bool,
     output_sizes: BTreeMap<u32, (u32, u32)>,
 }
 #[to_exwlshell_message]
@@ -167,6 +168,7 @@ fn run_with_panels(
             pointers: BTreeMap::new(),
             audio: audio::Audio::new(fixture.clone().unwrap_or_default()),
             open_audio_on_output: fixture.is_some(),
+            panel_probe: fixture.is_some() || bluetooth_fixture.is_some() || tray_probe,
             bluetooth: bluetooth::Bluetooth::new(bluetooth_fixture.clone().unwrap_or_default()),
             bluetooth_generation: 0,
             open_bluetooth_on_output: bluetooth_fixture.is_some(),
@@ -317,7 +319,17 @@ impl Desktop {
                 if !focused && panel.focused {
                     return self.close_panel();
                 }
+                let acquired = focused && !panel.focused;
                 panel.focused = focused;
+                if acquired && self.panel_probe {
+                    return Task::perform(
+                        async move {
+                            tokio::time::sleep(std::time::Duration::from_secs(8)).await;
+                            id
+                        },
+                        Message::ProbeClose,
+                    );
+                }
             }
             Message::Config(update) if update.config.renderer == self.config.renderer => {
                 let changes = cabby_config::changes::Changes::between(&self.config, &update.config);
@@ -509,18 +521,7 @@ impl Desktop {
                     let bluetooth = self.open_bluetooth_on_output;
                     self.open_audio_on_output = false;
                     self.open_bluetooth_on_output = false;
-                    let open = self.toggle_panel(bluetooth);
-                    let id = self.panel.as_ref().expect("probe panel opened").id;
-                    Task::batch([
-                        open,
-                        Task::perform(
-                            async move {
-                                tokio::time::sleep(std::time::Duration::from_secs(8)).await;
-                                id
-                            },
-                            Message::ProbeClose,
-                        ),
-                    ])
+                    self.toggle_panel(bluetooth)
                 } else {
                     self.layout_panel()
                 };
@@ -678,18 +679,7 @@ impl Desktop {
             focused: false,
             plugin: PanelPlugin::Tray,
         });
-        let probe_close = if self.tray_probe_stage.is_some() {
-            Task::perform(
-                async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(8)).await;
-                    id
-                },
-                Message::ProbeClose,
-            )
-        } else {
-            Task::none()
-        };
-        Task::batch([previous, probe_close, self.create_panel("cabby-tray-menu")])
+        Task::batch([previous, self.create_panel("cabby-tray-menu")])
     }
     fn toggle_panel(&mut self, bluetooth: bool) -> Task<Message> {
         if let Some(bar) = &mut self.bar {
@@ -814,6 +804,7 @@ mod tests {
             pointers: BTreeMap::new(),
             audio: audio::Audio::new(cabby_audio::Client::default()),
             open_audio_on_output: false,
+            panel_probe: false,
             bluetooth: bluetooth::Bluetooth::new(cabby_bluetooth::Endpoint::System),
             bluetooth_generation: 0,
             open_bluetooth_on_output: false,

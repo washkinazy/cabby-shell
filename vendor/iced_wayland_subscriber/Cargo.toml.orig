@@ -1,0 +1,27 @@
+[package]
+name = "iced_wayland_subscriber"
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "wayland subscriber for iced"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+futures.workspace = true
+iced_core.workspace = true
+iced_futures.workspace = true
+wayland-client.workspace = true
+rustix.workspace = true
+
+wayland-protocols = { workspace = true, optional = true }
+thiserror.workspace = true
+sctk.workspace = true
+
+[features]
+default = []
+workspace = ["dep:wayland-protocols"]

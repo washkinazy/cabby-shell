@@ -10,6 +10,7 @@ use iced::{
 
 #[derive(Clone)]
 pub enum Message {
+    Indicators(Option<bool>, Option<String>),
     Key(keyboard::Event),
     Submit,
     Authentication(u64, Result<(), auth::Error>),
@@ -24,6 +25,8 @@ pub struct Lock {
     secret: Secret,
     client: auth::Client,
     status: &'static str,
+    caps_lock: Option<bool>,
+    layout: Option<String>,
 }
 impl Lock {
     pub fn new(client: auth::Client) -> Self {
@@ -32,6 +35,8 @@ impl Lock {
             secret: Secret::default(),
             client,
             status: "Securing session…",
+            caps_lock: None,
+            layout: None,
         }
     }
     pub fn confirmed(&mut self) -> Effect {
@@ -43,6 +48,11 @@ impl Lock {
     }
     pub fn update(&mut self, message: Message) -> (Effect, Task<Message>) {
         match message {
+            Message::Indicators(caps_lock, layout) => {
+                self.caps_lock = caps_lock;
+                self.layout =
+                    layout.map(|name| name.chars().filter(|c| !c.is_control()).take(80).collect());
+            }
             Message::Authentication(id, result) => {
                 let current = self.policy.state == State::Authenticating(id);
                 let effect = self.policy.update(PolicyEvent::Authentication(id, result));
@@ -104,6 +114,18 @@ impl Lock {
             column![
                 text("Session locked").size(32),
                 text(self.status),
+                text(
+                    self.layout
+                        .as_deref()
+                        .unwrap_or("Keyboard layout unavailable")
+                )
+                .size(16),
+                text(match self.caps_lock {
+                    Some(true) => "Caps Lock is on",
+                    Some(false) => "",
+                    None => "Caps Lock state unavailable",
+                })
+                .size(16),
                 text(if self.secret.is_empty() {
                     " ".into()
                 } else {
@@ -134,6 +156,25 @@ mod tests {
             text: text.map(Into::into),
             repeat: false,
         })
+    }
+    #[test]
+    fn indicators_never_change_credentials_or_unlock_policy() {
+        let mut lock = Lock::new(auth::Client::new("/unused".into()));
+        lock.confirmed();
+        lock.fixture_input("fixture");
+        let mask = lock.secret.masked();
+        for (caps, layout) in [
+            (Some(true), Some("German\n".into())),
+            (Some(false), Some("English (US)".into())),
+            (None, None),
+        ] {
+            let (effect, _) = lock.update(Message::Indicators(caps, layout));
+            assert_eq!(effect, Effect::None);
+            assert_eq!(lock.policy.state, State::Locked);
+            assert_eq!(lock.secret.masked(), mask);
+            assert_eq!(lock.caps_lock, caps);
+            assert!(lock.layout.as_ref().is_none_or(|s| !s.contains('\n')));
+        }
     }
     #[test]
     fn input_is_gated_redacted_and_escape_clears_without_unlock() {
