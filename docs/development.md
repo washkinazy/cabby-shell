@@ -25,6 +25,7 @@ The script uses DNF and requests sudo when needed. It installs packages only; it
 | grim | Working capture backend for the Phase 0 harness; also a permitted production helper |
 | dbus-daemon, systemd | Private D-Bus session and service lifecycle tooling |
 | python3 | Isolated-session and lifecycle harnesses |
+| pulseaudio-utils | pactl audio snapshots, event subscription, and controls |
 | util-linux | setsid for detached-descendant cleanup tests |
 | mesa-dri-drivers, mesa-vulkan-drivers | Mesa rendering support, including software fallback where available |
 
@@ -149,3 +150,7 @@ Launcher plugin tests also exercise typed close requests versus recoverable laun
 Notification plugin tests cover bounded visible snapshots, revision replacement and typed fatal outcomes; surface tests now live under `host::notifications`. The existing private-bus suite and nested card/expiry/conflict tests cover the unchanged protocol and host integration.
 
 Production UI binaries can be built independently with `cargo build -p cabby-shell --bins --locked`; the coordinator/CLI is still the `cabby` package. Use the workspace build for the complete isolated test harness, which also needs the probe binaries. No executable path, configuration, or unit changes accompany this source-package move.
+
+## Audio backend validation
+
+See [audio.md](audio.md) for scope, bounds and isolated fixture tests. The runtime helper is pactl from `pulseaudio-utils` (tested format 17.0). Python fixture helpers are launched through explicit paths; tests never invoke the live helper for mutations. The installer lists the prerequisite but does not enable audio services.
