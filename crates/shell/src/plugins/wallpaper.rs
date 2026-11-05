@@ -1,10 +1,7 @@
 use crate::ui;
 use cabby_config::{Config, WallpaperMode};
 use iced::widget::{Space, container, image, responsive};
-use iced::{ContentFit, Element, Length, Task, window};
-use iced_exwlshell::reexport::{Anchor, KeyboardInteractivity, Layer, LayerSize};
-use iced_exwlshell::settings::{LayerShellSettings, Settings, StartMode};
-use iced_exwlshell::{daemon, to_exwlshell_message};
+use iced::{ContentFit, Element, Length};
 fn fit(mode: WallpaperMode) -> ContentFit {
     match mode {
         WallpaperMode::Fill => ContentFit::Cover,
@@ -17,60 +14,30 @@ fn fit(mode: WallpaperMode) -> ContentFit {
 fn center_scale(source: iced::Size, bounds: iced::Size) -> f32 {
     (source.width / bounds.width.max(1.0)).max(source.height / bounds.height.max(1.0))
 }
-pub(crate) fn run(context: crate::host::Context) -> iced_exwlshell::Result {
-    let config = context.config;
-    let asset = cabby_config::wallpaper::load(&config).unwrap_or_else(|e| {
-        eprintln!("{e}");
-        std::process::exit(1)
-    });
-    let dimensions = asset
-        .as_ref()
-        .map(|a| iced::Size::new(a.width as f32, a.height as f32))
-        .unwrap_or(iced::Size::ZERO);
-    let handle = asset.map(|a| image::Handle::from_rgba(a.width, a.height, a.rgba));
-    daemon(
-        move || Wallpaper {
-            config: config.clone(),
-            handle: handle.clone(),
-            dimensions,
-        },
-        || "cabby-wallpaper".into(),
-        Wallpaper::update,
-        Wallpaper::view,
-    )
-    // Rebuild the static view on output resize/scale events. Without a message,
-    // the software renderer can retain image placement from the previous layout.
-    .subscription(|_| iced::window::resize_events().map(|_| Message::Resized))
-    .settings(Settings {
-        layer_settings: LayerShellSettings {
-            anchor: Anchor::all(),
-            layer: Layer::Background,
-            size: LayerSize::FILL,
-            exclusive_zone: -1,
-            keyboard_interactivity: KeyboardInteractivity::None,
-            events_transparent: true,
-            start_mode: StartMode::AllScreens,
-            ..Default::default()
-        },
-        ..Default::default()
-    })
-    .run()
-}
-struct Wallpaper {
+#[derive(Clone)]
+pub(crate) struct Wallpaper {
     config: Config,
     handle: Option<image::Handle>,
     dimensions: iced::Size,
 }
-#[to_exwlshell_message]
-#[derive(Debug, Clone)]
-enum Message {
-    Resized,
-}
 impl Wallpaper {
-    fn update(&mut self, _: Message) -> Task<Message> {
-        Task::none()
+    pub(crate) fn new(config: Config) -> Self {
+        let asset = cabby_config::wallpaper::load(&config).unwrap_or_else(|e| {
+            eprintln!("{e}");
+            std::process::exit(1)
+        });
+        let dimensions = asset
+            .as_ref()
+            .map(|a| iced::Size::new(a.width as f32, a.height as f32))
+            .unwrap_or(iced::Size::ZERO);
+        let handle = asset.map(|a| image::Handle::from_rgba(a.width, a.height, a.rgba));
+        Self {
+            config,
+            handle,
+            dimensions,
+        }
     }
-    fn view(&self, _: window::Id) -> Element<'_, Message> {
+    pub(crate) fn view<Message: 'static>(&self) -> Element<'_, Message> {
         let content: Element<'_, Message> = match &self.handle {
             Some(handle) => responsive(move |bounds| {
                 image(handle.clone())

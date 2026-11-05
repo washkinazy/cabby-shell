@@ -3,6 +3,7 @@
 //! Each existing executable selects one built-in plugin. This registry defines
 //! code ownership, not process isolation or a dynamic loading interface.
 use crate::{plugins, ui};
+mod surfaces;
 use cabby_config::{Config, Source};
 
 /// The built-in features currently migrated to the shared host.
@@ -20,8 +21,8 @@ pub(crate) struct Context {
     pub source: Source,
 }
 
-/// Run one feature in the caller's supervised process, on its main thread.
-pub fn run(plugin: Plugin) -> iced_exwlshell::Result {
+/// Validate inputs and initialize shared process state before backend tasks.
+fn prepare(plugin: Plugin) -> Context {
     let context = ui::configuration_source()
         .and_then(|source| {
             let config = source.load(true)?;
@@ -43,10 +44,25 @@ pub fn run(plugin: Plugin) -> iced_exwlshell::Result {
     if !matches!(plugin, Plugin::Launcher) {
         iced_exwlshell::disable_clipboard();
     }
+    context
+}
+
+/// Run one feature in the caller's supervised process, on its main thread.
+pub fn run(plugin: Plugin) -> iced_exwlshell::Result {
+    let context = prepare(plugin);
     match plugin {
-        Plugin::Bar => plugins::bar::run(context),
+        Plugin::Bar => surfaces::run(context, true, false),
         Plugin::Launcher => plugins::launcher::run(context),
-        Plugin::Wallpaper => plugins::wallpaper::run(context),
+        Plugin::Wallpaper => surfaces::run(context, false, true),
         Plugin::Notifications => plugins::notifications::run(context),
     }
+}
+
+/// Exercise shared bar/background hosting only in a guarded disposable session.
+/// This is test infrastructure, not a production CLI or service mode.
+pub fn composition_probe() -> iced_exwlshell::Result {
+    let guard = std::env::var("CABBY_TEST_WAYLAND").expect("disposable session guard required");
+    assert!(!guard.is_empty());
+    assert_eq!(Some(guard), std::env::var("WAYLAND_DISPLAY").ok());
+    surfaces::run(prepare(Plugin::Bar), true, true)
 }

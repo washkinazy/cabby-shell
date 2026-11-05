@@ -1,6 +1,6 @@
 # Internal plugin design intent
 
-Status: intent recorded on 2026-11-04; the user subsequently authorized starting the refactor. The first increment implements built-in feature modules and shared startup. Process consolidation and shared UI composition remain future design work.
+Status: intent recorded on 2026-11-04; the user subsequently authorized starting the refactor. Built-in feature modules share startup, and a common surface host now runs bar and wallpaper. Their composition in one event loop is exercised by a guarded probe; production service consolidation and shared panels remain future work.
 
 ## Purpose and scope
 
@@ -12,7 +12,7 @@ The value should come from familiar feature structure and shared machinery. Intr
 
 ## Responsibility boundaries to explore
 
-The intended separation is that a plugin owns feature behavior and the shell owns how features participate in the interface and lifecycle. The following responsibilities guide the direction; the first increment implements only the shared startup and module boundaries described below:
+The intended separation is that a plugin owns feature behavior and the shell owns how features participate in the interface and lifecycle. The following responsibilities guide the direction; the implemented startup, module, and passive-surface boundaries are described below:
 
 | Feature/plugin responsibility | Shared shell responsibility |
 | --- | --- |
@@ -35,11 +35,21 @@ Existing ownership requirements continue to apply: every Cabby process and helpe
 
 `crates/shell` now owns the production UI implementation. Its `host::Plugin` enum registers Bar, Launcher, Wallpaper, and Notifications; `host::run` validates configuration once, applies renderer selection before worker threads start, initializes diagnostics, and applies the existing clipboard policy. The launcher retains text-input clipboard support; other migrated features disable it. A typed startup context carries configuration and its source to the selected plugin.
 
-Feature modules under `crates/shell/src/plugins/` own their typed messages, state, subscriptions, views, and surface settings. Existing notification policy/transport and launcher discovery crates remain separate from UI widgets. Shared theme and helper invocation live in `ui`; the niri client remains separately testable. There is no universal plugin trait or untyped command bus.
+Feature modules under `crates/shell/src/plugins/` own typed feature messages, state, subscriptions, and views. Bar and wallpaper surface settings/output ownership have moved into the shared surface host; launcher and notifications retain their specialized surface management for now. Existing notification policy/transport and launcher discovery crates remain separate from UI widgets. Shared theme and helper invocation live in `ui`; the niri client remains separately testable. There is no universal plugin trait or untyped command bus.
 
-The production binaries in `crates/platform-spike` are now thin selectors for the built-in plugins. Their names remain stable for the CLI, units, and test harness; guarded probes remain test-only. The host runs one selected plugin per existing process. This establishes code boundaries and removes repeated startup code; it does not yet compose several plugins into one event loop or reduce the number of services.
+The production binaries in `crates/platform-spike` are now thin selectors for the built-in plugins. Their names remain stable for the CLI, units, and test harness; guarded probes remain test-only. Production executables still select one plugin per existing process. A guarded composition probe runs bar and wallpaper together through the same surface host. No production service has yet been consolidated.
 
 To add a built-in feature at this stage, keep backend policy independently testable, add its UI module, and register a typed entry point with the host when a standalone surface is appropriate. A bar indicator or shared panel should motivate the next composition interface; this convention does not require a new executable/service for every future feature. Extend configuration through the existing production schema, reference, examples, and coverage checks.
+
+## Shared passive-surface host
+
+`host/surfaces.rs` owns the Iced daemon, output-to-window registry, layer roles, input policy, theme, and resize subscriptions for bar and wallpaper. Plugins provide views and typed feature events; they no longer start their own event loops or track Wayland surface identities. Bar receives the output name for its view and retains its niri state/subscription. Static wallpaper contributes a view without artificial command or lifecycle methods.
+
+On output arrival the host creates one surface per selected plugin, addressed by Wayland output identity. Output metadata updates preserve existing window IDs; removal closes only that output's surfaces. Bar reserves its configured edge and height without keyboard focus. Wallpaper fills the background without intercepting input. Host resize events rebuild static image placement, including software rendering after scale changes.
+
+`composition-probe` is test-only and requires the existing disposable-session guard. It selects both plugins in one process and event loop. The nested harness checks both layer namespaces and attached buffers, wallpaper and bar pixels at scale 1 and 1.5, workspace IPC, selected hardware Vulkan or explicit software rendering, and lock independence after host termination. Synthetic tests cover multiple output identities and late cleanup events. These tests do not establish physical hotplug behavior or a production service migration.
+
+The existing `cabby ui` and `cabby wallpaper` wrappers each use this same host with a single plugin selected. Configuration, reload behavior, CLI paths, and systemd ownership remain unchanged. Bringing them into one production service would intentionally change restart/failure coupling and needs its own documented lifecycle increment. Notifications and launcher can be adapted later using the behavior their different surfaces require.
 
 ## Remaining design work
 
