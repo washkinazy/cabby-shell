@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import time
@@ -30,6 +31,7 @@ if not (root/'no-ready').exists():
     sock=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM)
     addr=os.environ['NOTIFY_SOCKET']
     if addr.startswith('@'): addr='\\0'+addr[1:]
+    (root/'ready').touch()
     sock.sendto(b'READY=1',addr)
 while not (root/'exit').exists(): time.sleep(.05)
 ''')
@@ -45,19 +47,44 @@ while not (root/'exit').exists(): time.sleep(.05)
         return ctl('is-active', names[key], check=False).stdout.strip() == 'active'
     def pid():
         return int(ctl('show', names['lock'], '-p', 'MainPID', '--value').stdout.strip() or 0)
-    def request():
-        return call(str(ROOT / 'target/debug/cabby'), 'lock', '--lock-unit', names['lock'], '--session-unit', names['session'], check=False)
+    # Only power requests are intercepted. All user-manager calls reach real
+    # isolated fixture units; no route from this wrapper can suspend the host.
+    wrapper_dir = work / 'bin'
+    wrapper_dir.mkdir()
+    wrapper = wrapper_dir / 'systemctl'
+    wrapper.write_text('''#!/usr/bin/python3
+import os,sys
+from pathlib import Path
+root=Path(__file__).resolve().parents[1]
+args=sys.argv[1:]
+if '--user' in args:
+    os.execv('/usr/bin/systemctl', ['systemctl', *args])
+assert args == ['--no-ask-password', '--check-inhibitors=yes', '--no-block', 'suspend'], args
+assert (root/'ready').exists(), 'suspend before READY'
+(root/'suspend').touch()
+sys.exit(1 if (root/'deny-suspend').exists() else 0)
+''')
+    wrapper.chmod(0o700)
+    def request(command='lock'):
+        env = dict(os.environ, PATH=str(wrapper_dir) + ':' + os.environ['PATH'])
+        return subprocess.run([str(ROOT / 'target/debug/cabby'), command, '--lock-unit', names['lock'], '--session-unit', names['session']], check=False, text=True, capture_output=True, timeout=45, env=env)
     try:
         verify = call('systemd-analyze', '--user', 'verify', *map(str, files))
         (work / 'verify.txt').write_text(verify.stdout + verify.stderr)
         ctl('link', '--runtime', *map(str, files))
         ctl('daemon-reload')
-        assert request().returncode != 0  # Do not start an absent compositor.
+        assert request('suspend').returncode != 0  # Do not start an absent compositor.
+        assert not (work/'suspend').exists()
         ctl('start', names['session'], target)
         started = time.monotonic()
-        assert request().returncode == 0 and active('lock')
+        assert request('suspend').returncode == 0 and active('lock')
+        assert (work/'suspend').exists()
         assert time.monotonic() - started >= .5  # start waits for READY.
         original = pid()
+        (work/'deny-suspend').touch()
+        assert request('suspend').returncode != 0 and active('lock') and pid() == original
+        (work/'deny-suspend').unlink()
+        (work/'suspend').unlink()
         assert request().returncode == 0 and pid() == original
         for _ in range(4):
             (work / 'exit').touch()
@@ -79,12 +106,14 @@ while not (root/'exit').exists(): time.sleep(.05)
         (work / 'no-ready').touch()
         ctl('reset-failed', names['lock'], check=False)
         ctl('start', names['session'])
-        assert request().returncode != 0
+        (work/'ready').unlink(missing_ok=True)
+        assert request('suspend').returncode != 0
+        assert not (work/'suspend').exists()
         wait_for(lambda: ctl('show', names['lock'], '-p', 'SubState', '--value').stdout.strip() == 'failed' and int(ctl('show', names['lock'], '-p', 'NRestarts', '--value').stdout.strip()) >= 3, 'bounded readiness failure')
         time.sleep(1.5)
         assert pid() == 0
         assert not active('lock')
-        (work / 'result.json').write_text(json.dumps({'passed': True, 'checks': ['absent-session-rejected', 'READY-gates-start', 'duplicate-single-owner', 'rapid-successful-lock-cycles', 'shell-stop-independence', 'manual-stop-refused', 'crash-restart', 'termination-signal-restart', 'session-loss-cleanup', 'missing-READY-fails-bounded']}, indent=2))
+        (work / 'result.json').write_text(json.dumps({'passed': True, 'checks': ['absent-session-rejected', 'READY-gates-start', 'duplicate-single-owner', 'rapid-successful-lock-cycles', 'shell-stop-independence', 'manual-stop-refused', 'crash-restart', 'termination-signal-restart', 'session-loss-cleanup', 'missing-READY-fails-bounded', 'suspend-after-READY', 'rejected-suspend-keeps-lock', 'missing-READY-prevents-suspend']}, indent=2))
         print(work)
         print((work / 'result.json').read_text())
     finally:
