@@ -16,6 +16,7 @@ pub(crate) enum Message {
     Connected(Handle),
     Snapshot(Vec<Entry>),
     Presented(Token),
+    Hover(Token, bool, u64),
     Dismiss(Token),
     Invoke(Token, usize),
     Result(Result<(), Error>),
@@ -80,6 +81,9 @@ impl Notifications {
             }
             Message::Presented(token) => {
                 return Action::Update(self.command(Command::Presented(token)));
+            }
+            Message::Hover(token, hovered, sequence) => {
+                return Action::Update(self.command(Command::Hover(token, hovered, sequence)));
             }
             Message::Dismiss(token) => {
                 return Action::Update(self.command(Command::Dismiss(token)));

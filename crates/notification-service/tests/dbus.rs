@@ -432,3 +432,54 @@ async fn no_reply_calls_and_task_cancellation_release_resources() {
     .await
     .expect("private-bus cancellation test timeout");
 }
+
+#[tokio::test]
+async fn hover_commands_pause_expiry_until_leave() {
+    let bus = Bus::start().await;
+    let (service, handle) = Service::connect(&bus.address).await.unwrap();
+    let task = tokio::spawn(service.with_presentation().run());
+    let connection = bus.client().await;
+    let proxy = Proxy::new(&connection, NAME, PATH, NAME).await.unwrap();
+    let id = notify(
+        &proxy,
+        Request {
+            expire_timeout: 100,
+            ..request()
+        },
+        HashMap::new(),
+    )
+    .await
+    .unwrap();
+    let token = handle
+        .snapshots
+        .borrow()
+        .iter()
+        .find(|e| e.token().id() == id)
+        .unwrap()
+        .token();
+    handle
+        .command(Command::Hover(token, true, 1))
+        .await
+        .unwrap();
+    handle.command(Command::Presented(token)).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(handle.snapshots.borrow().len(), 1);
+    handle
+        .command(Command::Hover(token, false, 3))
+        .await
+        .unwrap();
+    handle
+        .command(Command::Hover(token, true, 2))
+        .await
+        .unwrap();
+    let mut snapshots = handle.snapshots.clone();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while !snapshots.borrow_and_update().is_empty() {
+            snapshots.changed().await.unwrap();
+        }
+    })
+    .await
+    .unwrap();
+    drop(handle);
+    task.await.unwrap().unwrap();
+}

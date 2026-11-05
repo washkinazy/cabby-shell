@@ -27,6 +27,7 @@ pub(crate) fn run(context: crate::host::Context) -> iced_exwlshell::Result {
             shell: receiver.clone(),
             plugin: notifications::Notifications::default(),
             cards: BTreeMap::new(),
+            hover_sequence: 0,
             outputs: BTreeMap::new(),
         },
         || "cabby-notifications".into(),
@@ -53,6 +54,8 @@ pub(crate) fn run(context: crate::host::Context) -> iced_exwlshell::Result {
 }
 
 struct Card {
+    slot: usize,
+    hovered: bool,
     token: Token,
     output: Option<u32>,
     waiting_frame: bool,
@@ -63,11 +66,13 @@ struct Notifications {
     shell: ShellReceiver,
     plugin: notifications::Notifications,
     cards: BTreeMap<window::Id, Card>,
+    hover_sequence: u64,
     outputs: BTreeMap<u32, (u32, u32)>,
 }
 #[to_exwlshell_message]
 #[derive(Debug, Clone)]
 enum Message {
+    Hover(window::Id, bool),
     Plugin(notifications::Message),
     Shell(ShellEvent),
     Drawn(window::Id, Token),
@@ -145,7 +150,17 @@ impl Notifications {
             return Task::batch(tasks);
         }
         let (width, height, top) = geometry(&self.config, &self.outputs);
-        for (slot, token) in wanted.into_iter().enumerate() {
+        for token in wanted {
+            let slot = self
+                .cards
+                .values()
+                .find(|c| c.token.id() == token.id())
+                .map(|c| c.slot)
+                .unwrap_or_else(|| {
+                    (0..cabby_notifications::MAX_VISIBLE)
+                        .find(|slot| self.cards.values().all(|c| c.slot != *slot))
+                        .expect("visible cards are bounded")
+                });
             let margin = (top + slot as i32 * (height as i32 + 8), 8, 0, 0);
             if let Some((id, card)) = self
                 .cards
@@ -155,6 +170,14 @@ impl Notifications {
                 if card.token != token {
                     card.token = token;
                     card.waiting_frame = true;
+                    if card.hovered {
+                        self.hover_sequence += 1;
+                        tasks.push(Task::done(Message::Plugin(notifications::Message::Hover(
+                            token,
+                            true,
+                            self.hover_sequence,
+                        ))));
+                    }
                 }
                 tasks.push(Task::done(Message::MarginChange { id: *id, margin }));
                 tasks.push(Task::done(Message::LayoutChange {
@@ -167,6 +190,8 @@ impl Notifications {
                 self.cards.insert(
                     id,
                     Card {
+                        slot,
+                        hovered: false,
                         token,
                         output: None,
                         waiting_frame: true,
@@ -192,6 +217,18 @@ impl Notifications {
     }
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Hover(id, hovered) => {
+                if let Some(card) = self.cards.get_mut(&id) {
+                    card.hovered = hovered;
+                    self.hover_sequence += 1;
+                    let token = card.token;
+                    return self.update(Message::Plugin(notifications::Message::Hover(
+                        token,
+                        hovered,
+                        self.hover_sequence,
+                    )));
+                }
+            }
             Message::Config(update) if update.config.renderer == self.config.renderer => {
                 self.config = update.config;
                 return self.reconcile();
@@ -224,6 +261,7 @@ impl Notifications {
                     .collect();
                 let mut tasks = Vec::new();
                 for id in removed {
+                    tasks.push(self.update(Message::Hover(id, false)));
                     self.cards.remove(&id);
                     tasks.push(Task::done(Message::RemoveWindow(id)));
                 }
@@ -236,8 +274,9 @@ impl Notifications {
                 }
             }
             Message::Shell(ShellEvent::Closed(id)) => {
+                let resume = self.update(Message::Hover(id, false));
                 if self.cards.remove(&id).is_some() {
-                    return self.reconcile();
+                    return Task::batch([resume, self.reconcile()]);
                 }
             }
             Message::Drawn(id, drawn_token) => {
@@ -256,10 +295,14 @@ impl Notifications {
     }
     fn view(&self, id: window::Id) -> Element<'_, Message> {
         match self.cards.get(&id) {
-            Some(card) => self
-                .plugin
-                .view(card.token, &self.config)
-                .map(Message::Plugin),
+            Some(card) => iced::widget::mouse_area(
+                self.plugin
+                    .view(card.token, &self.config)
+                    .map(Message::Plugin),
+            )
+            .on_enter(Message::Hover(id, true))
+            .on_exit(Message::Hover(id, false))
+            .into(),
             None => Space::new().into(),
         }
     }
@@ -274,6 +317,7 @@ mod tests {
             shell: shell::channel().1,
             plugin: notifications::Notifications::default(),
             cards: BTreeMap::new(),
+            hover_sequence: 0,
             outputs: BTreeMap::from([(1, (800, 600))]),
         }
     }
@@ -308,6 +352,49 @@ mod tests {
         let new = *state.cards.keys().next().unwrap();
         let _ = state.update(Message::Shell(ShellEvent::Closed(id)));
         assert!(state.cards.contains_key(&new));
+    }
+    #[test]
+    fn surviving_cards_keep_slots_and_replacements_keep_hover() {
+        let mut state = state();
+        let mut store = cabby_notifications::Store::default();
+        let first = store.notify(Default::default()).unwrap();
+        for _ in 0..3 {
+            store.notify(Default::default()).unwrap();
+        }
+        let _ = state
+            .plugin
+            .update(notifications::Message::Snapshot(store.entries().to_vec()));
+        let _ = state.reconcile();
+        let before: Vec<_> = state
+            .cards
+            .iter()
+            .filter(|(_, c)| c.token != first)
+            .map(|(id, c)| (*id, c.slot))
+            .collect();
+        store.dismiss(first).unwrap();
+        let _ = state
+            .plugin
+            .update(notifications::Message::Snapshot(store.entries().to_vec()));
+        let _ = state.reconcile();
+        for (id, slot) in before {
+            assert_eq!(state.cards[&id].slot, slot);
+        }
+        assert_eq!(state.cards.values().filter(|c| c.slot == 0).count(), 1);
+        let id = *state.cards.keys().next().unwrap();
+        let _ = state.update(Message::Hover(id, true));
+        let token = state.cards[&id].token;
+        store
+            .notify(cabby_notifications::Request {
+                replaces_id: token.id(),
+                ..Default::default()
+            })
+            .unwrap();
+        let _ = state
+            .plugin
+            .update(notifications::Message::Snapshot(store.entries().to_vec()));
+        let _ = state.reconcile();
+        assert!(state.cards[&id].hovered);
+        assert_ne!(state.cards[&id].token, token);
     }
     #[test]
     fn queue_and_no_output_do_not_create_extra_surfaces() {
