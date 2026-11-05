@@ -245,7 +245,9 @@ version = "0.1.0"
 dependencies = [
  "cabby-config",
  "cabby-launcher",
+ "libc",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

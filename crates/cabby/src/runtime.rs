@@ -1,11 +1,13 @@
+use crate::watch;
 use cabby_config::{Config, Result, Source, Store};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
+use std::os::fd::AsRawFd;
 use std::os::linux::net::SocketAddrExt;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{SocketAddr, UnixDatagram, UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub fn directory(explicit: Option<PathBuf>) -> Result<PathBuf> {
     let path = explicit
@@ -88,6 +90,8 @@ pub fn serve(
         .map_err(|error| error.to_string())?;
     lock.try_lock()
         .map_err(|_| "another Cabby coordinator owns this runtime directory")?;
+    let mut watcher =
+        watch::Watch::new(watch::paths(&source.path, "")).map_err(|e| e.to_string())?;
     let mut store = Store::open(source)?;
     publish(&path, store.active())?;
     let socket = path.join("control.sock");
@@ -103,9 +107,58 @@ pub fn serve(
     };
     fs::set_permissions(&socket, fs::Permissions::from_mode(0o600))
         .map_err(|error| error.to_string())?;
+    let _ = watcher.drain();
+    watcher = watch::Watch::new(watch::paths(
+        &store.source.path,
+        &store.active().wallpaper_image,
+    ))
+    .map_err(|e| e.to_string())?;
+    let mut deadline = Some(Instant::now() + watch::DEBOUNCE);
     notify_ready()?;
-    for stream in listener.incoming() {
-        let mut stream = stream.map_err(|error| error.to_string())?;
+    loop {
+        let incoming = watcher
+            .wait(listener.as_raw_fd(), deadline)
+            .map_err(|e| e.to_string())?;
+        if watcher.drain().map_err(|e| e.to_string())? {
+            deadline = Some(Instant::now() + watch::DEBOUNCE);
+            if watcher
+                .refresh(watch::paths(
+                    &store.source.path,
+                    &store.active().wallpaper_image,
+                ))
+                .map_err(|e| e.to_string())?
+            {
+                deadline = Some(Instant::now() + watch::DEBOUNCE);
+            }
+        }
+        if deadline.is_some_and(|d| Instant::now() >= d) {
+            deadline = None;
+            let response = reload(
+                &mut store,
+                &path,
+                &ui_unit,
+                &wallpaper_unit,
+                &notifications_unit,
+            );
+            if response["ok"] != true {
+                eprintln!("automatic config reload rejected; keeping previous configuration");
+            } else if response["changed"] == true {
+                eprintln!("configuration automatically reloaded");
+            }
+            if watcher
+                .refresh(watch::paths(
+                    &store.source.path,
+                    &store.active().wallpaper_image,
+                ))
+                .map_err(|e| e.to_string())?
+            {
+                deadline = Some(Instant::now() + watch::DEBOUNCE);
+            }
+        }
+        if !incoming {
+            continue;
+        }
+        let (mut stream, _) = listener.accept().map_err(|error| error.to_string())?;
         stream
             .set_read_timeout(Some(Duration::from_secs(2)))
             .map_err(|error| error.to_string())?;
@@ -121,49 +174,68 @@ pub fn serve(
                 "status" => {
                     serde_json::json!({"ok": true, "source": store.source.path, "config": store.active(), "pid": std::process::id()})
                 }
-                "reload" => match store.reload_with(|candidate| publish(&path, candidate)) {
-                    Ok(changed) => {
-                        let restart = if changed {
-                            ui_unit.as_ref().map(|unit| {
-                                std::process::Command::new("systemctl")
-                                    .args(["--user", "--no-block", "try-restart", unit])
-                                    .status()
-                                    .is_ok_and(|status| status.success())
-                            })
-                        } else {
-                            None
-                        };
-                        let wallpaper_restart = if changed {
-                            wallpaper_unit.as_ref().map(|unit| {
-                                std::process::Command::new("systemctl")
-                                    .args(["--user", "--no-block", "try-restart", unit])
-                                    .status()
-                                    .is_ok_and(|s| s.success())
-                            })
-                        } else {
-                            None
-                        };
-                        let notifications_restart = if changed {
-                            notifications_unit.as_ref().map(|unit| {
-                                std::process::Command::new("systemctl")
-                                    .args(["--user", "--no-block", "try-restart", unit])
-                                    .status()
-                                    .is_ok_and(|s| s.success())
-                            })
-                        } else {
-                            None
-                        };
-                        serde_json::json!({"ok": true, "changed": changed, "ui_restart_queued": restart, "wallpaper_restart_queued": wallpaper_restart, "notifications_restart_queued": notifications_restart, "config": store.active()})
+                "reload" => {
+                    let response = reload(
+                        &mut store,
+                        &path,
+                        &ui_unit,
+                        &wallpaper_unit,
+                        &notifications_unit,
+                    );
+                    if watcher
+                        .refresh(watch::paths(
+                            &store.source.path,
+                            &store.active().wallpaper_image,
+                        ))
+                        .map_err(|e| e.to_string())?
+                    {
+                        deadline = Some(Instant::now() + watch::DEBOUNCE);
                     }
-                    Err(error) => serde_json::json!({"ok": false, "error": error}),
-                },
+                    response
+                }
                 _ => serde_json::json!({"ok": false, "error": "unknown request"}),
             }
         };
         // An abandoned caller must not take down the coordinator.
         let _ = writeln!(stream, "{response}");
     }
-    Ok(())
+}
+
+fn reload(
+    store: &mut Store,
+    path: &Path,
+    ui_unit: &Option<String>,
+    wallpaper_unit: &Option<String>,
+    notifications_unit: &Option<String>,
+) -> serde_json::Value {
+    match store.reload_with(|candidate| publish(path, candidate)) {
+        Ok(changed) => {
+            // Intentional edits must not consume the crash-recovery budget.
+            // try-restart still leaves stopped/conflicted services stopped.
+            let restart_unit = |unit: &Option<String>| {
+                changed
+                    .then(|| {
+                        unit.as_ref().map(|unit| {
+                            let reset = std::process::Command::new("systemctl")
+                                .args(["--user", "reset-failed", unit])
+                                .status()
+                                .is_ok_and(|s| s.success());
+                            reset
+                                && std::process::Command::new("systemctl")
+                                    .args(["--user", "--no-block", "try-restart", unit])
+                                    .status()
+                                    .is_ok_and(|s| s.success())
+                        })
+                    })
+                    .flatten()
+            };
+            let restart = restart_unit(ui_unit);
+            let wallpaper_restart = restart_unit(wallpaper_unit);
+            let notifications_restart = restart_unit(notifications_unit);
+            serde_json::json!({"ok": true, "changed": changed, "ui_restart_queued": restart, "wallpaper_restart_queued": wallpaper_restart, "notifications_restart_queued": notifications_restart, "config": store.active()})
+        }
+        Err(error) => serde_json::json!({"ok": false, "error": error}),
+    }
 }
 
 pub fn request(path: &Path, command: &str) -> Result<serde_json::Value> {

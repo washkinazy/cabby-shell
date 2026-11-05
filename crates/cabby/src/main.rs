@@ -1,4 +1,5 @@
 mod runtime;
+mod watch;
 use cabby_config::{Result, Source};
 use std::ffi::OsString;
 use std::os::unix::process::CommandExt;
