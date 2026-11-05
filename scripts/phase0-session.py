@@ -213,13 +213,13 @@ def inside(directory, interactive, renderer):
             for name in outputs:
                 if json.loads(scaled)[name]["logical"]["scale"] != 1.5:
                     raise RuntimeError(f"Output {name} did not adopt the requested scale")
-            # The same two plugins now share one host/event loop in an isolated probe.
+            # Exercise the production desktop wrapper with both plugins in one host.
             bar.terminate()
             bar.wait(timeout=5)
             wallpaper.terminate()
             wallpaper.wait(timeout=5)
             with (directory / "composition.log").open("w") as composition_log:
-                bar = subprocess.Popen([ROOT / "target/debug/composition-probe", "--config", wallpaper_config], stdout=composition_log, stderr=composition_log)
+                bar = subprocess.Popen([ROOT / "target/debug/cabby", "desktop", "--config", wallpaper_config], stdout=composition_log, stderr=composition_log)
                 children.append(bar)
                 deadline = time.monotonic() + 30
                 while time.monotonic() < deadline:
@@ -311,7 +311,7 @@ def main():
     if args.inside:
         inside(args.inside, args.interactive, args.renderer)
         return
-    for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe", "cabby-wallpaper", "wallpaper-pixel-probe", "cabby-notifications", "notification-probe", "composition-probe"):
+    for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe", "cabby-wallpaper", "wallpaper-pixel-probe", "cabby-notifications", "notification-probe", "cabby-desktop"):
         if not (ROOT / "target/debug" / binary).is_file():
             parser.error("Run cargo build --workspace --locked first")
     parent_display = os.environ.get("WAYLAND_DISPLAY")

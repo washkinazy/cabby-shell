@@ -21,21 +21,18 @@ pub(crate) struct Wallpaper {
     dimensions: iced::Size,
 }
 impl Wallpaper {
-    pub(crate) fn new(config: Config) -> Self {
-        let asset = cabby_config::wallpaper::load(&config).unwrap_or_else(|e| {
-            eprintln!("{e}");
-            std::process::exit(1)
-        });
+    pub(crate) fn new(config: Config) -> cabby_config::Result<Self> {
+        let asset = cabby_config::wallpaper::load(&config)?;
         let dimensions = asset
             .as_ref()
             .map(|a| iced::Size::new(a.width as f32, a.height as f32))
             .unwrap_or(iced::Size::ZERO);
         let handle = asset.map(|a| image::Handle::from_rgba(a.width, a.height, a.rgba));
-        Self {
+        Ok(Self {
             config,
             handle,
             dimensions,
-        }
+        })
     }
     pub(crate) fn view<Message: 'static>(&self) -> Element<'_, Message> {
         let content: Element<'_, Message> = match &self.handle {

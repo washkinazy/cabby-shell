@@ -1,6 +1,6 @@
 # Internal plugin design intent
 
-Status: intent recorded on 2026-11-04; the user subsequently authorized starting the refactor. Built-in feature modules share startup, and a common surface host now runs bar and wallpaper. Their composition in one event loop is exercised by a guarded probe; production service consolidation and shared panels remain future work.
+Status: intent recorded on 2026-11-04; the user subsequently authorized starting the refactor. Built-in feature modules share startup, and a common surface host now runs bar and wallpaper. They now share the production desktop process. Launcher and notification plugins have separate host adapters; shared control panels remain future work.
 
 ## Purpose and scope
 
@@ -27,9 +27,9 @@ Keep backend logic testable independently of Iced widgets. Features may contribu
 
 A plugin is a code and responsibility boundary. A process or systemd service is a supervision, isolation, and lifetime boundary. A plugin does not automatically get its own daemon. Several plugins could share a process; a separate process needs a concrete lifecycle or isolation reason.
 
-The number of hosts, the role of the existing coordinator, and placement of individual features remain open. The earlier idea of one ordinary shell host is a candidate for discussion, not an approved topology. Sharing a process also shares crash impact; an internal plugin contract alone does not provide process isolation.
+The current topology uses a shared desktop host for bar/wallpaper, plus the coordinator, notification owner, and on-demand launcher. Their separate lifetimes and failure policies are documented in services.md. Further consolidation should have a concrete benefit and preserve those policies. Sharing a process also shares crash impact; an internal plugin contract alone does not provide process isolation.
 
-Existing ownership requirements continue to apply: every Cabby process and helper has a supervisor and shutdown policy; the active lock survives ordinary shell stop/restart; launched applications have independent ownership; BlueZ and PipeWire remain external services. The current implemented topology and reload behavior are documented in [services.md](services.md). The first refactor increment preserves existing services, commands, configuration, and reload behavior.
+Existing ownership requirements continue to apply: every Cabby process and helper has a supervisor and shutdown policy; the active lock survives ordinary shell stop/restart; launched applications have independent ownership; BlueZ and PipeWire remain external services. The current implemented topology and reload behavior are documented in [services.md](services.md). The initial extractions preserved behavior; the subsequent desktop consolidation intentionally couples bar/wallpaper restart and failure lifetime, documented in the service and configuration references.
 
 ## Implemented first increment
 
@@ -37,7 +37,7 @@ Existing ownership requirements continue to apply: every Cabby process and helpe
 
 Feature modules under `crates/shell/src/plugins/` own typed feature messages, state, subscriptions, and views. Bar and wallpaper surface settings/output ownership have moved into the shared surface host; the launcher host owns its overlay and focus lifecycle, and the notification host owns card windows and presentation acknowledgement. Existing notification policy/transport and launcher discovery crates remain separate from UI widgets. Shared theme and helper invocation live in `ui`; the niri client remains separately testable. There is no universal plugin trait or untyped command bus.
 
-The production binaries in `crates/platform-spike` are now thin selectors for the built-in plugins. Their names remain stable for the CLI, units, and test harness; guarded probes remain test-only. Production executables still select one plugin per existing process. A guarded composition probe runs bar and wallpaper together through the same surface host. No production service has yet been consolidated.
+The production binaries in `crates/platform-spike` are now thin selectors for the built-in plugins. Their names remain stable for the CLI, units, and test harness; guarded probes remain test-only. The `cabby-desktop` executable selects both bar and wallpaper plugins. Standalone plugin executables remain available for isolated development. The earlier composition probe has been replaced by testing the production `cabby desktop` wrapper.
 
 To add a built-in feature at this stage, keep backend policy independently testable, add its UI module, and register a typed entry point with the host when a standalone surface is appropriate. A bar indicator or shared panel should motivate the next composition interface; this convention does not require a new executable/service for every future feature. Extend configuration through the existing production schema, reference, examples, and coverage checks.
 
@@ -47,9 +47,9 @@ To add a built-in feature at this stage, keep backend policy independently testa
 
 On output arrival the host creates one surface per selected plugin, addressed by Wayland output identity. Output metadata updates preserve existing window IDs; removal closes only that output's surfaces. Bar reserves its configured edge and height without keyboard focus. Wallpaper fills the background without intercepting input. Host resize events rebuild static image placement, including software rendering after scale changes.
 
-`composition-probe` is test-only and requires the existing disposable-session guard. It selects both plugins in one process and event loop. The nested harness checks both layer namespaces and attached buffers, wallpaper and bar pixels at scale 1 and 1.5, workspace IPC, selected hardware Vulkan or explicit software rendering, and lock independence after host termination. Synthetic tests cover multiple output identities and late cleanup events. These tests do not establish physical hotplug behavior or a production service migration.
+`cabby desktop` selects both plugins in one process and event loop. The nested harness checks both layer namespaces and attached buffers, wallpaper and bar pixels at scale 1 and 1.5, workspace IPC, selected hardware Vulkan or explicit software rendering, and lock independence after host termination. Synthetic tests cover multiple output identities and late cleanup events. These tests do not establish physical hotplug behavior.
 
-The existing `cabby ui` and `cabby wallpaper` wrappers each use this same host with a single plugin selected. Configuration, reload behavior, CLI paths, and systemd ownership remain unchanged. Bringing them into one production service would intentionally change restart/failure coupling and needs its own documented lifecycle increment. Notification card surfaces use their own host adapter because replacement, first-draw acknowledgement, and queue promotion have different requirements.
+The existing `cabby ui` and `cabby wallpaper` wrappers each use this same host with a single plugin selected. The production `cabby-ui.service` now selects both via `cabby desktop`. Its restart/recovery and configuration migration are documented in services.md and configuration.md. Notification card surfaces use their own host adapter because replacement, first-draw acknowledgement, and queue promotion have different requirements.
 
 ## Launcher overlay host
 
@@ -70,4 +70,4 @@ Before subsequent increments, settle the affected decisions:
 - How feature state, UI contributions, configuration reload, and task cleanup fit the existing Rust/Iced implementation.
 - The next migration and its acceptance checks, preserving established behavior and evidence.
 
-The first migration covers the existing bar, launcher, wallpaper, and notification frontends. Further process changes and audio/Bluetooth backend choices remain open. Each later increment must preserve existing behavioral acceptance checks or explicitly document an agreed behavior change. Phase 3 remains incomplete.
+The first migration covers the existing bar, launcher, wallpaper, and notification frontends. The initial plugin refactor now covers all implemented UI features and the combined desktop service. Audio/Bluetooth backend choices and shared device panels remain open. Each later increment must preserve existing behavioral acceptance checks or explicitly document an agreed behavior change. Phase 3 remains incomplete.

@@ -74,7 +74,13 @@ pub(super) fn run(
     with_wallpaper: bool,
 ) -> iced_exwlshell::Result {
     let config = context.config;
-    let wallpaper = with_wallpaper.then(|| wallpaper::Wallpaper::new(config.clone()));
+    let wallpaper = with_wallpaper
+        .then(|| wallpaper::Wallpaper::new(config.clone()))
+        .transpose()
+        .unwrap_or_else(|error| {
+            eprintln!("{error}");
+            std::process::exit(1)
+        });
     let (sender, receiver) = shell::channel();
     let text_size = iced::Pixels(f32::from(config.font_size));
     daemon(
