@@ -11,6 +11,7 @@ use cabby_config::{Config, Source};
 /// The built-in features currently migrated to the shared host.
 #[derive(Clone, Copy)]
 pub enum Plugin {
+    Desktop,
     Bar,
     Launcher,
     Wallpaper,
@@ -53,18 +54,10 @@ fn prepare(plugin: Plugin) -> Context {
 pub fn run(plugin: Plugin) -> iced_exwlshell::Result {
     let context = prepare(plugin);
     match plugin {
+        Plugin::Desktop => surfaces::run(context, true, true),
         Plugin::Bar => surfaces::run(context, true, false),
         Plugin::Launcher => launcher::run(context),
         Plugin::Wallpaper => surfaces::run(context, false, true),
         Plugin::Notifications => notifications::run(context),
     }
-}
-
-/// Exercise shared bar/background hosting only in a guarded disposable session.
-/// This is test infrastructure, not a production CLI or service mode.
-pub fn composition_probe() -> iced_exwlshell::Result {
-    let guard = std::env::var("CABBY_TEST_WAYLAND").expect("disposable session guard required");
-    assert!(!guard.is_empty());
-    assert_eq!(Some(guard), std::env::var("WAYLAND_DISPLAY").ok());
-    surfaces::run(prepare(Plugin::Bar), true, true)
 }

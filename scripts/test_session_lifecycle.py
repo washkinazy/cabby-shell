@@ -32,7 +32,7 @@ def wait_for(test, label):
 
 def main():
     prefix = f'cabby-test-{uuid.uuid4().hex[:10]}'
-    names = {key: f'{prefix}-{key}.service' for key in ('compositor', 'session', 'ui', 'lock', 'app', 'launcher', 'wallpaper', 'notifications')}
+    names = {key: f'{prefix}-{key}.service' for key in ('compositor', 'session', 'ui', 'lock', 'app', 'launcher', 'notifications')}
     names['target'] = f'{prefix}.target'
     runtime_root = Path(os.environ['XDG_RUNTIME_DIR'])
     runtime = runtime_root / prefix
@@ -43,16 +43,18 @@ def main():
     config = work / 'config.toml'
     config.write_text('renderer = "software"\nbar_height = 40\n')
     mappings = {'niri.service': names['compositor'], 'cabby-session.service': names['session'],
-                'cabby-notifications.service': names['notifications'], 'cabby-ui.service': names['ui'], 'cabby-wallpaper.service': names['wallpaper'], 'cabby-launcher.service': names['launcher'], 'cabby.target': names['target']}
+                'cabby-notifications.service': names['notifications'], 'cabby-ui.service': names['ui'], 'cabby-launcher.service': names['launcher'], 'cabby.target': names['target']}
     for source in (ROOT / 'systemd/user').iterdir():
         content = source.read_text()
         for old, new in mappings.items():
             content = content.replace(old, new)
+        if source.name == 'cabby-ui.service':
+            assert 'ExecStart=/usr/bin/cabby desktop --config' in content
         content = content.replace('/usr/bin/cabby', str(BIN))
         content = content.replace(f'serve --ui-unit {names["ui"]}',
                                   f'serve --ui-unit {names["ui"]} --config {config} --runtime-dir {runtime}')
         content = content.replace('RuntimeDirectory=cabby-shell', f'RuntimeDirectory={prefix}')
-        if source.name in ('cabby-ui.service', 'cabby-launcher.service', 'cabby-wallpaper.service', 'cabby-notifications.service'):
+        if source.name in ('cabby-ui.service', 'cabby-launcher.service', 'cabby-notifications.service'):
             # Synthetic UI launches a descendant in another process group. The
             # production bar/rendering is tested separately in nested niri.
             content = '\n'.join('ExecStart=/bin/sh -c "setsid sleep 360 & wait"' if line.startswith('ExecStart=') else line for line in content.splitlines())+'\n'
@@ -89,7 +91,7 @@ def main():
         assert call(str(BIN), 'validate', '--ui-unit', names['ui'], check=False).returncode != 0
         ctl('start', names['compositor'])
         control('start')
-        wait_for(lambda: active('session') and active('ui') and active('wallpaper') and active('notifications'), 'services start')
+        wait_for(lambda: active('session') and active('ui') and active('notifications'), 'services start')
         assert not active('launcher')
         open_launcher()
         first_launcher = pid('launcher')
@@ -97,9 +99,9 @@ def main():
         assert pid('launcher') == first_launcher and first_launcher != 0
         results.append('launcher starts on demand and repeated opening preserves one instance')
         initial = pid('session')
-        wallpaper_initial = pid('wallpaper')
+        desktop_initial = pid('ui')
         control('start')
-        assert pid('session') == initial and pid('wallpaper') == wallpaper_initial
+        assert pid('session') == initial and pid('ui') == desktop_initial
         duplicate = call(str(BIN), 'serve', '--config', str(config), '--runtime-dir', str(runtime), check=False)
         assert duplicate.returncode != 0 and 'another Cabby' in duplicate.stderr
         results.append('duplicate starts preserve one owner')
@@ -114,12 +116,10 @@ def main():
         results.append('invalid/deleted reload preserves snapshot')
         config.write_text('renderer = "software"\nbar_height = 64\n')
         old_ui = pid('ui')
-        old_wallpaper = pid('wallpaper')
         old_notifications = pid('notifications')
         reloaded = request('reload')
-        assert reloaded['ui_restart_queued'] and reloaded['wallpaper_restart_queued'] and reloaded['notifications_restart_queued']
+        assert reloaded['ui_restart_queued'] and reloaded['wallpaper_restart_queued'] is None and reloaded['notifications_restart_queued']
         wait_for(lambda: active('notifications') and pid('notifications') != old_notifications, 'notification reload')
-        wait_for(lambda: active('wallpaper') and pid('wallpaper') != old_wallpaper, 'wallpaper reload')
         wait_for(lambda: active('ui') and pid('ui') != old_ui, 'UI restart after valid reload')
         assert request('status')['config']['bar_height'] == 64
         assert not request('reload')['changed']
@@ -129,7 +129,7 @@ def main():
         ctl('kill', '--kill-whom=main', '--signal=KILL', names['ui'])
         wait_for(lambda: active('ui') and pid('ui') not in (0, old_ui), 'UI crash restart')
         assert pid('session') == initial
-        results.append('UI crash restarts independently')
+        results.append('shared desktop crash restarts independently')
         ctl('reset-failed', names['ui'])
         ctl('kill', '--kill-whom=main', '--signal=KILL', names['session'])
         wait_for(lambda: active('session') and pid('session') not in (0, initial) and active('ui'), 'coordinator restart')
@@ -157,18 +157,30 @@ def main():
         wait_for(argv_file.exists, 'launched application writes arguments')
         assert json.loads(argv_file.read_text()) == literal
         results.append('CLI rejects inactive sessions and invalid options; launch preserves literal arguments')
-        ctl('reset-failed', names['wallpaper'])
-        old_wallpaper = pid('wallpaper')
-        ctl('kill', '--kill-whom=main', '--signal=KILL', names['wallpaper'])
-        wait_for(lambda: active('wallpaper') and pid('wallpaper') not in (0, old_wallpaper), 'wallpaper crash recovery')
-        assert active('ui') and active('session')
-        results.append('wallpaper reload and independent crash recovery pass')
+        # Isolate this reload scenario from the preceding crash/restart budget.
+        # The explicit crash-loop scenario below still tests the shipped limit.
+        ctl('reset-failed', names['ui'], names['notifications'])
+        old_ui = pid('ui')
+        old_notifications = pid('notifications')
+        config.write_text('renderer = "software"\nbar_height = 64\nwallpaper_color = "#19334d"\n')
+        response = request('reload')
+        assert response['ui_restart_queued'] and response['wallpaper_restart_queued'] is None
+        wait_for(lambda: active('ui') and pid('ui') != old_ui, 'desktop wallpaper reload')
+        wait_for(lambda: active('notifications') and pid('notifications') != old_notifications, 'notification wallpaper reload')
+        stable_ui = pid('ui')
+        config.write_text('wallpaper_image = "/nonexistent/cabby-fixture.png"\n')
+        assert not request('reload', check=False)['ok']
+        assert pid('ui') == stable_ui
+        assert request('status')['config']['wallpaper_color'] == '#19334d'
+        config.write_text('renderer = "software"\nbar_height = 64\nwallpaper_color = "#19334d"\n')
+        assert not request('reload')['changed']
+        results.append('wallpaper-only changes restart shared desktop; invalid assets preserve it')
         ctl('reset-failed', names['notifications'])
         previous_notification = pid('notifications')
         ctl('kill', '--kill-whom=main', '--signal=KILL', names['notifications'])
         wait_for(lambda: active('notifications') and pid('notifications') not in (0, previous_notification), 'notification crash recovery')
         assert active('ui') and active('session')
-        results.append('notifications survive bar restart and recover independently')
+        results.append('notifications survive desktop restart and recover independently')
         # Exercise the production conflict exit policy without a real bus owner.
         notification_unit = work / names['notifications']
         original_unit = notification_unit.read_text()
@@ -191,13 +203,13 @@ def main():
         group = ctl('show', names['ui'], '-p', 'ControlGroup', '--value').stdout.strip()
         descendants = (Path('/sys/fs/cgroup') / group.lstrip('/') / 'cgroup.procs').read_text().split()
         control('stop')
-        wait_for(lambda: not active('session') and not active('ui') and not active('launcher') and not active('wallpaper') and not active('notifications'), 'shell stop')
+        wait_for(lambda: not active('session') and not active('ui') and not active('launcher') and not active('notifications'), 'shell stop')
         assert all(not Path('/proc', child).exists() for child in descendants)
         assert active('lock') and active('app')
         assert ctl('is-active', launched_app).stdout.strip() == 'active'
         assert not runtime.exists()
         results.append('shell stop cleans descendants/runtime; session-owned lock/app survive')
-        ctl('reset-failed', names['session'], names['ui'], names['wallpaper'], check=False)
+        ctl('reset-failed', names['session'], names['ui'], check=False)
         control('start')
         wait_for(lambda: active('ui'), 'shell restart')
         ctl('reset-failed', names['ui'])
@@ -220,19 +232,19 @@ def main():
         results.append('repeated crashes hit restart limit without killing coordinator')
         ctl('reset-failed', names['ui'])
         ctl('start', names['ui'])
-        ctl('reset-failed', names['session'], names['ui'], names['wallpaper'])
+        ctl('reset-failed', names['session'], names['ui'])
         previous = pid('session')
         control('restart')
         wait_for(lambda: active('ui') and pid('session') not in (0, previous), 'CLI restart')
         assert ctl('is-active', launched_app).stdout.strip() == 'active'
         open_launcher()
         ctl('kill', '--kill-whom=main', '--signal=KILL', names['compositor'])
-        wait_for(lambda: all(not active(key) for key in ('target', 'session', 'ui', 'lock', 'app', 'launcher', 'wallpaper', 'notifications')), 'compositor loss')
+        wait_for(lambda: all(not active(key) for key in ('target', 'session', 'ui', 'lock', 'app', 'launcher', 'notifications')), 'compositor loss')
         wait_for(lambda: ctl('is-active', launched_app, check=False).stdout.strip() != 'active', 'launched app session cleanup')
         time.sleep(1.5)
         assert not active('session') and not active('ui') and not runtime.exists()
         results.append('compositor crash stops every dependent without restart loop')
-        (work / 'result.json').write_text(json.dumps({'passed': results, 'stand_ins': ['compositor', 'ui', 'lock', 'app', 'launcher', 'wallpaper', 'notifications']}, indent=2))
+        (work / 'result.json').write_text(json.dumps({'passed': results, 'stand_ins': ['compositor', 'ui', 'lock', 'app', 'launcher', 'notifications']}, indent=2))
         print(json.dumps(results, indent=2))
     finally:
         journal = call('journalctl', '--user', '--no-pager', '-n', '150',

@@ -1,3 +1,4 @@
+# Managed desktop hosts bar + wallpaper together; restart-ui restarts both.
 # Notifications share renderer/theme settings; changed managed reloads restart cards and discard active notices.
 wallpaper_image = "assets/sample.png"
 wallpaper_mode = "stretch"

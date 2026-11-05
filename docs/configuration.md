@@ -8,7 +8,7 @@ Cabby reads TOML from `$HOME/.config/cabby-shell/config.toml`. This is currently
 
 A missing default file at startup uses built-in defaults. A missing explicitly selected file is an error. Empty files and omitted settings use defaults. Invalid startup configuration fails startup. Invalid reloads (including a removed file) retain the entire previous valid snapshot. Unknown/duplicate keys, wrong types, unknown renderer names, and invalid ranges are errors. Files are limited to 64 KiB and must be UTF-8.
 
-The coordinator implements `cabby reload`: invalid input retains the previous active snapshot; changed valid input (including changed wallpaper image bytes) is published atomically and queues managed bar and wallpaper restarts. Bar and wallpaper settings require those restarts; launcher settings take effect on its next opening. Direct UI invocation reads settings on startup only. See [services.md](services.md) for runtime ownership and restart results.
+The coordinator implements `cabby reload`: invalid input retains the previous active snapshot; changed valid input (including changed wallpaper image bytes) is published atomically and queues a managed desktop-host restart for bar and wallpaper together. Bar and wallpaper settings require that restart; launcher settings take effect on its next opening. Direct UI invocation reads settings on startup only. See [services.md](services.md) for runtime ownership and restart results.
 
 ## Validation and installation
 
@@ -159,7 +159,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** a UTF-8 file path, absolute or relative to the directory containing the selected config file. No tilde/environment expansion. The managed snapshot normalizes paths to absolute paths.
 - **Example:** `wallpaper_image = "assets/sample.png"` in [wallpaper.toml](../examples/config/wallpaper.toml); copy its `assets/` folder too.
 - **Dependencies/interactions:** static PNG/JPEG only; regular files at most 32 MiB, dimensions at most 8192×8192, decoder allocation limit 256 MiB. Transparent pixels reveal wallpaper_color. Image metadata orientation is not applied. No external wallpaper helper or GTK dependency.
-- **Application:** startup/reload validates and decodes images before publishing configuration. Invalid/missing images retain the current config on reload. Image content changes at the same path are detected by reload even when TOML is unchanged; successful changes restart wallpaper and bar. No file watcher. Concurrent file edits after validation can still fail component startup; replace image files atomically.
+- **Application:** startup/reload validates and decodes images before publishing configuration. Invalid/missing images retain the current config on reload. Image content changes at the same path are detected by reload even when TOML is unchanged; successful changes restart the shared desktop host (wallpaper and bar). No file watcher. Concurrent file edits after validation can still fail component startup; replace image files atomically.
 - **Migration:** new optional setting; omission produces a solid background. No automatic import of another wallpaper tool's settings.
 
 ### `wallpaper_color`
@@ -169,7 +169,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** opaque `#RRGGBB` RGB with case-insensitive hexadecimal digits, no units.
 - **Example:** `wallpaper_color = "#101820"` in [wallpaper.toml](../examples/config/wallpaper.toml).
 - **Dependencies/interactions:** independent of UI theme background; applies on every output with either renderer.
-- **Application:** wallpaper restart on managed reload; direct invocation reads at startup.
+- **Application:** desktop-host restart (wallpaper and bar) on managed reload; direct invocation reads at startup.
 - **Migration:** new optional setting.
 
 ### `wallpaper_mode`
@@ -179,7 +179,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 - **Values:** `"fill"` preserves aspect ratio and crops; `"fit"` preserves the complete image with color borders; `"stretch"` changes aspect ratio to fill; `"center"` centers at native image dimensions interpreted as logical pixels and clips overflow.
 - **Example:** `wallpaper_mode = "fit"`; [center](../examples/config/wallpaper-center.toml) and [stretch](../examples/config/wallpaper-stretch.toml) alternatives are provided.
 - **Dependencies/interactions:** ignored for an empty image. Output scaling determines physical pixel dimensions. Tiling, slideshows, and per-output image overrides are not implemented.
-- **Application:** wallpaper restart on managed reload; no changes to compositor output configuration.
+- **Application:** desktop-host restart (wallpaper and bar) on managed reload; no changes to compositor output configuration.
 - **Migration:** new optional setting.
 
 ## Keeping this reference complete
@@ -190,4 +190,8 @@ The configuration type and its setting-key metadata come from the same Rust decl
 
 The notification UI uses `config.toml` and the existing `renderer`, `font_size`, `background`, `foreground`, and `accent` settings with their documented types, defaults, ranges, and examples. `bar_position` and `bar_height` also determine notification top clearance and available vertical space. No separate notification settings are supported. All outputs share the theme; card placement and retention limits are fixed policies documented in [notifications.md](notifications.md).
 
-Managed reload now queues a notification-service restart for any accepted changed configuration or wallpaper asset, alongside the bar and wallpaper restarts. This applies even when the changed key does not affect notifications. A restart discards active and queued notifications because there is no history. Invalid or unchanged reloads leave notifications intact; an open launcher still uses its startup snapshot. Direct `cabby notifications --config PATH` reads settings at startup and needs a restart for changes. Existing configurations remain valid; no key migration is required. New installations of the unit set start the notification owner with the shell, so an already-running notification daemon causes a reported ownership conflict rather than replacement.
+Managed reload now queues a notification-service restart for any accepted changed configuration or wallpaper asset, alongside the shared desktop-host restart. This applies even when the changed key does not affect notifications. A restart discards active and queued notifications because there is no history. Invalid or unchanged reloads leave notifications intact; an open launcher still uses its startup snapshot. Direct `cabby notifications --config PATH` reads settings at startup and needs a restart for changes. Existing configurations remain valid; no key migration is required. New installations of the unit set start the notification owner with the shell, so an already-running notification daemon causes a reported ownership conflict rather than replacement.
+
+## Desktop plugin host migration
+
+The managed desktop now runs bar and wallpaper together in `cabby-ui.service`. All existing keys, defaults, paths, and validation rules remain the same. `cabby restart-ui` restarts both plugins; any accepted changed configuration or wallpaper asset restarts the desktop and notifications. Invalid/unchanged reloads preserve both. The old separate wallpaper unit is removed; manually installed units need the [service migration](services.md#desktop-host-migration). Standalone `cabby ui` and `cabby wallpaper` still read configuration at startup, while `cabby desktop` runs both.

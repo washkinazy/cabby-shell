@@ -15,7 +15,7 @@ const HELP: &str = "Usage:
   cabby launch-app --desktop-id ID [--config PATH] [--session-unit UNIT]
   cabby launch [--session-unit UNIT] [--working-directory PATH] -- PROGRAM [ARG...]
   cabby serve [--config PATH] [--runtime-dir PATH] [--ui-unit UNIT] [--wallpaper-unit UNIT] [--notifications-unit UNIT]
-  cabby ui|wallpaper|notifications [--config PATH]
+  cabby desktop|ui|wallpaper|notifications [--config PATH]
 
 Defaults: target=cabby.target, session-unit=niri.service, ui-unit=cabby-ui.service.
 No command installs or enables services. Paths and arguments are passed without shell evaluation.";
@@ -122,7 +122,9 @@ fn run() -> Result<()> {
     }
     let command = command.to_str().ok_or("command must be UTF-8")?;
     let allowed: &[&str] = match command {
-        "validate" | "ui" | "launcher-ui" | "wallpaper" | "notifications" => &["--config"],
+        "validate" | "desktop" | "ui" | "launcher-ui" | "wallpaper" | "notifications" => {
+            &["--config"]
+        }
         "serve" => &[
             "--config",
             "--runtime-dir",
@@ -214,12 +216,14 @@ fn run() -> Result<()> {
                 );
             }
         }
-        "ui" | "launcher-ui" | "wallpaper" | "notifications" => {
+        "desktop" | "ui" | "launcher-ui" | "wallpaper" | "notifications" => {
             let source = Source::from_env(config.as_deref())?;
             source.load(true)?;
             let executable = std::env::current_exe()
                 .map_err(|error| error.to_string())?
-                .with_file_name(if command == "ui" {
+                .with_file_name(if command == "desktop" {
+                    "cabby-desktop"
+                } else if command == "ui" {
                     "cabby-platform-spike"
                 } else if command == "launcher-ui" {
                     "cabby-launcher"

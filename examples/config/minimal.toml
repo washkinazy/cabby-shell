@@ -1,2 +1,3 @@
+# Managed desktop hosts bar + wallpaper together; restart-ui restarts both.
 # Notifications share renderer/theme settings; changed managed reloads restart cards and discard active notices.
 # Empty configuration uses all built-in defaults: Vulkan and a 40px bar.

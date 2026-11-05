@@ -12,3 +12,5 @@ Copy one example to `$HOME/.config/cabby-shell/config.toml` after creating the d
 | [software.toml](software.toml) | Software renderer, taller bottom bar, hidden window titles, and optional foot terminal integration |
 
 See the [configuration reference](../../docs/configuration.md) for types, defaults, ranges, dependencies, reload behavior, and validation commands. Vulkan needs a working driver; software mode does not count as GPU validation. Tests parse all these files and enforce setting coverage. Update examples and the reference alongside every feature/setting change.
+
+The managed desktop hosts bar and wallpaper together. `cabby restart-ui` restarts both; accepted changed reloads restart the desktop and notifications. No configuration keys change. See the service migration linked from the configuration reference when updating manually installed units.
