@@ -37,7 +37,7 @@ Existing ownership requirements continue to apply: every Cabby process and helpe
 
 Feature modules under `crates/shell/src/plugins/` own typed feature messages, state, subscriptions, and views. Bar and wallpaper surface settings/output ownership have moved into the shared surface host; the launcher host owns its overlay and focus lifecycle, and the notification host owns card windows and presentation acknowledgement. Existing notification policy/transport and launcher discovery crates remain separate from UI widgets. Shared theme and helper invocation live in `ui`; the niri client remains separately testable. There is no universal plugin trait or untyped command bus.
 
-The production binaries in `crates/platform-spike` are now thin selectors for the built-in plugins. Their names remain stable for the CLI, units, and test harness; guarded probes remain test-only. The `cabby-desktop` executable selects both bar and wallpaper plugins. Standalone plugin executables remain available for isolated development. The earlier composition probe has been replaced by testing the production `cabby desktop` wrapper.
+The production binaries in `crates/shell/src/bin` are thin selectors for the built-in plugins. `crates/platform-spike` now contains test probes only. Their names remain stable for the CLI, units, and test harness; guarded probes remain test-only. The `cabby-desktop` executable selects both bar and wallpaper plugins. Standalone plugin executables remain available for isolated development. The earlier composition probe has been replaced by testing the production `cabby desktop` wrapper.
 
 To add a built-in feature at this stage, keep backend policy independently testable, add its UI module, and register a typed entry point with the host when a standalone surface is appropriate. A bar indicator or shared panel should motivate the next composition interface; this convention does not require a new executable/service for every future feature. Extend configuration through the existing production schema, reference, examples, and coverage checks.
 
@@ -71,3 +71,13 @@ Before subsequent increments, settle the affected decisions:
 - The next migration and its acceptance checks, preserving established behavior and evidence.
 
 The first migration covers the existing bar, launcher, wallpaper, and notification frontends. The initial plugin refactor now covers all implemented UI features and the combined desktop service. Audio/Bluetooth backend choices and shared device panels remain open. Each later increment must preserve existing behavioral acceptance checks or explicitly document an agreed behavior change. Phase 3 remains incomplete.
+
+## Adding a feature consistently
+
+1. Keep backend policy and protocol handling testable without widgets. Use a separate crate when that separation is useful, as notification policy/transport and launcher discovery already do.
+2. Put UI state, typed messages, subscriptions and views in `crates/shell/src/plugins/<feature>.rs` (or a feature directory when needed). Return typed effects/errors to the host; feature code should not start an Iced daemon or terminate the process. A static feature can supply only a view.
+3. Put surface placement, window IDs, focus, output routing and application lifetime in `host/`. Reuse the desktop host for compatible contributions; use an adapter when the feature has different surface semantics. A new plugin does not imply a new executable or service.
+4. Extend the production config schema, reference and complete examples together when settings are needed. Preserve the previous valid snapshot on failed reload.
+5. Cover feature behavior independently, then add host/protocol integration and isolated graphical checks as appropriate. Keep helper tasks/processes supervised, and cancellation bounded.
+
+The current feature entry points are statically selected by `host::Plugin`; they are not an external API. Production UI binaries build from the `cabby-shell` package. The historical standalone bar executable name `cabby-platform-spike` remains for CLI compatibility, but its source belongs to the shell package. Experimental lock/popup and graphical/IPC probes remain in the separate prototype package and are never production plugins.
