@@ -1,3 +1,4 @@
+mod power;
 mod runtime;
 mod watch;
 use cabby_config::{Result, Source};
@@ -13,7 +14,7 @@ const HELP: &str = "Usage:
   cabby restart-ui [--ui-unit UNIT] [--session-unit UNIT]
   cabby launcher [--launcher-unit UNIT] [--target UNIT] [--session-unit UNIT]
   cabby launcher-ui [--config PATH]
-  cabby lock [--lock-unit UNIT] [--session-unit UNIT]
+  cabby lock|suspend [--lock-unit UNIT] [--session-unit UNIT]
   cabby lock-ui [--config PATH]
   cabby launch-app --desktop-id ID [--config PATH] [--session-unit UNIT]
   cabby launch [--session-unit UNIT] [--working-directory PATH] -- PROGRAM [ARG...]
@@ -137,7 +138,7 @@ fn run() -> Result<()> {
         "status" | "reload" => &["--runtime-dir"],
         "start" | "stop" | "restart" => &["--target", "--session-unit"],
         "restart-ui" => &["--ui-unit", "--session-unit"],
-        "lock" => &["--lock-unit", "--session-unit"],
+        "lock" | "suspend" => &["--lock-unit", "--session-unit"],
         "launcher" => &["--launcher-unit", "--target", "--session-unit"],
         "launch-app" => &["--desktop-id", "--config", "--session-unit"],
         "launch" => &["--session-unit", "--working-directory"],
@@ -254,17 +255,10 @@ fn run() -> Result<()> {
             require_session(&session)?;
             systemctl(&["restart", &ui])?;
         }
-        "lock" => {
+        "lock" | "suspend" => {
             let locker = text_option("--lock-unit", "cabby-lock.service")?;
             unit(&locker, ".service")?;
-            require_session(&session)?;
-            // A deliberate request starts a fresh recovery budget, as config
-            // reload does for ordinary UI. Successful rapid lock/unlock cycles
-            // must not consume the automatic crash budget.
-            let _ = Command::new("systemctl")
-                .args(["--user", "reset-failed", &locker])
-                .output(); // An unloaded inactive unit has no counters to reset.
-            systemctl(&["start", &locker])?;
+            power::request(&session, &locker, command == "suspend")?;
         }
         "launcher" => {
             let launcher = text_option("--launcher-unit", "cabby-launcher.service")?;

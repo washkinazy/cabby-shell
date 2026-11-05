@@ -41,6 +41,8 @@ cabby restart-ui
 cabby restart
 cabby stop
 cabby launcher
+cabby lock
+cabby suspend
 cabby launch-app --desktop-id org.example.App.desktop
 cabby launch -- foot
 systemctl --user status cabby-session.service cabby-ui.service
@@ -70,11 +72,11 @@ Coverage includes unit verification, repeated starts, coordinator ownership, inv
 
 See [wallpaper.md](wallpaper.md) for asset validation, relative paths, and image reload behavior.
 
-Notification supervision uses coordinator `Wants=` activation dependencies and the component's own bounded crash recovery. `RestartPreventExitStatus=73` leaves an ownership conflict stopped until explicit retry; continuous upholding is not used. The component is session/coordinator-bound and part of the ordinary target. Changed reloads queue its restart through `--notifications-unit`, losing active/queued notices; invalid or unchanged reloads preserve them. `cabby status` remains coordinator status, not proof of notification ownership or component health. See [notifications.md](notifications.md).
+Notification supervision uses coordinator `Wants=` activation dependencies and the component's own bounded crash recovery. `RestartPreventExitStatus=73` leaves an ownership conflict stopped until explicit retry; continuous upholding is not used. The component is session/coordinator-bound and part of the ordinary target. Renderer changes queue its restart through `--notifications-unit`, losing active/queued notices; ordinary valid reloads update it in place, while invalid or unchanged reloads preserve it. `cabby status` remains coordinator status, not proof of notification ownership or component health. See [notifications.md](notifications.md).
 
 ## Desktop-host migration
 
-`cabby-ui.service` now executes `cabby desktop`, composing bar and wallpaper in one process. A desktop crash, `restart-ui`, or accepted changed reload rebuilds both plugins together. Notification ownership remains independent of desktop restarts, and the launcher remains on-demand with no automatic reopening. This reduces the ordinary resident UI processes by one without adding a plugin daemon. The coordinator still owns validated runtime snapshots and control IPC; retaining it separates configuration readiness from rendering failures. Notifications retain their separate service so a renderer crash in the desktop does not lose active notices or release the notification bus name. The launcher retains its separate process to preserve its on-demand lifetime and keyboard/clipboard policy.
+`cabby-ui.service` now executes `cabby desktop`, composing bar and wallpaper in one process. A desktop crash, `restart-ui`, or renderer change rebuilds both plugins together; ordinary config reloads update both in place. Notification ownership remains independent of desktop restarts, and the launcher remains on-demand with no automatic reopening. This reduces the ordinary resident UI processes by one without adding a plugin daemon. The coordinator still owns validated runtime snapshots and control IPC; retaining it separates configuration readiness from rendering failures. Notifications retain their separate service so a renderer crash in the desktop does not lose active notices or release the notification bus name. The launcher retains its separate process to preserve its on-demand lifetime and keyboard/clipboard policy.
 
 The old `cabby-wallpaper.service` is no longer shipped. Nothing has been installed automatically. If units from earlier revisions were installed manually, stop the old Cabby target, disable/remove the old wallpaper unit from the installation, replace the remaining shipped units, and reload the user systemd manager before starting the new target. Do not keep a legacy wallpaper service running alongside `cabby desktop`. No TOML migration is needed. Standalone `cabby ui` and `cabby wallpaper` remain development entry points and should not be started alongside the managed desktop on the same outputs.
 
@@ -88,3 +90,5 @@ Valid changed reloads reset the affected units’ start counters before `try-res
 ## Authenticated locker
 
 `cabby lock` starts the independent `cabby-lock.service` and waits for compositor-confirmed READY. It binds only to niri, survives ordinary shell stop/restart/reload, and refuses manual stop. Bounded crash recovery and session-end cleanup are defined in [locking.md](locking.md), along with opt-in installation and the remaining real-session evidence gaps. No idle service or automatic lock binding is installed.
+
+`cabby suspend` waits for the independent locker’s confirmed READY, rechecks session/locker activity, then submits a non-interactive, inhibitor-respecting system suspend request. Lock failure prevents submission; suspend rejection leaves the locker active. See [locking.md](locking.md#explicit-lock-before-suspend) for deadlines, cancellation and the external-suspend coordination boundary.

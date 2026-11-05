@@ -180,3 +180,7 @@ The bar’s network adapter reads NetworkManager’s [root properties and change
 Lock-specific isolated integration: build the workspace, then run `python3 scripts/test_lock_session.py --renderer gpu`, repeat with `--renderer software`, and run `python3 scripts/test_lock_lifecycle.py`. The first two use a private nested compositor and synthetic credentials; the last substitutes a READY-aware process into the shipped unit. None submits a real password or locks the current session.
 
 The three Waycrate 0.20.1 crates are patched locally for keyboard indicators; see [vendor provenance and patch scope](../vendor/README.md). Cargo.lock pins the remaining combination. The patch reuses the already-required `libxkbcommon-devel` library (including its stable layout-name query); Fedora prerequisites are unchanged. Do not drop the patch during dependency updates without equivalent modifier/layout event support and nested locker regression evidence.
+
+### Lock-before-suspend checks
+
+`cargo test -p cabby --locked` covers CLI power-request ordering, failed readiness/activity checks, rejection and helper timeout/reaping with intercepted commands. After `cargo build -p cabby --locked`, `python3 scripts/test_lock_lifecycle.py` exercises real isolated notify units and an intercepted suspend request, including rejection without locker teardown. It never submits a host power request. Systemd and Python are existing prerequisites; no package or unit change is needed. Actual sleep/resume and external logind coordination remain unverified.
