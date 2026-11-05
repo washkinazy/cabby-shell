@@ -1,70 +1,22 @@
 use crate::niri::{self, Model};
 use crate::ui::{self, color};
-use cabby_config::{BarPosition, Config};
+use cabby_config::Config;
 use iced::futures::SinkExt;
 use iced::widget::{button, container, row, scrollable, text};
-use iced::{Element, Length, Subscription, Task, Theme, window};
-use iced_exwlshell::reexport::{Anchor, KeyboardInteractivity, LayerSize};
-use iced_exwlshell::settings::{LayerShellSettings, Settings, StartMode};
-use iced_exwlshell::shell::{self, ShellEvent, ShellReceiver};
-use iced_exwlshell::{daemon, to_exwlshell_message};
-use std::collections::BTreeMap;
+use iced::{Element, Length, Subscription, Task};
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub(crate) fn run(context: crate::host::Context) -> iced_exwlshell::Result {
-    let config = context.config;
-    let (sender, receiver) = shell::channel();
-    let settings = Settings {
-        shell_broadcast: sender,
-        default_text_size: iced::Pixels(f32::from(config.font_size)),
-        layer_settings: LayerShellSettings {
-            anchor: (if config.bar_position == BarPosition::Top {
-                Anchor::Top
-            } else {
-                Anchor::Bottom
-            }) | Anchor::Left
-                | Anchor::Right,
-            size: LayerSize::fill_width(u32::from(config.bar_height)),
-            exclusive_zone: i32::from(config.bar_height),
-            keyboard_interactivity: KeyboardInteractivity::None,
-            start_mode: StartMode::AllScreens,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    daemon(
-        move || Bar {
-            config: config.clone(),
-            shell: receiver.clone(),
-            model: Model::default(),
-            outputs: BTreeMap::new(),
-            action_pending: false,
-            action_failed: false,
-        },
-        || "cabby-bar".into(),
-        Bar::update,
-        Bar::view,
-    )
-    .subscription(Bar::subscription)
-    .theme(Bar::theme)
-    .settings(settings)
-    .run()
-}
-struct Bar {
+pub(crate) struct Bar {
     config: Config,
-    shell: ShellReceiver,
     model: Model,
-    outputs: BTreeMap<window::Id, String>,
     action_pending: bool,
     action_failed: bool,
 }
-#[to_exwlshell_message]
 #[derive(Debug, Clone)]
-enum Message {
+pub(crate) enum Message {
     Niri(niri::Event),
     Disconnected,
-    Shell(ShellEvent),
     Focus(u64),
     Launcher,
     LauncherResult(Result<(), String>),
@@ -96,17 +48,19 @@ fn events() -> impl iced::futures::Stream<Item = Message> {
     )
 }
 impl Bar {
-    fn subscription(&self) -> Subscription<Message> {
-        Subscription::batch([
-            Subscription::run(events),
-            self.shell.listen().map(Message::Shell),
-        ])
+    pub(crate) fn new(config: Config) -> Self {
+        Self {
+            config,
+            model: Model::default(),
+            action_pending: false,
+            action_failed: false,
+        }
     }
-    fn theme(&self, _: window::Id) -> Theme {
-        ui::theme(&self.config)
+    pub(crate) fn subscription(&self) -> Subscription<Message> {
+        Subscription::run(events)
     }
 
-    fn update(&mut self, message: Message) -> Task<Message> {
+    pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Launcher => {
                 return Task::perform(
@@ -121,20 +75,6 @@ impl Bar {
             Message::Disconnected => {
                 self.model.disconnect();
                 self.action_failed = false;
-            }
-            Message::Shell(ShellEvent::WindowOutputChanged { window, output }) => {
-                self.outputs.remove(&window);
-                if let Some(name) = output.and_then(|o| o.name) {
-                    self.outputs.insert(window, name);
-                }
-            }
-            Message::Shell(ShellEvent::Closed(id)) => {
-                self.outputs.remove(&id);
-            }
-            Message::Shell(ShellEvent::OutputRemoved(output)) => {
-                if let Some(name) = output.name {
-                    self.outputs.retain(|_, v| *v != name);
-                }
             }
             Message::Focus(id)
                 if self.model.connected
@@ -158,8 +98,7 @@ impl Bar {
         }
         Task::none()
     }
-    fn view(&self, id: window::Id) -> Element<'_, Message> {
-        let output = self.outputs.get(&id).map(String::as_str).unwrap_or("");
+    pub(crate) fn view(&self, output: &str) -> Element<'_, Message> {
         let mut workspaces = row![].spacing(f32::from(self.config.bar_spacing));
         for workspace in self.model.on_output(output) {
             let name = workspace

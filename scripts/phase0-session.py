@@ -213,6 +213,37 @@ def inside(directory, interactive, renderer):
             for name in outputs:
                 if json.loads(scaled)[name]["logical"]["scale"] != 1.5:
                     raise RuntimeError(f"Output {name} did not adopt the requested scale")
+            # The same two plugins now share one host/event loop in an isolated probe.
+            bar.terminate()
+            bar.wait(timeout=5)
+            wallpaper.terminate()
+            wallpaper.wait(timeout=5)
+            with (directory / "composition.log").open("w") as composition_log:
+                bar = subprocess.Popen([ROOT / "target/debug/composition-probe", "--config", wallpaper_config], stdout=composition_log, stderr=composition_log)
+                children.append(bar)
+                deadline = time.monotonic() + 30
+                while time.monotonic() < deadline:
+                    if bar.poll() is not None:
+                        raise RuntimeError("Composed plugin host exited")
+                    composed_layers = json.loads(run("niri", "msg", "--json", "layers"))
+                    counts = {ns: sum(layer.get("namespace") == ns for layer in composed_layers) for ns in ("cabby-bar", "cabby-wallpaper")}
+                    trace = (directory / "composition.log").read_text()
+                    if all(count == len(outputs) for count in counts.values()) and len(set(re.findall(r"wl_surface#(\d+)\.attach\(wl_buffer", trace))) >= 2 * len(outputs):
+                        break
+                    time.sleep(0.1)
+                else:
+                    raise RuntimeError("Composed host did not render both plugin surfaces")
+                for scale in (1, 1.5):
+                    for name in outputs:
+                        run("niri", "msg", "output", name, "scale", str(scale))
+                    time.sleep(0.7)
+                    capture = directory / f"composition-{scale}.png"
+                    subprocess.run(["grim", str(capture)], check=True, timeout=15)
+                    run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(capture), "center")
+                    run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(capture), "bar-top" if renderer == "gpu" else "bar-bottom")
+                    if bar.poll() is not None:
+                        raise RuntimeError("Composed host exited after scale change")
+                run(str(ROOT / "target/debug/bar-ipc-probe"))
             if interactive:
                 (directory / "interactive-ready").touch()
                 # User can inspect the bar before creating this request file.
@@ -242,7 +273,7 @@ def inside(directory, interactive, renderer):
                     lock.wait(timeout=180)
             adapters = {}
             if renderer == "gpu":
-                for client in ("bar", "launcher", "wallpaper", "notifications", "lock"):
+                for client in ("bar", "launcher", "wallpaper", "notifications", "composition", "lock"):
                     adapter = selected_adapter((directory / f"{client}.log").read_text())
                     if adapter["backend"] != "Vulkan" or adapter["device_type"] not in ("DiscreteGpu", "IntegratedGpu"):
                         raise RuntimeError(f"{client} did not use hardware Vulkan: {adapter}")
@@ -251,7 +282,7 @@ def inside(directory, interactive, renderer):
                 "status": "passed", "renderer_request": os.environ.get("ICED_BACKEND", "automatic"),
                 "adapters": adapters,
                 "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action", "launcher-mapped-with-keyboard-focus", "notifications-render-replace-queue-expire-conflict-passive", "wallpaper-solid-and-four-image-modes-pixels", "wallpaper-scaled-pixels",
-                "scale-change-process-survival", "lock-confirmed", "lock-survives-bar-crash"],
+                "scale-change-process-survival", "composed-bar-wallpaper-pixels-scales", "lock-confirmed", "lock-survives-bar-crash"],
                 "not_proven": ["popup-keyboard-focus", "focus-restoration", "multiple-outputs",
                 "PAM", "DRM-lock-security", "gamma", "suspend"],
             }, indent=2))
@@ -280,7 +311,7 @@ def main():
     if args.inside:
         inside(args.inside, args.interactive, args.renderer)
         return
-    for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe", "cabby-wallpaper", "wallpaper-pixel-probe", "cabby-notifications", "notification-probe"):
+    for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe", "cabby-wallpaper", "wallpaper-pixel-probe", "cabby-notifications", "notification-probe", "composition-probe"):
         if not (ROOT / "target/debug" / binary).is_file():
             parser.error("Run cargo build --workspace --locked first")
     parent_display = os.environ.get("WAYLAND_DISPLAY")

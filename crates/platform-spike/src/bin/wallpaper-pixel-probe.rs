@@ -20,6 +20,8 @@ fn main() {
     let left = [40, 90, 130];
     let right = [180, 130, 60];
     match args[2].as_str() {
+        "bar-top" => check(w / 2, 1, [24, 27, 34]),
+        "bar-bottom" => check(w / 2, h - 2, [24, 27, 34]),
         mode if mode.starts_with("notifications-") => {
             let scale = if mode.contains("scaled") { 1.5f32 } else { 1.0 };
             let top = if mode.ends_with("top") { 48.0 } else { 8.0 };

@@ -1,6 +1,6 @@
 # Service ownership and control
 
-This page describes the implemented service architecture. [Internal plugin design](plugins.md) describes the shared startup and built-in feature modules now used by the UI executables. This code refactor preserves the units and behavior below; process consolidation remains a separate decision.
+This page describes the implemented service architecture. [Internal plugin design](plugins.md) describes the shared startup, built-in feature modules, and bar/wallpaper surface host now used by the UI executables. This code refactor preserves the units and behavior below; process consolidation remains a separate decision.
 
 ## Components
 
