@@ -338,6 +338,7 @@ dependencies = [
  "cabby-bluetooth",
  "cabby-config",
  "cabby-launcher",
+ "cabby-lock",
  "cabby-notification-service",
  "cabby-notifications",
  "cabby-tray",

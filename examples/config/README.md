@@ -15,3 +15,5 @@ Copy one example to `$HOME/.config/cabby-shell/config.toml` after creating the d
 See the [configuration reference](../../docs/configuration.md) for types, defaults, ranges, dependencies, reload behavior, and validation commands. Vulkan needs a working driver; software mode does not count as GPU validation. Tests parse all these files and enforce setting coverage. Update examples and the reference alongside every feature/setting change.
 
 The managed desktop hosts bar and wallpaper together. `cabby restart-ui` restarts both; accepted changed reloads restart the desktop and notifications. No configuration keys change. See the service migration linked from the configuration reference when updating manually installed units.
+
+The lock UI uses shared `renderer`, `font_size`, `background`, `foreground` and `accent` settings only when a new lock starts. Reload never restarts an active locker; invalid styling uses built-in defaults. No lock-specific settings or automatic idle activation are present. See [locking](../../docs/locking.md).

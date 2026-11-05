@@ -1,0 +1,3 @@
+# Fedora: authenticate the existing session user; no PAM session is opened.
+auth include system-auth
+account include system-auth

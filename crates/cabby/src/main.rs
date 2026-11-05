@@ -13,6 +13,8 @@ const HELP: &str = "Usage:
   cabby restart-ui [--ui-unit UNIT] [--session-unit UNIT]
   cabby launcher [--launcher-unit UNIT] [--target UNIT] [--session-unit UNIT]
   cabby launcher-ui [--config PATH]
+  cabby lock [--lock-unit UNIT] [--session-unit UNIT]
+  cabby lock-ui [--config PATH]
   cabby launch-app --desktop-id ID [--config PATH] [--session-unit UNIT]
   cabby launch [--session-unit UNIT] [--working-directory PATH] -- PROGRAM [ARG...]
   cabby serve [--config PATH] [--runtime-dir PATH] [--ui-unit UNIT] [--wallpaper-unit UNIT] [--notifications-unit UNIT]
@@ -123,9 +125,8 @@ fn run() -> Result<()> {
     }
     let command = command.to_str().ok_or("command must be UTF-8")?;
     let allowed: &[&str] = match command {
-        "validate" | "desktop" | "ui" | "launcher-ui" | "wallpaper" | "notifications" => {
-            &["--config"]
-        }
+        "validate" | "desktop" | "ui" | "launcher-ui" | "wallpaper" | "notifications"
+        | "lock-ui" => &["--config"],
         "serve" => &[
             "--config",
             "--runtime-dir",
@@ -136,6 +137,7 @@ fn run() -> Result<()> {
         "status" | "reload" => &["--runtime-dir"],
         "start" | "stop" | "restart" => &["--target", "--session-unit"],
         "restart-ui" => &["--ui-unit", "--session-unit"],
+        "lock" => &["--lock-unit", "--session-unit"],
         "launcher" => &["--launcher-unit", "--target", "--session-unit"],
         "launch-app" => &["--desktop-id", "--config", "--session-unit"],
         "launch" => &["--session-unit", "--working-directory"],
@@ -217,9 +219,11 @@ fn run() -> Result<()> {
                 );
             }
         }
-        "desktop" | "ui" | "launcher-ui" | "wallpaper" | "notifications" => {
+        "desktop" | "ui" | "launcher-ui" | "wallpaper" | "notifications" | "lock-ui" => {
             let source = Source::from_env(config.as_deref())?;
-            source.load(true)?;
+            if command != "lock-ui" {
+                source.load(true)?;
+            }
             let executable = std::env::current_exe()
                 .map_err(|error| error.to_string())?
                 .with_file_name(if command == "desktop" {
@@ -228,6 +232,8 @@ fn run() -> Result<()> {
                     "cabby-platform-spike"
                 } else if command == "launcher-ui" {
                     "cabby-launcher"
+                } else if command == "lock-ui" {
+                    "cabby-lock"
                 } else if command == "notifications" {
                     "cabby-notifications"
                 } else {
@@ -247,6 +253,18 @@ fn run() -> Result<()> {
         "restart-ui" => {
             require_session(&session)?;
             systemctl(&["restart", &ui])?;
+        }
+        "lock" => {
+            let locker = text_option("--lock-unit", "cabby-lock.service")?;
+            unit(&locker, ".service")?;
+            require_session(&session)?;
+            // A deliberate request starts a fresh recovery budget, as config
+            // reload does for ordinary UI. Successful rapid lock/unlock cycles
+            // must not consume the automatic crash budget.
+            let _ = Command::new("systemctl")
+                .args(["--user", "reset-failed", &locker])
+                .output(); // An unloaded inactive unit has no counters to reset.
+            systemctl(&["start", &locker])?;
         }
         "launcher" => {
             let launcher = text_option("--launcher-unit", "cabby-launcher.service")?;

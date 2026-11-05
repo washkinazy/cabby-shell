@@ -90,3 +90,5 @@ Audio and Bluetooth now share a typed device-panel slot in the desktop host. The
 The tray plugin owns its session-bus worker and bar icons. The desktop host reuses the panel slot for its menu surface; closing that surface leaves tray observation active. `cabby-tray` contains the UI-independent StatusNotifier/DBusMenu adapter and fixtures.
 
 Bar contributions are selected by typed `BarWidget` values in three ordered config lists. Clock formatting and the read-only NetworkManager adapter remain independent of view construction; the bar starts subscriptions only for configured contributions. This is static in-repository composition, with no public plugin-loading API.
+
+The lock plugin owns credential editing and authentication state; its dedicated host owns compositor confirmation, READY and the sole authenticated unlock exit. `cabby-lock` is a UI-independent PAM/policy crate, `cabby-auth` is its bounded helper process, and the `cabby-lock` executable belongs to `cabby-shell`. A separate compositor-bound service protects active locks from ordinary shell lifecycle changes.
