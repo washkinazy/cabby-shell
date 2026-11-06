@@ -20,6 +20,63 @@ fn main() {
     let left = [40, 90, 130];
     let right = [180, 130, 60];
     match args[2].as_str() {
+        mode if mode.starts_with("shot-select-ready-") => {
+            let dims: Vec<u32> = mode
+                .trim_start_matches("shot-select-ready-")
+                .split('-')
+                .map(|v| v.parse().unwrap())
+                .collect();
+            let (lw, lh) = (dims[0], dims[1]);
+            for x in [lw - 61, lw - 164] {
+                let px = (u64::from(x) * u64::from(w) / u64::from(lw)) as u32;
+                let py = (u64::from(lh - 22) * u64::from(h) / u64::from(lh)) as u32;
+                let i = ((py * w + px) * 4) as usize;
+                let rgb = &asset.rgba[i..i + 3];
+                assert!(
+                    rgb[0] >= 120
+                        && rgb[1] >= 170
+                        && rgb[2] >= 180
+                        && rgb[2].saturating_sub(rgb[0]) > 50,
+                    "selector controls not ready"
+                );
+            }
+        }
+        mode if mode.starts_with("shot-ready-") => {
+            let dims: Vec<u32> = mode
+                .trim_start_matches("shot-ready-")
+                .split('-')
+                .map(|v| v.parse().unwrap())
+                .collect();
+            let (lw, lh) = (dims[0], dims[1]);
+            let (pw, ph) = (
+                440.min(lw.saturating_sub(16)),
+                500.min(lh.saturating_sub(56)),
+            );
+            let (left, top) = ((lw - pw) / 2, (lh - ph) / 2);
+            for x in [left + 24, left + pw / 2, left + pw - 24] {
+                let px = (u64::from(x) * u64::from(w) / u64::from(lw)) as u32;
+                let py = (u64::from(top + ph - 22) * u64::from(h) / u64::from(lh)) as u32;
+                let index = ((py * w + px) * 4) as usize;
+                let rgb = &asset.rgba[index..index + 3];
+                assert!(
+                    rgb[0] >= 120
+                        && rgb[1] >= 170
+                        && rgb[2] >= 180
+                        && rgb[2].saturating_sub(rgb[0]) > 50,
+                    "preview controls not ready"
+                );
+            }
+        }
+        "capture-background" => {
+            for (x, y) in [(w / 2, h / 2), (100.min(w - 1), 100.min(h - 1))] {
+                check(x, y, [25, 51, 77]);
+            }
+        }
+        "capture-solid" => {
+            for (x, y) in [(0, 0), (w / 2, h / 2), (w - 1, h - 1)] {
+                check(x, y, [25, 51, 77]);
+            }
+        }
         mode if mode.starts_with("caffeine-") => {
             let start = if mode.ends_with("top") { 0 } else { h - 40 };
             let mut icon = 0;

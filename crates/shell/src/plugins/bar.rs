@@ -30,6 +30,7 @@ pub(crate) struct Bar {
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     Clipboard,
+    Screenshot,
     Niri(niri::Event),
     Tray(super::tray::Message),
     Disconnected,
@@ -263,6 +264,9 @@ impl Bar {
                 .line_height(1.0)
         };
         match widget {
+            BarWidget::Screenshot => button(ui::body(&self.config, "Screenshot"))
+                .on_press(Message::Screenshot)
+                .into(),
             BarWidget::Clipboard => button(ui::body(&self.config, "Clipboard"))
                 .on_press(Message::Clipboard)
                 .into(),

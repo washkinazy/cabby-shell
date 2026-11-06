@@ -293,6 +293,7 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+ "tempfile",
  "wayland-client",
  "wayland-protocols",
 ]
@@ -353,6 +354,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cabby-screenshot"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "libc",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "cabby-shell"
 version = "0.1.0"
 dependencies = [
@@ -364,6 +375,7 @@ dependencies = [
  "cabby-lock",
  "cabby-notification-service",
  "cabby-notifications",
+ "cabby-screenshot",
  "cabby-tray",
  "futures-util",
  "iced",

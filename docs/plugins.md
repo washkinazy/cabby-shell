@@ -102,3 +102,5 @@ Night light follows the same internal feature boundary: the coordinator owns its
 [Caffeine](caffeine.md) keeps aggregation policy in the coordinator and effects in existing idle/night-light workers. Its bar contribution consumes bounded runtime status and sends a typed manual toggle. Audio/fullscreen observation remains independent of the widget and desktop lifetime; no per-plugin service is added.
 
 The [clipboard plugin](clipboard.md) separates native ownership and memory policy (`cabby-clipboard`) from its Iced picker. The coordinator owns the backend; the desktop reuses its existing panel slot. Typed private IPC carries actions and bounded previews, while an event-driven revision subscription refreshes the open picker.
+
+The [screenshot plugin](screenshots.md) separates UI stage/selection from the `cabby-screenshot` capture/geometry/save backend. The desktop owns focus, output geometry and helper lifetime; the existing clipboard backend receives a sealed memory FD. Capture before mapping, frozen-image selection and preview reuse one panel surface with stage-specific geometry.

@@ -93,3 +93,8 @@ enabled = true
 max_items = 50
 max_item_bytes = 4194304
 memory_bytes = 33554432
+
+# Empty uses $HOME/Pictures/Screenshots; paths resolve relative to this config.
+[screenshot]
+directory = ""
+include_cursor = false

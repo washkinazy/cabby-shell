@@ -805,6 +805,18 @@ where
         ) {
             self.iced_events.push((iced_id, event));
         }
+        // CursorEntered has no position in Iced. Preserve Wayland's enter
+        // coordinates as a movement event too, so a press before the first
+        // physical motion cannot use (0,0) or the final cursor of a later batch.
+        if let ExwlShellWindowEvent::CursorEnter { x, y } = event
+            && let Some(motion) = conversion::window_event(
+                &ExwlShellWindowEvent::CursorMoved { x, y },
+                window.state.application_scale_factor(),
+                window.state.modifiers(),
+            )
+        {
+            self.iced_events.push((iced_id, motion));
+        }
     }
 
     fn handle_user_action(&mut self, ev: &mut WindowState<IcedId>, action: Action<P::Message>) {

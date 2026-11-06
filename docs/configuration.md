@@ -36,7 +36,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 
 - **File/purpose:** `config.toml`; ordered widgets aligned to the left of the bar.
 - **Type/default:** array of strings; `["workspaces"]` when omitted. No units.
-- **Values:** any subset of `"workspaces"`, `"clock"`, `"audio"`, `"network"`, `"bluetooth"`, `"tray"`, `"apps"`, `"title"`, `"status"`, `"idle"`, `"nightlight"`, `"caffeine"`, `"clipboard"`, in the desired order. Unknown names and duplicate widgets anywhere across the three regions are errors. `[]` leaves this region empty.
+- **Values:** any subset of `"workspaces"`, `"clock"`, `"audio"`, `"network"`, `"bluetooth"`, `"tray"`, `"apps"`, `"title"`, `"status"`, `"idle"`, `"nightlight"`, `"caffeine"`, `"clipboard"`, `"screenshot"`, in the desired order. Unknown names and duplicate widgets anywhere across the three regions are errors. `[]` leaves this region empty.
 - **Example:** `bar_left = ["workspaces"]`; optional Apps/title/status placement is demonstrated in [custom-layout.toml](../examples/config/custom-layout.toml).
 - **Dependencies/interactions:** the middle uses its content width and equal side regions divide the remaining space. Overflow scrolls horizontally within its region; it cannot shift or cover another region. Each array replaces that region's default, while omitted regions still use their defaults. Widgets omitted from all regions disappear; omitted clock/network/tray widgets do not start their background subscriptions. See the widget behavior below.
 - **Application:** valid config reload updates regions in place.
@@ -459,3 +459,25 @@ Device panels and tray menus open beside the clicked widget on its output, below
 - **Example:** `memory_bytes = 67108864` in [clipboard.toml](../examples/config/clipboard.toml).
 - **Interactions:** oldest entries evict first. This bounds retained payloads, not total process RSS: metadata, one incoming item, current selection, bounded pending sends and image decode allocations are additional. No disk cache/history is created.
 - **Application:** live reload trims history immediately; coordinator restart clears all memory. No UI restart.
+
+### `screenshot`
+
+- **File/type/purpose:** `[screenshot]` table in `config.toml`; screenshot save preferences and pointer inclusion. Omission uses child defaults; unknown keys fail validation.
+- **Example:** [screenshot.toml](../examples/config/screenshot.toml); all defaults appear in [full.toml](../examples/config/full.toml).
+- **Dependencies/interactions:** grim and the compositor's screencopy protocol provide pixels; Cabby owns the frozen-image region selector and preview. `cabby screenshot` selects a region; `cabby screenshot-monitor` previews the whole focused monitor. Optional `screenshot` bar widget uses its clicked output; default regions stay unchanged. Copy requires enabled native clipboard support and its configured size limits. No extra service/binary.
+- **Application:** directory changes apply to the next Save, including an open preview. Cursor changes apply to the next capture. Shared appearance changes apply live; renderer changes restart ordinary UI. Output changes/removal cancel the frozen workflow; ordinary config reload retains it.
+- **Migration:** new opt-in interaction; no screenshot or directory is created merely by starting/reloading Cabby. Capture pixels stay in memory until explicit Save. Existing niri screenshot-window can coexist.
+
+### `screenshot.directory`
+
+- **File/type/default:** `[screenshot]` in `config.toml`, string `""`; the destination directory for explicit PNG saves. Empty/omitted resolves to `$HOME/Pictures/Screenshots` when saving; HOME is required for that default. No units.
+- **Values/example:** absolute paths or paths relative to the configuration file; `directory = "captures"` in [screenshot.toml](../examples/config/screenshot.toml). No shell evaluation or tilde expansion; NUL is invalid. Directory existence is checked only on Save.
+- **Interactions:** the preview edits a filename within this directory, not an arbitrary path; it must end in `.png` (case-insensitive), contain 1..255 bytes, and contain no `/` or NUL. Generated names use local date/time plus nanoseconds. Save creates parent directories as needed and publishes a new 0600 file without overwriting existing files. Anonymous same-directory temporary files require Linux filesystem `O_TMPFILE`/link support; unsupported/denied/full destinations return an error and keep the preview. No named partial capture remains after cancellation/crash.
+- **Application:** live reload, next Save; no restart. Changing HOME affects a new process; use an explicit directory for a stable path. Install/upgrade never overwrites this preference or creates its destination.
+
+### `screenshot.include_cursor`
+
+- **File/type/default:** `[screenshot]` in `config.toml`, boolean `false`; include the compositor cursor in the captured source image.
+- **Values/example:** `include_cursor = true` in [screenshot.toml](../examples/config/screenshot.toml); no units.
+- **Interactions:** passes grim's explicit `-c` option. The source is captured before selection controls are rendered; changing this cannot alter an already frozen image. Encoded capture maximum 32 MiB, dimensions at most 8192 per axis / 16,777,216 pixels and decoder allocation at most 64 MiB. Capture helper timeout five seconds; cancellation kills/reaps it.
+- **Application:** live reload affects the next capture. No restart or recapture of an open preview.

@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Command {
     Clipboard,
+    Screenshot(bool),
+    ScreenshotCancel,
 }
 pub(super) fn directory(config: &Path) -> Option<PathBuf> {
     let managed = config.file_name().is_some_and(|s| s == "active.toml")
@@ -58,6 +60,7 @@ fn events(root: &Path) -> impl iced::futures::Stream<Item = Command> + use<> {
                 }
             }
             let _cleanup = Cleanup(path);
+            crate::plugins::screenshot::idle(&root);
             loop {
                 let Ok((mut stream, _)) = listener.accept().await else {
                     return;
@@ -76,6 +79,9 @@ fn events(root: &Path) -> impl iced::futures::Stream<Item = Command> + use<> {
                 };
                 let command = match line.as_str() {
                     "clipboard\n" => Command::Clipboard,
+                    "screenshot\n" => Command::Screenshot(false),
+                    "screenshot-monitor\n" => Command::Screenshot(true),
+                    "screenshot-cancel\n" => Command::ScreenshotCancel,
                     _ => {
                         let _ = stream.write_all(b"error\n").await;
                         continue;

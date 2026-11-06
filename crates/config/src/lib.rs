@@ -42,6 +42,7 @@ pub enum BarWidget {
     Nightlight,
     Caffeine,
     Clipboard,
+    Screenshot,
 }
 pub const BAR_WIDGETS: &[BarWidget] = &[
     BarWidget::Workspaces,
@@ -57,6 +58,7 @@ pub const BAR_WIDGETS: &[BarWidget] = &[
     BarWidget::Nightlight,
     BarWidget::Caffeine,
     BarWidget::Clipboard,
+    BarWidget::Screenshot,
 ];
 
 // Field names for coverage are generated from the same declaration as the
@@ -98,6 +100,11 @@ section!(Location, LOCATION_KEYS, {
     longitude: Option<f64> = None,
 });
 
+section!(Screenshot, SCREENSHOT_KEYS, {
+    directory: String = String::new(),
+    include_cursor: bool = false,
+});
+
 section!(Clipboard, CLIPBOARD_KEYS, {
     enabled: bool = true,
     max_items: u16 = 50,
@@ -116,6 +123,7 @@ section!(Caffeine, CAFFEINE_KEYS, {
 });
 
 configuration! {
+    screenshot: Screenshot = Screenshot::default(),
     clipboard: Clipboard = Clipboard::default(),
     caffeine: Caffeine = Caffeine::default(),
     nightlight: Nightlight = Nightlight::default(),
@@ -236,6 +244,9 @@ impl Config {
         }
         if config.location.latitude.is_some() != config.location.longitude.is_some() {
             return Err("location requires both latitude and longitude".into());
+        }
+        if config.screenshot.directory.contains('\0') {
+            return Err("screenshot.directory must not contain NUL".into());
         }
         if !(1..=200).contains(&config.clipboard.max_items)
             || !(65_536..=16_777_216).contains(&config.clipboard.max_item_bytes)
@@ -373,6 +384,19 @@ impl Source {
             .map_err(|error| format!("{}: {error}", self.path.display()))?;
         let mut config =
             Config::parse(&text).map_err(|error| format!("{}: {error}", self.path.display()))?;
+        if !config.screenshot.directory.is_empty() {
+            let path = Path::new(&config.screenshot.directory);
+            if path.is_relative() {
+                config.screenshot.directory = self
+                    .path
+                    .parent()
+                    .ok_or("config has no parent directory")?
+                    .join(path)
+                    .to_str()
+                    .ok_or("screenshot directory must be UTF-8")?
+                    .to_owned();
+            }
+        }
         if !config.wallpaper_image.is_empty() {
             let path = Path::new(&config.wallpaper_image);
             if path.is_relative() {
@@ -527,6 +551,24 @@ mod tests {
     }
 
     #[test]
+    fn screenshot_paths_resolve_from_config_and_reject_nul() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("config.toml");
+        std::fs::write(&path, "[screenshot]\ndirectory='captures'").unwrap();
+        let config = Source {
+            path,
+            explicit: true,
+        }
+        .load(true)
+        .unwrap();
+        assert_eq!(
+            Path::new(&config.screenshot.directory),
+            root.path().join("captures")
+        );
+        assert!(Config::parse("[screenshot]\ndirectory=\"bad\\u0000path\"").is_err());
+    }
+
+    #[test]
     fn clipboard_limits_are_validated_even_when_disabled() {
         for settings in [
             "max_items=0",
@@ -576,6 +618,7 @@ mod tests {
             ("location", LOCATION_KEYS),
             ("caffeine", CAFFEINE_KEYS),
             ("clipboard", CLIPBOARD_KEYS),
+            ("screenshot", SCREENSHOT_KEYS),
         ] {
             let values = table[section].as_table().unwrap();
             assert!(values.len() <= keys.len());

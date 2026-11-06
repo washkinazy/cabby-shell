@@ -100,6 +100,41 @@ impl Service {
         let s = self.shared.lock().unwrap();
         serde_json::json!({"state":s.state,"items":s.history.items.len(),"bytes":s.history.items.iter().map(|i|i.data.len()).sum::<usize>()})
     }
+    pub fn import_png(&self, fd: OwnedFd) -> serde_json::Value {
+        use std::os::unix::fs::FileExt;
+        let file = File::from(fd);
+        let needed = libc::F_SEAL_WRITE | libc::F_SEAL_GROW | libc::F_SEAL_SHRINK;
+        let seals = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GET_SEALS) };
+        let mut h = self.shared.lock().unwrap();
+        if !h.history.config.enabled {
+            return serde_json::json!({"ok":false,"error":"Clipboard history is disabled"});
+        }
+        if h.state != "watching" {
+            return serde_json::json!({"ok":false,"error":"Clipboard backend unavailable"});
+        }
+        if seals < 0 || seals & needed != needed {
+            return serde_json::json!({"ok":false,"error":"Invalid clipboard image descriptor"});
+        }
+        let Ok(metadata) = file.metadata() else {
+            return serde_json::json!({"ok":false,"error":"Clipboard image unavailable"});
+        };
+        if !metadata.is_file() || metadata.len() == 0 {
+            return serde_json::json!({"ok":false,"error":"Invalid clipboard image"});
+        }
+        if metadata.len() > u64::from(h.history.config.max_item_bytes) {
+            return serde_json::json!({"ok":false,"error":"Image exceeds clipboard.max_item_bytes"});
+        }
+        let mut data = vec![0; metadata.len() as usize];
+        if file.read_exact_at(&mut data, 0).is_err() {
+            return serde_json::json!({"ok":false});
+        }
+        let Some(item) = h.history.add(Kind::Png, data) else {
+            return serde_json::json!({"ok":false});
+        };
+        h.notify();
+        drop(h);
+        self.request(Request::Select { id: item.id })
+    }
     pub fn request(&self, request: Request) -> serde_json::Value {
         let (tx, rx) = mpsc::sync_channel(1);
         {
@@ -247,7 +282,7 @@ impl Data {
                     self.clear_source();
                     true
                 }
-                Request::List { .. } => false,
+                Request::List { .. } | Request::ImportPng => false,
             };
             self.shared.lock().unwrap().notify();
             let _ = reply.send(ok);

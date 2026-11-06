@@ -58,8 +58,8 @@ def inside(directory, interactive, renderer, only=None):
                 raise RuntimeError(f"Required probe protocol missing: {protocol}")
         outputs = json.loads(run("niri", "msg", "--json", "outputs"))
         (directory / "outputs.json").write_text(json.dumps(outputs, indent=2))
-        if only == "clipboard":
-            config = directory / "clipboard-only.toml"
+        if only in ("clipboard", "screenshot"):
+            config = directory / (only+"-only.toml")
             config.write_text('renderer="'+('vulkan' if renderer=='gpu' else 'software')+'"\n')
             with (directory / "idle-coordinator.log").open("w") as coordinator_log:
                 coordinator = subprocess.Popen([ROOT/'target/debug/cabby','serve','--config',config], stdout=coordinator_log, stderr=coordinator_log, env=dict(os.environ,DBUS_SYSTEM_BUS_ADDRESS='unix:path='+str(directory/'no-system-bus')))
@@ -68,14 +68,16 @@ def inside(directory, interactive, renderer, only=None):
                 while not (runtime/'cabby-shell/control.sock').exists():
                     if time.monotonic()>end:raise TimeoutError('clipboard coordinator unavailable')
                     time.sleep(.05)
-                from clipboard_acceptance import check
+                from clipboard_acceptance import check as check_clipboard
+                from screenshot_acceptance import check as check_screenshot
+                check = check_clipboard if only == "clipboard" else check_screenshot
                 check(directory,config,runtime/'cabby-shell',renderer,children)
                 adapters={}
                 if renderer=='gpu':
-                    adapter=selected_adapter((directory/'clipboard.log').read_text())
+                    adapter=selected_adapter((directory/(only+'.log')).read_text())
                     assert adapter['backend']=='Vulkan' and adapter['device_type']=='DiscreteGpu' and 'RTX 4070' in adapter['name']
-                    adapters['clipboard']=adapter
-                (directory/'result.json').write_text(json.dumps({'status':'passed','adapters':adapters,'checks':['clipboard-native-clients-and-picker'],'not_proven':['physical-multiple-seats']},indent=2))
+                    adapters[only]=adapter
+                (directory/'result.json').write_text(json.dumps({'status':'passed','adapters':adapters,'checks':[only+'-native-workflow'],'not_proven':['physical-multiple-seats']},indent=2))
             return
         config = directory / "cabby.toml"
         config.write_text(f'renderer = "{"vulkan" if renderer == "gpu" else "software"}"\nbar_height = 40\nbar_position = "{"top" if renderer == "gpu" else "bottom"}"\n')
@@ -583,7 +585,7 @@ def main():
     parser.add_argument("--interactive", action="store_true", help="Wait for bar inspection and lock release")
     parser.add_argument("--renderer", choices=("gpu", "software"), default="gpu",
                         help="gpu requires hardware Vulkan; software explicitly selects tiny-skia")
-    parser.add_argument("--only", choices=("clipboard",), help="Run only the isolated clipboard workflow")
+    parser.add_argument("--only", choices=("clipboard", "screenshot"), help="Run only the selected isolated workflow")
     parser.add_argument("--inside", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.inside:

@@ -1,0 +1,5 @@
+# Optional button; commands/keybindings also open the workflow.
+bar_left = ["workspaces", "screenshot"]
+[screenshot]
+directory = "captures"
+include_cursor = true

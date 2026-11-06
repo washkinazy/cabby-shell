@@ -21,6 +21,7 @@ const HELP: &str = "Usage:
   cabby restart-ui [--ui-unit UNIT] [--session-unit UNIT]
   cabby launcher [--launcher-unit UNIT] [--target UNIT] [--session-unit UNIT]
   cabby launcher-ui [--config PATH]
+  cabby screenshot|screenshot-monitor|screenshot-cancel|screenshot-status [--runtime-dir PATH]
   cabby clipboard|clipboard-status|clipboard-clear [--runtime-dir PATH]
   cabby caffeine-status|caffeine-on|caffeine-off|caffeine-toggle [--runtime-dir PATH]
   cabby nightlight-status|nightlight-enable|nightlight-disable|nightlight-toggle|nightlight-force-toggle [--runtime-dir PATH]
@@ -152,6 +153,10 @@ fn run() -> Result<()> {
         | "idle-inhibit-on"
         | "idle-inhibit-off"
         | "idle-inhibit-toggle"
+        | "screenshot"
+        | "screenshot-monitor"
+        | "screenshot-cancel"
+        | "screenshot-status"
         | "clipboard"
         | "clipboard-status"
         | "clipboard-clear"
@@ -240,6 +245,10 @@ fn run() -> Result<()> {
         | "idle-inhibit-on"
         | "idle-inhibit-off"
         | "idle-inhibit-toggle"
+        | "screenshot"
+        | "screenshot-monitor"
+        | "screenshot-cancel"
+        | "screenshot-status"
         | "clipboard"
         | "clipboard-status"
         | "clipboard-clear"

@@ -196,18 +196,41 @@ pub fn serve(
         stream
             .set_write_timeout(Some(Duration::from_secs(2)))
             .map_err(|error| error.to_string())?;
-        let mut command = String::new();
-        let result = BufReader::new((&stream).take(4097)).read_line(&mut command);
-        let response = if result.is_err() || command.len() > 4096 || !command.ends_with('\n') {
-            serde_json::json!({"ok": false, "error": "invalid or timed-out request"})
-        } else {
+        let request = cabby_clipboard::receive_request(&mut stream);
+        let response = if let Ok((command, descriptor)) = request {
             if command.starts_with('{') {
                 match serde_json::from_str::<cabby_clipboard::Request>(&command) {
-                    Ok(request) => clipboard.request(request),
+                    Ok(cabby_clipboard::Request::ImportPng) => descriptor
+                        .map(|fd| clipboard.import_png(fd))
+                        .unwrap_or_else(|| serde_json::json!({"ok":false})),
+                    Ok(request) if descriptor.is_none() => clipboard.request(request),
+                    Ok(_) => serde_json::json!({"ok":false}),
                     Err(_) => serde_json::json!({"ok":false,"error":"invalid clipboard request"}),
                 }
             } else {
                 match command.trim() {
+                    "screenshot" | "screenshot-monitor" | "screenshot-cancel" => {
+                        desktop_request(&path, command.trim())
+                    }
+                    "screenshot-status" => {
+                        use std::os::unix::fs::OpenOptionsExt;
+                        let status = OpenOptions::new()
+                            .read(true)
+                            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+                            .open(path.join("screenshot.json"))
+                            .ok()
+                            .filter(|f| f.metadata().is_ok_and(|m| m.is_file()))
+                            .and_then(|f| {
+                                let mut bytes = Vec::new();
+                                f.take(1025).read_to_end(&mut bytes).ok()?;
+                                if bytes.len() > 1024 {
+                                    return None;
+                                }
+                                serde_json::from_slice::<serde_json::Value>(&bytes).ok()
+                            })
+                            .unwrap_or_else(|| serde_json::json!({"state":"unavailable"}));
+                        serde_json::json!({"ok":true,"screenshot":status})
+                    }
                     "clipboard" => desktop_request(&path, "clipboard"),
                     "clipboard-status" => {
                         serde_json::json!({"ok":true,"clipboard":clipboard.status()})
@@ -266,6 +289,8 @@ pub fn serve(
                     _ => serde_json::json!({"ok": false, "error": "unknown request"}),
                 }
             }
+        } else {
+            serde_json::json!({"ok":false,"error":"invalid or timed-out request"})
         };
         // An abandoned caller must not take down the coordinator.
         let _ = writeln!(stream, "{response}");
