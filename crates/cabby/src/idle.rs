@@ -24,6 +24,7 @@ struct Desired {
     epoch: u64,
     seconds: u32,
     display_seconds: u32,
+    suspend_seconds: u32,
     inhibited: bool,
     stop: bool,
     status: &'static str,
@@ -33,7 +34,7 @@ struct Desired {
 impl Desired {
     fn publish(&mut self) {
         use std::os::unix::fs::OpenOptionsExt;
-        let value = serde_json::json!({"state": self.status, "inhibited": self.inhibited, "lock_seconds": self.seconds, "display_off_seconds": self.display_seconds}).to_string();
+        let value = serde_json::json!({"state": self.status, "inhibited": self.inhibited, "lock_seconds": self.seconds, "display_off_seconds": self.display_seconds, "suspend_seconds": self.suspend_seconds}).to_string();
         if value == self.published {
             return;
         }
@@ -86,13 +87,19 @@ pub struct Idle {
     thread: Option<JoinHandle<()>>,
 }
 impl Idle {
-    pub fn new(seconds: u32, display_seconds: u32, root: &std::path::Path) -> Self {
+    pub fn new(
+        seconds: u32,
+        display_seconds: u32,
+        suspend_seconds: u32,
+        root: &std::path::Path,
+    ) -> Self {
         let (wake, reader) = UnixStream::pair().expect("idle wake socket");
         wake.set_nonblocking(true).expect("idle wake nonblocking");
         reader.set_nonblocking(true).expect("idle wake nonblocking");
         let desired = Arc::new(Mutex::new(Desired {
             seconds,
             display_seconds,
+            suspend_seconds,
             path: root.join("idle.json"),
             status: "starting",
             ..Desired::default()
@@ -121,13 +128,17 @@ impl Idle {
     fn wake(&self) {
         let _ = (&self.wake).write(&[1]);
     }
-    pub fn configure(&self, seconds: u32, display_seconds: u32) {
+    pub fn configure(&self, seconds: u32, display_seconds: u32, suspend_seconds: u32) {
         let mut state = self.desired.lock().unwrap();
-        if state.seconds == seconds && state.display_seconds == display_seconds {
+        if state.seconds == seconds
+            && state.display_seconds == display_seconds
+            && state.suspend_seconds == suspend_seconds
+        {
             return;
         }
         state.seconds = seconds;
         state.display_seconds = display_seconds;
+        state.suspend_seconds = suspend_seconds;
         state.publish();
         drop(state);
         self.wake();
@@ -142,7 +153,7 @@ impl Idle {
     }
     pub fn status(&self) -> serde_json::Value {
         let state = self.desired.lock().unwrap();
-        serde_json::json!({"state": state.status, "inhibited": state.inhibited, "lock_seconds": state.seconds})
+        serde_json::json!({"state": state.status, "inhibited": state.inhibited, "lock_seconds": state.seconds, "display_off_seconds": state.display_seconds, "suspend_seconds": state.suspend_seconds})
     }
 }
 impl Drop for Idle {
@@ -161,22 +172,51 @@ impl Drop for Action {
         let _ = self.0.wait();
     }
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+enum Stage {
+    Lock,
+    Display,
+    Suspend,
+}
+impl Stage {
+    fn command(self) -> &'static str {
+        match self {
+            Self::Lock => "lock",
+            Self::Display => "display-off",
+            Self::Suspend => "suspend",
+        }
+    }
+}
+fn next_stage<'a>(
+    seats: impl Iterator<Item = &'a u32> + Clone,
+    idle: &HashMap<Stage, HashSet<u32>>,
+    fired: &HashSet<Stage>,
+) -> Option<Stage> {
+    seats.clone().next()?;
+    [Stage::Suspend, Stage::Display, Stage::Lock]
+        .into_iter()
+        .find(|stage| {
+            !fired.contains(stage)
+                && idle
+                    .get(stage)
+                    .is_some_and(|idle_seats| seats.clone().all(|seat| idle_seats.contains(seat)))
+        })
+}
 #[derive(Default)]
 struct State {
     executable: std::path::PathBuf,
     manager: Option<(u32, ExtIdleNotifierV1)>,
     seats: HashMap<u32, wl_seat::WlSeat>,
     notifications: Vec<ExtIdleNotificationV1>,
-    idle: HashSet<u32>,
-    display_idle: HashSet<u32>,
+    idle: HashMap<Stage, HashSet<u32>>,
     display_seconds: u32,
-    display_fired: bool,
+    suspend_seconds: u32,
     power_touched: bool,
     action_kind: &'static str,
     generation: u64,
     seconds: u32,
     action: Option<Action>,
-    fired: bool,
+    fired: HashSet<Stage>,
     error: bool,
 }
 impl State {
@@ -186,45 +226,45 @@ impl State {
             n.destroy();
         }
         self.restore();
+        self.action = None;
         self.idle.clear();
-        self.display_idle.clear();
-        self.display_fired = false;
-        self.fired = false;
+        self.fired.clear();
         self.error = false;
         if let Some((_, manager)) = &self.manager {
             for (name, seat) in &self.seats {
-                self.notifications.push(manager.get_idle_notification(
-                    self.seconds * 1000,
-                    seat,
-                    qh,
-                    (*name, self.generation, false),
-                ));
-                if self.display_seconds > 0 {
-                    self.notifications.push(manager.get_idle_notification(
-                        self.display_seconds * 1000,
-                        seat,
-                        qh,
-                        (*name, self.generation, true),
-                    ));
+                for (stage, seconds) in [
+                    (Stage::Lock, self.seconds),
+                    (Stage::Display, self.display_seconds),
+                    (Stage::Suspend, self.suspend_seconds),
+                ] {
+                    if seconds > 0 {
+                        self.notifications.push(manager.get_idle_notification(
+                            seconds * 1000,
+                            seat,
+                            qh,
+                            (*name, self.generation, stage),
+                        ));
+                    }
                 }
             }
         }
     }
-    fn fire(&mut self) {
+    fn next_action(&self) -> Option<Stage> {
         if self.action.is_some() || self.seats.is_empty() {
-            return;
+            return None;
         }
-        let command = if !self.display_fired && self.display_idle.len() == self.seats.len() {
-            self.display_fired = true;
-            self.fired = true;
-            "display-off"
-        } else if !self.fired && self.idle.len() == self.seats.len() {
-            self.fired = true;
-            "lock"
-        } else {
+        next_stage(self.seats.keys(), &self.idle, &self.fired)
+    }
+    fn fire(&mut self) {
+        let Some(stage) = self.next_action() else {
             return;
         };
-        self.action_kind = command;
+        self.fired.extend(
+            [Stage::Lock, Stage::Display, Stage::Suspend]
+                .into_iter()
+                .filter(|earlier| *earlier <= stage),
+        );
+        self.action_kind = stage.command();
         let result = {
             let parent = std::process::id() as libc::pid_t;
             let mut command = Command::new(&self.executable);
@@ -315,36 +355,27 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
         }
     }
 }
-impl Dispatch<ExtIdleNotificationV1, (u32, u64, bool)> for State {
+impl Dispatch<ExtIdleNotificationV1, (u32, u64, Stage)> for State {
     fn event(
         state: &mut Self,
         _: &ExtIdleNotificationV1,
         event: ext_idle_notification_v1::Event,
-        &(seat, generation, display): &(u32, u64, bool),
+        &(seat, generation, stage): &(u32, u64, Stage),
         _: &Connection,
-        _: &QueueHandle<Self>,
+        qh: &QueueHandle<Self>,
     ) {
         if generation != state.generation {
             return;
         }
         match event {
             ext_idle_notification_v1::Event::Idled => {
-                if display {
-                    state.display_idle.insert(seat);
-                } else {
-                    state.idle.insert(seat);
-                }
+                state.idle.entry(stage).or_default().insert(seat);
                 state.fire();
             }
             ext_idle_notification_v1::Event::Resumed => {
-                state.restore();
-                if display {
-                    state.display_idle.remove(&seat);
-                    state.display_fired = false;
-                } else {
-                    state.idle.remove(&seat);
-                    state.fired = false;
-                }
+                // One seat's activity ends the global idle cycle. Re-register
+                // every deadline and reject queued events from the old generation.
+                state.rebuild(qh);
             }
             _ => (),
         }
@@ -378,7 +409,7 @@ pub(crate) fn wait(wake: &UnixStream, fd: i32, timeout: i32) -> std::io::Result<
 }
 fn worker(desired: Arc<Mutex<Desired>>, wake: UnixStream, executable: std::path::PathBuf) {
     loop {
-        let (seconds, display_seconds, epoch) = {
+        let (seconds, display_seconds, suspend_seconds, epoch) = {
             let mut d = desired.lock().unwrap();
             if d.stop {
                 return;
@@ -392,13 +423,14 @@ fn worker(desired: Arc<Mutex<Desired>>, wake: UnixStream, executable: std::path:
             }
             d.status = "connecting";
             d.publish();
-            (d.seconds, d.display_seconds, d.epoch)
+            (d.seconds, d.display_seconds, d.suspend_seconds, d.epoch)
         };
         if connected(
             &desired,
             &wake,
             seconds,
             display_seconds,
+            suspend_seconds,
             epoch,
             &executable,
         )
@@ -418,6 +450,7 @@ fn connected(
     wake: &UnixStream,
     seconds: u32,
     display_seconds: u32,
+    suspend_seconds: u32,
     epoch: u64,
     executable: &std::path::Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -429,17 +462,16 @@ fn connected(
         executable: executable.to_owned(),
         seconds,
         display_seconds,
+        suspend_seconds,
         manager: None,
         seats: HashMap::new(),
         notifications: Vec::new(),
-        idle: HashSet::new(),
-        display_idle: HashSet::new(),
-        display_fired: false,
+        idle: HashMap::new(),
         power_touched: false,
         action_kind: "",
         generation: 0,
         action: None,
-        fired: false,
+        fired: HashSet::new(),
         error: false,
     };
     loop {
@@ -449,6 +481,7 @@ fn connected(
                 || d.inhibited
                 || d.seconds != seconds
                 || d.display_seconds != display_seconds
+                || d.suspend_seconds != suspend_seconds
                 || d.epoch != epoch
             {
                 return Ok(());
@@ -464,15 +497,21 @@ fn connected(
         state.fire();
         let mut d = desired.lock().unwrap();
         d.status = if state.error {
-            if state.action_kind == "display-off" {
-                "display-failed"
-            } else {
-                "lock-failed"
+            match state.action_kind {
+                "display-off" => "display-failed",
+                "suspend" => "suspend-failed",
+                _ => "lock-failed",
             }
         } else if state.action.is_some() {
-            "locking"
+            if state.action_kind == "suspend" {
+                "suspending"
+            } else {
+                "locking"
+            }
         } else if state.manager.is_none() || state.seats.is_empty() {
             "unsupported"
+        } else if state.fired.contains(&Stage::Suspend) {
+            "suspend-requested"
         } else {
             "watching"
         };
@@ -504,12 +543,43 @@ fn connected(
 mod tests {
     use super::*;
     #[test]
+    fn all_seats_gate_suspend_and_overdue_actions_choose_the_latest_stage() {
+        let seats = [1, 2];
+        let mut idle = HashMap::from([
+            (Stage::Lock, HashSet::from([1, 2])),
+            (Stage::Display, HashSet::from([1, 2])),
+            (Stage::Suspend, HashSet::from([1])),
+        ]);
+        let mut fired = HashSet::new();
+        assert_eq!(
+            next_stage(seats.iter(), &idle, &fired),
+            Some(Stage::Display)
+        );
+        fired.extend([Stage::Lock, Stage::Display]);
+        assert_eq!(next_stage(seats.iter(), &idle, &fired), None);
+        idle.get_mut(&Stage::Suspend).unwrap().insert(2);
+        assert_eq!(
+            next_stage(seats.iter(), &idle, &fired),
+            Some(Stage::Suspend)
+        );
+        fired.insert(Stage::Suspend);
+        assert_eq!(next_stage(seats.iter(), &idle, &fired), None);
+        fired.clear();
+        assert_eq!(
+            next_stage(seats.iter(), &idle, &fired),
+            Some(Stage::Suspend)
+        );
+        idle.clear();
+        assert_eq!(next_stage(seats.iter(), &idle, &fired), None);
+        assert_eq!(next_stage([].iter(), &idle, &fired), None);
+    }
+    #[test]
     fn disabled_worker_inhibition_and_shutdown_are_owned() {
         let root = tempfile::tempdir().unwrap();
-        let idle = Idle::new(0, 0, root.path());
+        let idle = Idle::new(0, 0, 0, root.path());
         idle.inhibit(Some(true));
         assert_eq!(idle.status()["inhibited"], true);
-        idle.configure(0, 0);
+        idle.configure(0, 0, 0);
         idle.inhibit(None);
         assert_eq!(idle.status()["inhibited"], false);
         drop(idle);

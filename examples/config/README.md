@@ -35,3 +35,6 @@ All examples with the `tray` widget use the same [tray interactions](../../docs/
 [clipboard.toml](clipboard.toml) moves the picker icon from its default right region to the left and demonstrates larger memory limits; [clipboard-disabled.toml](clipboard-disabled.toml) opts out of history. History is memory-only, follows the coordinator lifetime and accepts UTF-8 text/PNG. `cabby clipboard` also opens the picker.
 
 [screenshot.toml](screenshot.toml) demonstrates an optional bar button, relative capture destination and cursor inclusion. Capture/preview/copy are memory-only; the destination is created only on explicit Save. [Screenshot workflow](../../docs/screenshots.md) documents commands, cancellation and filesystem support.
+
+[idle.toml](idle.toml) includes opt-in automatic suspend after 45 idle minutes. Omitted `idle_suspend_seconds` stays disabled. A positive value must follow enabled lock/display-off deadlines; lock confirmation and sleep inhibitors still apply.
+[idle-suspend.toml](idle-suspend.toml) demonstrates automatic suspend with display-off disabled.

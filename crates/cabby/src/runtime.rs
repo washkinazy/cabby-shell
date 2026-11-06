@@ -117,6 +117,7 @@ pub fn serve(
     let idle = crate::idle::Idle::new(
         store.active().idle_lock_seconds,
         store.active().idle_display_off_seconds,
+        store.active().idle_suspend_seconds,
         &path,
     );
     let night = crate::night::Night::new(store.active(), &path);
@@ -124,7 +125,7 @@ pub fn serve(
     let night_resume = night.resume_handle();
     let sleep = crate::sleep::Sleep::new(
         store.active().lock_before_sleep,
-        night.observing(),
+        night.observing() || store.active().idle_suspend_seconds > 0,
         move || {
             idle_resume.resume();
             night_resume.resume();
@@ -181,10 +182,14 @@ pub fn serve(
         clipboard.configure(&store.active().clipboard);
         caffeine.configure(&store.active().caffeine);
         night.configure(store.active());
-        sleep.configure(store.active().lock_before_sleep, night.observing());
+        sleep.configure(
+            store.active().lock_before_sleep,
+            night.observing() || store.active().idle_suspend_seconds > 0,
+        );
         idle.configure(
             store.active().idle_lock_seconds,
             store.active().idle_display_off_seconds,
+            store.active().idle_suspend_seconds,
         );
         if !incoming {
             continue;
@@ -245,7 +250,10 @@ pub fn serve(
                     | "nightlight-toggle"
                     | "nightlight-force-toggle" => {
                         night.control(command.trim());
-                        sleep.configure(store.active().lock_before_sleep, night.observing());
+                        sleep.configure(
+                            store.active().lock_before_sleep,
+                            night.observing() || store.active().idle_suspend_seconds > 0,
+                        );
                         serde_json::json!({"ok":true,"night_light":night.status()})
                     }
                     "caffeine-status"
@@ -279,10 +287,14 @@ pub fn serve(
                         clipboard.configure(&store.active().clipboard);
                         caffeine.configure(&store.active().caffeine);
                         night.configure(store.active());
-                        sleep.configure(store.active().lock_before_sleep, night.observing());
+                        sleep.configure(
+                            store.active().lock_before_sleep,
+                            night.observing() || store.active().idle_suspend_seconds > 0,
+                        );
                         idle.configure(
                             store.active().idle_lock_seconds,
                             store.active().idle_display_off_seconds,
+                            store.active().idle_suspend_seconds,
                         );
                         response
                     }

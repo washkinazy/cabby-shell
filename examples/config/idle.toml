@@ -5,6 +5,8 @@ idle_lock_seconds = 600
 bar_right = ["audio", "network", "bluetooth", "caffeine", "nightlight", "clipboard", "tray", "idle"]
 # idle_display_off_seconds defaults to 0: no automatic display power change.
 idle_display_off_seconds = 660
+# Suspend after 45 minutes from the last activity, confirming the lock again.
+idle_suspend_seconds = 2700
 # lock_before_sleep defaults to false; opt-in sleep coordination needs lock support.
 lock_before_sleep = true
 # Night light is disabled unless configured; the default bar includes its indicator.
