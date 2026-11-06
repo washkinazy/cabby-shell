@@ -2,9 +2,7 @@
 use crate::icons::{self, Cache, Icon, Key};
 use cabby_tray::{Command, Handle, Service, State, Token};
 use iced::futures::SinkExt;
-use iced::widget::{
-    button, column, container, image, mouse_area, row, rule, scrollable, svg, tooltip,
-};
+use iced::widget::{column, container, image, mouse_area, row, rule, scrollable, svg, tooltip};
 use iced::{Element, Length, Subscription, Task};
 use std::{collections::HashMap, time::Duration};
 
@@ -178,12 +176,12 @@ impl Tray {
                 }
             };
             let token = item.token.clone();
-            let button = button(content)
+            let button = crate::ui::button(content)
                 .padding(3)
                 .style(if item.attention {
-                    button::primary
+                    crate::ui::primary
                 } else {
-                    button::text
+                    crate::ui::quiet
                 })
                 .on_press(Message::Action(Command::Activate(token.clone())));
             let mouse = mouse_area(button)
@@ -207,7 +205,7 @@ impl Tray {
         let mut entries = column![].spacing(4);
         if menu.parent != 0 {
             entries = entries.push(
-                button("Back to main menu")
+                crate::ui::button("Back to main menu")
                     .on_press(Message::Action(Command::Menu(menu.token.clone(), 0))),
             );
         }
@@ -225,7 +223,9 @@ impl Tray {
                 entry.label,
                 if entry.submenu { "  ›" } else { "" }
             );
-            let mut b = button(crate::ui::body(config, label)).width(Length::Fill);
+            let mut b = crate::ui::button(crate::ui::body(config, label))
+                .width(Length::Fill)
+                .style(crate::ui::quiet);
             if entry.enabled {
                 b = b.on_press(Message::Action(Command::Click(
                     menu.token.clone(),
@@ -243,8 +243,10 @@ impl Tray {
         container(
             column![
                 row![
-                    crate::ui::body(config, "Application menu").width(Length::Fill),
-                    button("Close").on_press(Message::Close)
+                    crate::ui::heading(config, "Application menu").width(Length::Fill),
+                    crate::ui::button("Close")
+                        .style(crate::ui::quiet)
+                        .on_press(Message::Close)
                 ]
                 .spacing(8),
                 scrollable(entries).height(Length::Fill)
@@ -254,7 +256,7 @@ impl Tray {
         .padding(16)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(container::rounded_box)
+        .style(crate::ui::panel(config.renderer))
         .into()
     }
 }

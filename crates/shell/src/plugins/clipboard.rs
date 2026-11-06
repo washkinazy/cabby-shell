@@ -1,6 +1,6 @@
 //! Clipboard picker; payloads stay in the coordinator, previews only in this view.
 use cabby_clipboard::{Request, Snapshot};
-use iced::widget::{button, column, row, scrollable, text, text_input};
+use iced::widget::{column, row, scrollable, text, text_input};
 use iced::{Element, Task};
 use std::path::PathBuf;
 #[derive(Clone)]
@@ -163,10 +163,14 @@ impl Picker {
     pub fn view(&self, config: &cabby_config::Config) -> Element<'_, Message> {
         let mut contents = column![
             row![
-                text("Clipboard").size(24).width(iced::Length::Fill),
-                button("Close").on_press(Message::Close)
+                crate::ui::heading(config, "Clipboard").width(iced::Length::Fill),
+                crate::ui::button("Close")
+                    .style(crate::ui::quiet)
+                    .on_press(Message::Close)
             ],
             text_input("Search history", &self.query)
+                .style(crate::ui::input_style)
+                .padding([8, 10])
                 .id("clipboard-query")
                 .on_input(Message::Query)
                 .on_submit(Message::Accept)
@@ -185,14 +189,14 @@ impl Picker {
             let mut entries = column![].spacing(8);
             for (index, item) in state.entries.iter().enumerate() {
                 let label = item.preview.replace('\n', " ↵ ").replace('\t', " ");
-                let mut select = button(text(label).size(f32::from(config.font_size)))
+                let mut select = crate::ui::button(text(label).size(f32::from(config.font_size)))
                     .width(iced::Length::Fill)
                     .style(if index == self.selected {
-                        button::primary
+                        crate::ui::selected
                     } else {
-                        button::secondary
+                        crate::ui::standard
                     });
-                let mut delete = button("Delete");
+                let mut delete = crate::ui::button("Delete");
                 if !self.busy {
                     select = select.on_press(Message::Select(item.id));
                     delete = delete.on_press(Message::Delete(item.id));
@@ -201,7 +205,7 @@ impl Picker {
             }
             contents = contents.push(scrollable(entries).height(iced::Length::Fill));
         }
-        let clear = button("Clear history");
+        let clear = crate::ui::button("Clear history");
         contents = contents.push(if self.busy {
             clear
         } else {
@@ -211,7 +215,7 @@ impl Picker {
             .padding(16)
             .width(iced::Length::Fill)
             .height(iced::Length::Fill)
-            .style(iced::widget::container::rounded_box)
+            .style(crate::ui::panel(config.renderer))
             .into()
     }
 }

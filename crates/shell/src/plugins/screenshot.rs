@@ -1,8 +1,6 @@
 //! Frozen-image selector and preview. Capture completes before selection UI renders.
 use cabby_screenshot::{Error, Frame};
-use iced::widget::{
-    Space, button, column, container, image, mouse_area, row, stack, text, text_input,
-};
+use iced::widget::{Space, column, container, image, mouse_area, row, stack, text, text_input};
 use iced::{Element, Length, Point, Task};
 use std::{
     path::{Path, PathBuf},
@@ -361,10 +359,10 @@ impl Picker {
                     .as_deref()
                     .unwrap_or("Drag a region, or choose the whole monitor")
             };
-            let monitor = button(label("Monitor"))
+            let monitor = crate::ui::button(label("Monitor"))
                 .width((size * 4.6 + 16.).max(100.))
                 .height(control_height);
-            let cancel = button(label("Cancel"))
+            let cancel = crate::ui::button(label("Cancel"))
                 .width((size * 4. + 16.).max(90.))
                 .height(control_height)
                 .on_press(Message::Close);
@@ -383,7 +381,7 @@ impl Picker {
             )
             .padding(16)
             .width(Length::Fill)
-            .style(container::dark);
+            .style(crate::ui::panel(config.renderer));
             layers = layers.push(
                 container(toolbar)
                     .height(Length::Fill)
@@ -394,8 +392,8 @@ impl Picker {
                 .into();
         }
         let mut body = column![row![
-            text("Screenshot").size(24).width(Length::Fill),
-            button(label("Select region"))
+            crate::ui::heading(config, "Screenshot").width(Length::Fill),
+            crate::ui::button(label("Select region"))
                 .on_press_maybe((!self.busy && self.source.is_some()).then_some(Message::Reselect))
         ]]
         .spacing(12);
@@ -408,6 +406,8 @@ impl Picker {
         }
         body = body.push(
             text_input("PNG filename", &self.filename)
+                .style(crate::ui::input_style)
+                .padding([8, 10])
                 .size(size)
                 .on_input(Message::Filename),
         );
@@ -423,10 +423,11 @@ impl Picker {
         } else {
             body = body.push(Space::new().height(Length::Fill));
         }
-        let mut copy = button(label("Copy"))
+        let mut copy = crate::ui::button(label("Copy"))
             .width(Length::Fill)
             .height(control_height);
-        let mut save = button(label("Save"))
+        let mut save = crate::ui::button(label("Save"))
+            .style(crate::ui::primary)
             .width(Length::Fill)
             .height(control_height);
         if !self.busy && self.selected.is_some() {
@@ -437,7 +438,7 @@ impl Picker {
             row![
                 copy,
                 save,
-                button(label("Cancel"))
+                crate::ui::button(label("Cancel"))
                     .on_press(Message::Close)
                     .width(Length::Fill)
                     .height(control_height)
@@ -448,7 +449,7 @@ impl Picker {
             .padding(16)
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(container::rounded_box)
+            .style(crate::ui::panel(config.renderer))
             .into()
     }
 }

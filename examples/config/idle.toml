@@ -1,3 +1,4 @@
+# Solid Fluent-inspired UI: opaque surfaces; neutral controls; accent markers.
 # Requires installed Cabby lock support; applies live on valid reload.
 idle_lock_seconds = 600
 # Optional manual inhibitor control after the default device widgets.

@@ -1,3 +1,4 @@
+# Solid Fluent-inspired UI: opaque surfaces; neutral controls; accent markers.
 # Optional picker button; CLI/keybinding works without it.
 bar_left = ["workspaces", "clipboard"]
 [clipboard]

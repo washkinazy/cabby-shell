@@ -1,3 +1,4 @@
+# Solid Fluent-inspired UI: opaque surfaces; neutral controls; accent markers.
 # Optional button; commands/keybindings also open the workflow.
 bar_left = ["workspaces", "screenshot"]
 [screenshot]

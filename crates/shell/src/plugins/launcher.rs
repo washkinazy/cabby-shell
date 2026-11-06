@@ -5,7 +5,7 @@ use crate::{
 };
 use cabby_config::Config;
 use cabby_launcher::{Catalog, Picker};
-use iced::widget::{button, column, container, row, scrollable, text, text_input};
+use iced::widget::{column, container, row, scrollable, text, text_input};
 use iced::{Element, Event, Length, Task, event, keyboard, window};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -160,14 +160,18 @@ impl Launcher {
 
     pub(crate) fn view(&self) -> Element<'_, Message> {
         let mut input = text_input("Search applications", &self.picker.query)
+            .style(crate::ui::input_style)
+            .padding([8, 10])
             .id("launcher-query")
             .on_submit(Message::Submit);
         if !self.picker.pending {
             input = input.on_input(Message::Query);
         }
         let header = row![
-            text("Applications").width(Length::Fill),
-            button("Close").on_press(Message::Close)
+            ui::heading(&self.config, "Applications").width(Length::Fill),
+            crate::ui::button("Close")
+                .style(crate::ui::quiet)
+                .on_press(Message::Close)
         ];
         let mut content = column![].spacing(8).padding(iced::Padding {
             right: 12.0,
@@ -205,9 +209,17 @@ impl Launcher {
                     .into(),
                 None => container(text("·")).center(24).into(),
             };
-            let mut item = button(
+            let mut item = crate::ui::button(
                 container(
                     row![
+                        container(iced::widget::Space::new())
+                            .width(3)
+                            .height(22)
+                            .style(if index == self.picker.selected {
+                                ui::accent_mark
+                            } else {
+                                crate::ui::blank
+                            }),
                         icon,
                         text(name).line_height(1.0).wrapping(text::Wrapping::None)
                     ]
@@ -223,9 +235,9 @@ impl Launcher {
                 item = item.on_press(Message::Choose(index));
             }
             item = if index == self.picker.selected {
-                item.style(button::primary)
+                item.style(crate::ui::selected)
             } else {
-                item.style(button::text)
+                item.style(crate::ui::quiet)
             };
             content = content.push(item);
         }
@@ -248,7 +260,7 @@ impl Launcher {
                 header,
                 input,
                 scrollable(content).height(Length::Fill),
-                text(status)
+                ui::secondary(&self.config, status)
             ]
             .spacing(8),
         )
@@ -256,7 +268,7 @@ impl Launcher {
         .width(Length::Fill)
         .height(Length::Fill)
         .clip(true)
-        .style(container::rounded_box)
+        .style(crate::ui::panel(self.config.renderer))
         .into()
     }
 }

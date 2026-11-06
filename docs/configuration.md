@@ -108,7 +108,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 
 ### `font_size`
 
-- **Purpose:** Shared text size. Uses the system sans-serif font.
+- **Purpose:** Shared body text size using the system sans-serif font. Fluent panel/launcher/notification headings add five logical pixels and use semibold weight; supporting text keeps the body size with reduced emphasis.
 - **Type/default:** integer; `14` when omitted.
 - **Values:** 10..32 logical pixels; at least 8 smaller than bar_height.
 - **Example:** `font_size = 14` in [full.toml](../examples/config/full.toml).
@@ -118,17 +118,18 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 
 ### `background`
 
-- **Purpose:** Shared bar, launcher, audio/Bluetooth panels, and notification background color.
+- **Purpose:** Opaque base surface for the bar, launcher, audio/Bluetooth panels, tray menus, clipboard/screenshot UI and notifications.
 - **Type/default:** string; `"#181b22"` when omitted.
 - **Values:** Opaque #RRGGBB hexadecimal RGB, case-insensitive digits.
 - **Example:** `background = "#181b22"` in [full.toml](../examples/config/full.toml).
+- **Appearance:** [Solid Fluent-inspired surfaces](appearance.md) use this exact base color; raised controls, selection fills and borders mix it with `foreground`. Vulkan adds a subtle panel shadow; software omits that shadow to preserve configured color/contrast. No glass or blur. Existing palette values remain valid after this visual update; no key/default migration is required.
 - **Dependencies/interactions:** applies to every bar output and both renderers; widget placement follows `bar_left`, `bar_middle`, and `bar_right`. Overflow scrolls within each region; titles are limited to 100 characters and control characters are removed.
 - **Application:** live update after valid automatic/manual reload; lock and launcher use the next opening.
 - **Migration:** new optional setting; existing configurations retain defaults.
 
 ### `foreground`
 
-- **Purpose:** Shared bar, launcher, audio/Bluetooth panels, and notification normal text color.
+- **Purpose:** Shared normal text color. Solid Fluent controls derive neutral raised surfaces, borders and lower-emphasis text from this color and `background`; full text remains opaque.
 - **Type/default:** string; `"#e5e9f0"` when omitted.
 - **Values:** Opaque #RRGGBB hexadecimal RGB, case-insensitive digits.
 - **Example:** `foreground = "#e5e9f0"` in [full.toml](../examples/config/full.toml).
@@ -138,7 +139,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 
 ### `accent`
 
-- **Purpose:** Active workspace and selected launcher-result and notification button color. Iced derives contrasting button text.
+- **Purpose:** Workspace underline, launcher/audio selection markers, sliders, focused search borders and primary-action color. Selected rows use a neutral fill; ordinary actions are neutral. Iced derives contrasting text for filled primary actions. Notification actions use ordinary neutral styling unless explicitly promoted. Existing values remain valid; this visual migration changes emphasis rather than key names/defaults.
 - **Type/default:** string; `"#88c0d0"` when omitted.
 - **Values:** Opaque #RRGGBB hexadecimal RGB, case-insensitive digits.
 - **Example:** `accent = "#88c0d0"` in [full.toml](../examples/config/full.toml).

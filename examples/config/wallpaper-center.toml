@@ -1,3 +1,4 @@
+# Solid Fluent-inspired UI: opaque surfaces; neutral controls; accent markers.
 # Launcher row sizing includes 24-pixel icons; search/close/status stay outside result scrolling.
 # Audio/Bluetooth widgets observe status while configured; Bluetooth interaction ends on panel close.
 # Device panels follow the clicked widget/output and configured bar edge.

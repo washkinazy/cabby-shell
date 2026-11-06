@@ -1,7 +1,7 @@
 //! On-demand audio state and controls; all helpers belong to this subscription.
 use cabby_audio::{Client, Command, Error, Kind, Operation, Snapshot};
 use iced::futures::SinkExt;
-use iced::widget::{button, column, container, row, scrollable, slider};
+use iced::widget::{column, container, row, scrollable, slider};
 use iced::{Element, Length, Subscription};
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -218,16 +218,22 @@ impl Audio {
         }
     }
     pub(crate) fn view(&self, config: &cabby_config::Config) -> Element<'_, Message> {
-        let mut contents = column![
-            row![
-                crate::ui::body(config, "Audio")
-                    .size(24)
-                    .width(Length::Fill),
-                button("Close").on_press(Message::Close)
-            ],
-            crate::ui::body(config, "Existing apps may keep their current device."),
+        let header = row![
+            crate::ui::heading(config, "Sound").width(Length::Fill),
+            crate::ui::button("Close")
+                .style(crate::ui::quiet)
+                .on_press(Message::Close)
         ]
-        .spacing(12);
+        .align_y(iced::Alignment::Center);
+        let mut contents = column![crate::ui::secondary(
+            config,
+            "Existing apps may keep their current device."
+        )]
+        .spacing(12)
+        .padding(iced::Padding {
+            right: 12.,
+            ..Default::default()
+        });
         if let Some(error) = self.error {
             contents = contents.push(crate::ui::body(config, error.to_string()));
         }
@@ -242,7 +248,10 @@ impl Audio {
                             "Input"
                         },
                     )
-                    .size(20),
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Semibold,
+                        ..Default::default()
+                    }),
                 );
                 let mut found = false;
                 for device in snapshot.devices.iter().filter(|d| d.kind == kind) {
@@ -255,7 +264,7 @@ impl Audio {
                         })
                     };
                     let action = |label: &'static str, operation, enabled: bool| {
-                        let b = button(label);
+                        let b = crate::ui::button(label);
                         if self.pending || !enabled {
                             b
                         } else {
@@ -277,38 +286,61 @@ impl Audio {
                     let volume = slider(0..=100, value, move |v| {
                         Message::Volume(kind, name.clone(), v)
                     })
-                    .on_release(Message::CommitVolume(kind, device.name.clone()));
+                    .on_release(Message::CommitVolume(kind, device.name.clone()))
+                    .style(crate::ui::slider_style);
                     contents = contents.push(
-                        column![
-                            crate::ui::body(config, label),
-                            volume,
-                            row![
-                                action("Use", Operation::Default, !snapshot.is_default(device)),
-                                action(
-                                    if device.muted { "Unmute" } else { "Mute" },
-                                    Operation::Mute(!device.muted),
-                                    true
-                                ),
-                                action(
-                                    "−",
-                                    Operation::Volume(
-                                        device.percent.saturating_sub(5).min(100) as u8
+                        container(
+                            column![
+                                row![
+                                    container(iced::widget::Space::new())
+                                        .width(3)
+                                        .height(22)
+                                        .style(if snapshot.is_default(device) {
+                                            crate::ui::accent_mark
+                                        } else {
+                                            crate::ui::blank
+                                        }),
+                                    crate::ui::body(config, label),
+                                ]
+                                .spacing(8)
+                                .align_y(iced::Alignment::Center),
+                                volume,
+                                row![
+                                    action("Use", Operation::Default, !snapshot.is_default(device)),
+                                    action(
+                                        if device.muted { "Unmute" } else { "Mute" },
+                                        Operation::Mute(!device.muted),
+                                        true
                                     ),
-                                    device.percent > 0
-                                ),
-                                crate::ui::body(config, format!("{}%", device.percent)),
-                                action(
-                                    "+",
-                                    Operation::Volume(
-                                        device.percent.saturating_add(5).min(100) as u8
+                                    action(
+                                        "−",
+                                        Operation::Volume(
+                                            device.percent.saturating_sub(5).min(100) as u8
+                                        ),
+                                        device.percent > 0
                                     ),
-                                    device.percent < 100
-                                ),
+                                    crate::ui::body(config, format!("{}%", device.percent)),
+                                    action(
+                                        "+",
+                                        Operation::Volume(
+                                            device.percent.saturating_add(5).min(100) as u8
+                                        ),
+                                        device.percent < 100
+                                    ),
+                                ]
+                                .spacing(6)
+                                .align_y(iced::Alignment::Center)
+                                .wrap()
                             ]
-                            .spacing(6)
-                            .align_y(iced::Alignment::Center)
-                        ]
-                        .spacing(6),
+                            .spacing(10),
+                        )
+                        .padding(12)
+                        .width(Length::Fill)
+                        .style(if snapshot.is_default(device) {
+                            crate::ui::selected_group
+                        } else {
+                            crate::ui::raised
+                        }),
                     );
                 }
                 if !found {
@@ -318,7 +350,7 @@ impl Audio {
         } else {
             contents = contents.push(crate::ui::body(config, "Connecting to audio…"));
         }
-        let refresh = button(if self.pending {
+        let refresh = crate::ui::button(if self.pending {
             "Working…"
         } else {
             "Refresh"
@@ -328,11 +360,11 @@ impl Audio {
         } else {
             refresh.on_press(Message::Refresh)
         });
-        container(scrollable(contents))
+        container(column![header, scrollable(contents).height(Length::Fill)].spacing(16))
             .padding(16)
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(container::rounded_box)
+            .style(crate::ui::panel(config.renderer))
             .into()
     }
 }

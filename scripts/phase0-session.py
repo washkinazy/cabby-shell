@@ -103,6 +103,10 @@ def inside(directory, interactive, renderer, only=None):
             probe = subprocess.run([ROOT / "target/debug/bar-ipc-probe"], capture_output=True, text=True, timeout=15)
             (directory / "bar-ipc-probe.log").write_text(probe.stdout + probe.stderr)
             probe.check_returncode()
+            fluent_capture = directory / "fluent-bar.png"
+            subprocess.run(["grim", str(fluent_capture)], check=True, timeout=15)
+            run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(fluent_capture),
+                "fluent-bar-top" if renderer == "gpu" else "fluent-bar-bottom")
             # Isolate one widget to check actual left/middle/right alignment.
             base_config = config.read_text()
             for region in ("left", "middle", "right"):

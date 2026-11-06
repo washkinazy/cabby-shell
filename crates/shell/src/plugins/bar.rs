@@ -1,8 +1,8 @@
 use crate::niri::{self, Model};
-use crate::ui::{self, color};
+use crate::ui;
 use cabby_config::{BarWidget, Config};
 use iced::futures::SinkExt;
-use iced::widget::{button, container, row, scrollable, text, tooltip};
+use iced::widget::{container, row, scrollable, text, tooltip};
 use iced::{Element, Length, Subscription, Task};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -235,19 +235,32 @@ impl Bar {
                 if workspace.is_urgent { "! " } else { "" },
                 niri::label(&name, 24)
             );
-            let mut item = button(
-                text(label)
-                    .size(f32::from(self.config.font_size))
-                    .line_height(1.0),
+            let mark = container(iced::widget::Space::new())
+                .width(14)
+                .height(2)
+                .style(if workspace.is_active {
+                    ui::accent_mark
+                } else {
+                    crate::ui::blank
+                });
+            let mut item = crate::ui::button(
+                iced::widget::column![
+                    text(label)
+                        .size(f32::from(self.config.font_size))
+                        .line_height(1.0),
+                    mark
+                ]
+                .spacing(2)
+                .align_x(iced::Alignment::Center),
             )
             .padding([2, 8]);
             if !self.action_pending {
                 item = item.on_press(Message::Focus(workspace.id));
             }
             item = if workspace.is_active {
-                item.style(button::primary)
+                item.style(crate::ui::selected)
             } else {
-                item.style(button::text)
+                item.style(crate::ui::quiet)
             };
             workspaces = workspaces.push(item);
         }
@@ -264,23 +277,22 @@ impl Bar {
                 .line_height(1.0)
         };
         match widget {
-            BarWidget::Screenshot => button(ui::body(&self.config, "Screenshot"))
+            BarWidget::Screenshot => crate::ui::button(ui::body(&self.config, "Screenshot"))
                 .on_press(Message::Screenshot)
                 .into(),
-            BarWidget::Clipboard => button(ui::body(&self.config, "Clipboard"))
+            BarWidget::Clipboard => crate::ui::button(ui::body(&self.config, "Clipboard"))
                 .on_press(Message::Clipboard)
                 .into(),
             BarWidget::Workspaces => self.workspaces(output),
             BarWidget::Caffeine => {
+                let style = self.caffeine.style(self.caffeine_failed);
                 let icon = iced::widget::svg(self.caffeine.icon())
                     .width(18)
                     .height(18)
-                    .style(|theme: &iced::Theme, _| iced::widget::svg::Style {
-                        color: Some(theme.palette().text),
+                    .style(move |theme: &iced::Theme, _| iced::widget::svg::Style {
+                        color: Some(style(theme, iced::widget::button::Status::Active).text_color),
                     });
-                let control = button(icon)
-                    .padding([2, 3])
-                    .style(self.caffeine.style(self.caffeine_failed));
+                let control = crate::ui::button(icon).padding([2, 3]).style(style);
                 let control = if self.caffeine_pending {
                     control
                 } else {
@@ -294,7 +306,7 @@ impl Bar {
                 .into()
             }
             BarWidget::Nightlight => {
-                let control = button(ui::body(
+                let control = crate::ui::button(ui::body(
                     &self.config,
                     if self.nightlight_failed {
                         "Night action failed"
@@ -320,7 +332,7 @@ impl Bar {
                 } else {
                     self.idle.label()
                 };
-                let control = button(ui::body(&self.config, label));
+                let control = crate::ui::button(ui::body(&self.config, label));
                 if self.idle_pending {
                     control.into()
                 } else {
@@ -328,13 +340,15 @@ impl Bar {
                 }
             }
             BarWidget::Clock => label(self.clock.clone()).into(),
-            BarWidget::Audio => button(ui::body(&self.config, &self.audio_label))
+            BarWidget::Audio => crate::ui::button(ui::body(&self.config, &self.audio_label))
                 .on_press(Message::Audio)
                 .into(),
-            BarWidget::Bluetooth => button(ui::body(&self.config, &self.bluetooth_label))
-                .on_press(Message::Bluetooth)
-                .into(),
-            BarWidget::Apps => button(if self.action_failed {
+            BarWidget::Bluetooth => {
+                crate::ui::button(ui::body(&self.config, &self.bluetooth_label))
+                    .on_press(Message::Bluetooth)
+                    .into()
+            }
+            BarWidget::Apps => crate::ui::button(if self.action_failed {
                 "Action failed"
             } else {
                 "Apps"
@@ -418,11 +432,7 @@ impl Bar {
             .width(Length::Fill)
             .height(Length::Fill)
             .center_y(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(color(&self.config.background).into()),
-                text_color: Some(color(&self.config.foreground)),
-                ..Default::default()
-            })
+            .style(ui::bar_style)
             .into()
     }
 }
