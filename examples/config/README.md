@@ -38,3 +38,5 @@ All examples with the `tray` widget use the same [tray interactions](../../docs/
 
 [idle.toml](idle.toml) includes opt-in automatic suspend after 45 idle minutes. Omitted `idle_suspend_seconds` stays disabled. A positive value must follow enabled lock/display-off deadlines; lock confirmation and sleep inhibitors still apply.
 [idle-suspend.toml](idle-suspend.toml) demonstrates automatic suspend with display-off disabled.
+
+The `workspaces` module supports wheel navigation on its own output (up/left previous, down/right next), without wrapping. Smooth gestures are accumulated and bursts are coalesced; no new configuration key is needed.

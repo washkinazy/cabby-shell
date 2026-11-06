@@ -11,6 +11,7 @@ pub(crate) struct Bar {
     config: Config,
     pub(crate) tray: super::tray::Tray,
     model: Model,
+    scroll: super::workspace_scroll::Scroll,
     clock: String,
     pub(crate) audio_label: String,
     pub(crate) audio_icon: ui::symbol::Symbol,
@@ -49,6 +50,7 @@ pub(crate) enum Message {
     IdleResult(Result<(), String>),
     Network(crate::network::Status),
     Focus(u64),
+    Scroll(String, iced::mouse::ScrollDelta),
     Launcher,
     Audio,
     Bluetooth,
@@ -86,6 +88,7 @@ impl Bar {
             config,
             tray: super::tray::Tray::default(),
             model: Model::default(),
+            scroll: Default::default(),
             clock: super::clock::now(),
             audio_label: "Audio ?".into(),
             audio_icon: ui::symbol::Symbol::Muted,
@@ -195,6 +198,19 @@ impl Bar {
                 self.action_failed = result.is_err();
             }
             Message::Niri(event) => self.model.apply(event),
+            Message::Scroll(output, delta)
+                if self.model.connected && self.config.has_widget(BarWidget::Workspaces) =>
+            {
+                if let Some(direction) = self.scroll.step(
+                    &output,
+                    delta,
+                    self.action_pending,
+                    std::time::Instant::now(),
+                ) && let Some(id) = self.model.adjacent_workspace(&output, direction)
+                {
+                    return self.update(Message::Focus(id));
+                }
+            }
             Message::Disconnected => {
                 self.model.disconnect();
                 self.action_failed = false;
@@ -277,7 +293,10 @@ impl Bar {
         if self.action_failed {
             workspaces = workspaces.push(text("Action failed"));
         }
-        workspaces.into()
+        let output = output.to_owned();
+        mouse_area(workspaces)
+            .on_scroll(move |delta| Message::Scroll(output.clone(), delta))
+            .into()
     }
     fn icon<'a>(
         &self,

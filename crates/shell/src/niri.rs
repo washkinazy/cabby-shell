@@ -156,6 +156,15 @@ impl Model {
         workspaces.sort_by_key(|w| (w.idx, w.id));
         workspaces
     }
+    pub fn adjacent_workspace(&self, output: &str, direction: i32) -> Option<u64> {
+        if !self.connected || direction == 0 {
+            return None;
+        }
+        let workspaces = self.on_output(output);
+        let index = workspaces.iter().position(|w| w.is_active)?;
+        let next = index.checked_add_signed(direction.signum() as isize)?;
+        workspaces.get(next).map(|w| w.id)
+    }
     pub fn title(&self, output: &str) -> String {
         self.on_output(output)
             .into_iter()
@@ -249,6 +258,32 @@ mod tests {
             active_window_id: None,
             is_urgent: false,
         }
+    }
+    #[test]
+    fn workspace_neighbors_use_each_outputs_active_order_and_never_wrap() {
+        let mut model = Model::default();
+        model.apply(Event::WorkspacesChanged {
+            workspaces: vec![
+                workspace(30, 3, "A", false),
+                workspace(10, 1, "A", true),
+                workspace(20, 2, "A", false),
+                workspace(40, 1, "B", true),
+                workspace(50, 2, "B", false),
+            ],
+        });
+        assert_eq!(model.adjacent_workspace("A", 1), Some(20));
+        assert_eq!(model.adjacent_workspace("A", -1), None);
+        assert_eq!(model.adjacent_workspace("B", 1), Some(50));
+        model.apply(Event::WorkspaceActivated {
+            id: 30,
+            focused: true,
+        });
+        assert_eq!(model.adjacent_workspace("A", 1), None);
+        assert_eq!(model.adjacent_workspace("A", -1), Some(20));
+        assert_eq!(model.adjacent_workspace("missing", 1), None);
+        assert_eq!(model.adjacent_workspace("A", 0), None);
+        model.disconnect();
+        assert_eq!(model.adjacent_workspace("A", 1), None);
     }
     #[test]
     fn output_changes_and_activation_preserve_other_outputs() {

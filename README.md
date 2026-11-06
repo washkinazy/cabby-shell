@@ -97,6 +97,6 @@ The coordinator automatically reloads valid config and active wallpaper-file cha
 
 A [system tray](docs/tray.md) now hosts StatusNotifier items and application menus in the desktop process.
 
-The default bar places workspaces left, local clock/date in the middle, and audio, network, Bluetooth, Caffeine, night light, clipboard and system tray on the right. Status/actions use compact icons with brief opaque hover hints. Configure their order and placement with `bar_left`, `bar_middle` and `bar_right`; Apps, window title and diagnostic status are optional widgets.
+The default bar places workspaces left, local clock/date in the middle, and audio, network, Bluetooth, Caffeine, night light, clipboard and system tray on the right. Status/actions use compact icons with brief opaque hover hints. Scrolling over the workspace names switches to the previous/next workspace on that output, without wrapping. Configure their order and placement with `bar_left`, `bar_middle` and `bar_right`; Apps, window title and diagnostic status are optional widgets.
 
 [Caffeine](docs/caffeine.md) combines manual, audio and fullscreen inhibition in the coordinator. Configurable effects cover idle, sleep and temporary night-light pause; the bar toggles the manual reason.
