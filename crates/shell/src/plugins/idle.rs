@@ -20,6 +20,9 @@ impl Status {
         } else {
             match self.state.as_str() {
                 "watching" => "Idle lock",
+                "suspending" => "Suspending",
+                "suspend-requested" => "Sleep requested",
+                "suspend-failed" => "Suspend failed",
                 "locking" => "Locking",
                 "lock-failed" | "display-failed" => "Idle failed",
                 _ => "Idle ?",

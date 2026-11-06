@@ -24,7 +24,7 @@ The baseline is a niri environment without Noctalia or DMS. Cabby Shell should p
 
 - Bar.
 - Application launcher.
-- Idle management, including configurable Caffeine inhibition for manual/audio/fullscreen activity.
+- Idle management with configurable lock, display-off and automatic-suspend deadlines, including Caffeine inhibition for manual/audio/fullscreen activity.
 - Night light through color-temperature/gamma adjustment (Redshift-style functionality).
 - Notifications.
 - Wallpaper.

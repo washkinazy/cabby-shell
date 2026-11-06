@@ -390,7 +390,7 @@ mod tests {
         // Sources and sleep acquisition stay disabled: no host connection is made.
         let root = tempfile::tempdir().unwrap();
         let config = cabby_config::Config::default();
-        let idle = crate::idle::Idle::new(0, 0, root.path());
+        let idle = crate::idle::Idle::new(0, 0, 0, root.path());
         let night = crate::night::Night::new(&config, root.path());
         let caffeine_config = cabby_config::Caffeine {
             inhibit_sleep: false,

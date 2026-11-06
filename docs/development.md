@@ -60,6 +60,8 @@ Synthetic Rust tests cover duplicate popup opens, Escape dismissal/reopening, an
 
 ## Isolated runtime harness
 
+`python3 scripts/test_idle_protocol.py` drives idle lock/display-off/suspend through a private synthetic Wayland server with two seats and fully intercepted systemctl/niri helpers. It verifies lock readiness before a sleep request, failure/no-retry, Caffeine cancellation and helper cleanup, activity, disable and valid/invalid reload without real lock/DPMS/suspend operations. The existing native idle session test separately checks niri's protocol behavior. No new development/test package is needed.
+
 Run inside an existing Wayland session with a working systemd user manager. The harness opens a nested niri window using a private runtime/config/cache/state/data tree and a private D-Bus session. It never uses niri's `--session` flag, imports environment into the user's service manager, or connects the locker to the host display. A uniquely named transient `cabby-phase0-*.scope` owns the disposable session, including descendants that detach from process groups. The harness stops this scope on success, failure, or timeout, checks its inactive state, and reaps its wrapper. A six-minute systemd runtime limit also bounds cleanup if the harness itself is killed. No persistent unit is installed.
 
 Results live in an ignored `.artifacts/phase0-*` directory: protocol inventory, output/layer snapshots, a nested-only PNG, client logs, session log, and a JSON result listing both checks and unproven capabilities. These are developer artifacts, not installed user configuration. Protocol traces can contain typed test input; use synthetic text only. They remain locally for debugging and are not committed.

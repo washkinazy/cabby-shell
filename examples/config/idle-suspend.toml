@@ -1,0 +1,5 @@
+# Automatic suspend also works with display power-off disabled.
+# Requires installed Cabby lock/PAM support and systemd/logind suspend support.
+idle_lock_seconds = 900
+idle_display_off_seconds = 0
+idle_suspend_seconds = 2700
