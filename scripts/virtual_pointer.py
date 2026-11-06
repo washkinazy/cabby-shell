@@ -37,5 +37,10 @@ class Pointer:
     def button(self,pressed):
         self.send(5,2,U(int(time.monotonic()*1000)&0xffffffff)+U(272)+U(int(pressed)));self.send(5,4);self.sync();time.sleep(.08)
     def click(self,x,y,size):self.move(x,y,size);self.button(True);self.button(False)
+    def scroll(self,steps):
+        timestamp=int(time.monotonic()*1000)&0xffffffff
+        self.send(5,5,U(0))
+        self.send(5,7,U(timestamp)+U(0)+struct.pack('=i',steps*10*256)+struct.pack('=i',steps))
+        self.send(5,4);self.sync();time.sleep(.15)
     def drag(self,a,b,size):self.move(*a,size);self.button(True);self.move(*b,size);self.button(False)
     def close(self):self.socket.close()

@@ -22,9 +22,9 @@ def check(directory, renderer, children, selected_adapter):
     logical = next(iter(json.loads(call("niri","msg","--json","outputs")).values()))["logical"]
     size = logical["width"],logical["height"]
     config = directory/"bar-icons.toml"
-    def configure(edge="top", light=False, widgets='["network"]'):
+    def configure(edge="top", light=False, widgets='["network"]',left='[]'):
         config.write_text('osd={enabled=false}\nrenderer="'+('vulkan' if renderer=='gpu' else 'software')+'"\n'
-                          'bar_height=40\nbar_left=[]\nbar_middle=[]\nbar_right='+widgets+'\nbar_position="'+edge+'"\n'+
+                          'bar_height=40\nbar_left='+left+'\nbar_middle=[]\nbar_right='+widgets+'\nbar_position="'+edge+'"\n'+
                           ('background="#f2f2f7"\nforeground="#202128"\n' if light else ''))
     configure()
     env=os.environ|{"DBUS_SYSTEM_BUS_ADDRESS":"unix:path="+str(directory/"no-system-bus")}
@@ -75,12 +75,26 @@ def check(directory, renderer, children, selected_adapter):
             capture=directory/"bar-all-icons.png"
             call("grim",str(capture))
             call(str(ROOT/"target/debug/wallpaper-pixel-probe"),str(capture),'bar-all-icons')
+            configure(widgets='[]',left='["workspaces"]')
+            def workspace_ready():
+                path=directory/'workspace-wheel-ready.png'
+                call('grim',str(path))
+                return subprocess.run([ROOT/'target/debug/wallpaper-pixel-probe',path,'fluent-bar-top'],capture_output=True,timeout=8).returncode==0
+            wait(workspace_ready)
+            def spaces():return sorted(json.loads(call('niri','msg','--json','workspaces')),key=lambda s:s['idx'])
+            initial=spaces();first,second=initial[:2]
+            assert first['is_active'],'fixture must begin on its first workspace'
+            def active():return next(s['id'] for s in spaces() if s['is_active'])
+            pointer.move(35,20,size);pointer.scroll(1);wait(lambda:active()==second['id'])
+            time.sleep(.2);pointer.scroll(-1);wait(lambda:active()==first['id'])
+            time.sleep(.2);pointer.scroll(-1);time.sleep(.25);assert active()==first['id'],'wheel wrapped before the first workspace'
+            pointer.move(size[0]//2,20,size);pointer.scroll(1);time.sleep(.25);assert active()==first['id'],'wheel outside workspace module switched spaces'
             adapters={}
             if renderer=="gpu":
                 adapter=selected_adapter(log.read_text())
                 assert adapter["backend"]=="Vulkan" and 'RTX 4070' in adapter["name"]
                 adapters['bar']=adapter
-            (directory/"result.json").write_text(json.dumps({'status':'passed','adapters':adapters,'checks':['all-status-action-icons','opaque-dark-light-hints','top-bottom-placement','hover-exit-dismissal','passive-no-focus','clipboard-icon-opens-picker'],'not_proven':['physical-multi-output-pointer']},indent=2))
+            (directory/"result.json").write_text(json.dumps({'status':'passed','adapters':adapters,'checks':['all-status-action-icons','opaque-dark-light-hints','top-bottom-placement','hover-exit-dismissal','passive-no-focus','clipboard-icon-opens-picker','workspace-wheel-next-previous','workspace-wheel-boundary-no-wrap','wheel-outside-module-no-navigation'],'not_proven':['physical-multi-output-pointer']},indent=2))
         finally:
             pointer.close()
             desktop.terminate();desktop.wait(timeout=5)

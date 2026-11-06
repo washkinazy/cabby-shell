@@ -3,6 +3,7 @@
 # Audio/Bluetooth widgets observe status while configured; Bluetooth interaction ends on panel close.
 # Device panels follow the clicked widget/output and configured bar edge.
 # Default regions: workspaces left; clock/date middle; audio, network, Bluetooth, Caffeine, night light, clipboard, tray right.
+# Scroll over workspace names to switch previous/next on that output, without wrapping.
 # Status widgets use outline icons and opaque hover hints; clipboard opens history.
 # Tray icons and menus share desktop styling; ordinary reloads preserve menus and tray ownership.
 # The coordinator automatically reloads valid saves (300 ms debounce); invalid edits retain the old config.
