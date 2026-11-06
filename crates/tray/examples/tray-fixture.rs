@@ -7,7 +7,16 @@ async fn main() {
     assert_eq!(Some(guard), std::env::var("WAYLAND_DISPLAY").ok());
     let address = std::env::var("DBUS_SESSION_BUS_ADDRESS").expect("private bus required");
     let (connection, data) = support::fixture(&address).await;
-    data.lock().unwrap().icon = std::env::var("CABBY_TEST_TRAY_ICON").ok();
+    {
+        let mut data = data.lock().unwrap();
+        data.icon = std::env::var("CABBY_TEST_TRAY_ICON").ok();
+        data.activate_unsupported = true;
+        data.require_open = true;
+    }
+    connection
+        .request_name("org.cabby.TrayFixture")
+        .await
+        .unwrap();
     // The harness starts the host before this fixture.
     let proxy = zbus::Proxy::new(
         &connection,

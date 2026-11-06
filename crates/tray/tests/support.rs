@@ -13,12 +13,33 @@ pub struct Data {
     pub status: String,
     pub icon: Option<String>,
     pub clicked: Vec<i32>,
+    pub activate_unsupported: bool,
+    pub activate_stalled: bool,
+    pub about_stalled: bool,
+    pub about_changes: bool,
+    pub prepared: bool,
+    pub require_open: bool,
+    pub fail_layout: bool,
+    pub about_calls: Vec<i32>,
+    pub layout_calls: Vec<i32>,
+    pub events: Vec<(i32, String)>,
 }
 struct Item(Arc<Mutex<Data>>);
 #[zbus::interface(name = "org.kde.StatusNotifierItem")]
 impl Item {
-    fn activate(&self, _x: i32, _y: i32) {
-        self.0.lock().unwrap().activates += 1;
+    async fn activate(&self, _x: i32, _y: i32) -> zbus::fdo::Result<()> {
+        let (unsupported, stalled) = {
+            let mut data = self.0.lock().unwrap();
+            data.activates += 1;
+            (data.activate_unsupported, data.activate_stalled)
+        };
+        if stalled {
+            tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+        }
+        if unsupported {
+            return Err(zbus::fdo::Error::NotSupported("Use exported menu".into()));
+        }
+        Ok(())
     }
     fn secondary_activate(&self, _x: i32, _y: i32) {
         self.0.lock().unwrap().secondary += 1;
@@ -64,6 +85,7 @@ impl Item {
     }
 }
 struct Menu(Arc<Mutex<Data>>);
+type Layout = (u32, (i32, Properties, Vec<OwnedValue>));
 fn props(label: &str) -> Properties {
     Properties::from([("label".into(), Value::from(label).try_to_owned().unwrap())])
 }
@@ -74,16 +96,55 @@ fn child(id: i32, properties: Properties) -> OwnedValue {
 }
 #[zbus::interface(name = "com.canonical.dbusmenu")]
 impl Menu {
-    fn about_to_show(&self, _id: i32) -> bool {
-        false
+    async fn about_to_show(&self, id: i32) -> bool {
+        let stalled = {
+            let mut data = self.0.lock().unwrap();
+            data.about_calls.push(id);
+            data.about_stalled
+        };
+        if stalled {
+            tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+        }
+        let mut data = self.0.lock().unwrap();
+        data.prepared = true;
+        data.about_changes
     }
     fn get_layout(
         &self,
         parent: i32,
         depth: i32,
         _properties: Vec<String>,
-    ) -> (u32, (i32, Properties, Vec<OwnedValue>)) {
+    ) -> zbus::fdo::Result<Layout> {
         assert_eq!(depth, 1);
+        {
+            let mut data = self.0.lock().unwrap();
+            data.layout_calls.push(parent);
+            if data.fail_layout {
+                return Err(zbus::fdo::Error::Failed(
+                    "Fixture layout unavailable".into(),
+                ));
+            }
+            if data.about_changes && !data.prepared {
+                return Ok((1, (parent, Properties::new(), Vec::new())));
+            }
+            if data.require_open {
+                let mut opened = std::collections::HashSet::new();
+                for (id, event) in &data.events {
+                    match event.as_str() {
+                        "opened" => {
+                            opened.insert(*id);
+                        }
+                        "closed" => {
+                            opened.remove(id);
+                        }
+                        _ => (),
+                    }
+                }
+                if !opened.contains(&0) || !opened.contains(&parent) {
+                    return Err(zbus::fdo::Error::Failed("Menu was not opened".into()));
+                }
+            }
+        }
         let children = if parent == 0 {
             let mut disabled = props("Disabled");
             disabled.insert("enabled".into(), false.into());
@@ -102,11 +163,26 @@ impl Menu {
         } else {
             vec![child(4, props("Subitem"))]
         };
-        (1, (parent, Properties::new(), children))
+        Ok((1, (parent, Properties::new(), children)))
     }
     fn event(&self, id: i32, event: &str, _data: OwnedValue, _timestamp: u32) {
-        assert_eq!(event, "clicked");
-        self.0.lock().unwrap().clicked.push(id);
+        let mut data = self.0.lock().unwrap();
+        data.events.push((id, event.into()));
+        if event == "clicked" {
+            data.clicked.push(id);
+        }
+    }
+}
+struct Fixture(Arc<Mutex<Data>>);
+#[zbus::interface(name = "org.cabby.TrayFixture")]
+impl Fixture {
+    fn status(&self) -> (u32, u32, u32) {
+        let data = self.0.lock().unwrap();
+        (
+            data.activates as u32,
+            data.events.iter().filter(|(_, e)| e == "opened").count() as u32,
+            data.events.iter().filter(|(_, e)| e == "closed").count() as u32,
+        )
     }
 }
 pub async fn fixture(address: &str) -> (Connection, Arc<Mutex<Data>>) {
@@ -119,6 +195,8 @@ pub async fn fixture(address: &str) -> (Connection, Arc<Mutex<Data>>) {
         .serve_at("/StatusNotifierItem", Item(data.clone()))
         .unwrap()
         .serve_at("/Menu", Menu(data.clone()))
+        .unwrap()
+        .serve_at("/Fixture", Fixture(data.clone()))
         .unwrap()
         .build()
         .await
