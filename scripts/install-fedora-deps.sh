@@ -4,7 +4,7 @@ set -euo pipefail
 packages=(
     cargo rust rustfmt clippy just gcc pkgconf-pkg-config curl
     wayland-devel libxkbcommon-devel
-    niri wayland-utils grim dbus-daemon systemd python3 util-linux pulseaudio-utils bluez NetworkManager pam
+    niri wayland-utils grim wl-clipboard dbus-daemon systemd python3 util-linux pulseaudio-utils bluez NetworkManager pam
     mesa-dri-drivers mesa-vulkan-drivers
 )
 if [[ "${1:-}" == --print ]]; then

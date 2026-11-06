@@ -36,7 +36,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 
 - **File/purpose:** `config.toml`; ordered widgets aligned to the left of the bar.
 - **Type/default:** array of strings; `["workspaces"]` when omitted. No units.
-- **Values:** any subset of `"workspaces"`, `"clock"`, `"audio"`, `"network"`, `"bluetooth"`, `"tray"`, `"apps"`, `"title"`, `"status"`, `"idle"`, `"nightlight"`, `"caffeine"`, in the desired order. Unknown names and duplicate widgets anywhere across the three regions are errors. `[]` leaves this region empty.
+- **Values:** any subset of `"workspaces"`, `"clock"`, `"audio"`, `"network"`, `"bluetooth"`, `"tray"`, `"apps"`, `"title"`, `"status"`, `"idle"`, `"nightlight"`, `"caffeine"`, `"clipboard"`, in the desired order. Unknown names and duplicate widgets anywhere across the three regions are errors. `[]` leaves this region empty.
 - **Example:** `bar_left = ["workspaces"]`; optional Apps/title/status placement is demonstrated in [custom-layout.toml](../examples/config/custom-layout.toml).
 - **Dependencies/interactions:** the middle uses its content width and equal side regions divide the remaining space. Overflow scrolls horizontally within its region; it cannot shift or cover another region. Each array replaces that region's default, while omitted regions still use their defaults. Widgets omitted from all regions disappear; omitted clock/network/tray widgets do not start their background subscriptions. See the widget behavior below.
 - **Application:** valid config reload updates regions in place.
@@ -423,3 +423,39 @@ Device panels and tray menus open beside the clicked widget on its output, below
 - **Values/example:** `fullscreen_pause_nightlight = false` in [effects example](../examples/config/caffeine-effects.toml); no units.
 - **Interactions:** requires `caffeine.fullscreen = true`; missing output names conservatively pause all outputs. Independent of manual pause and idle/sleep effects. Ending fullscreen restores the current schedule or forced target.
 - **Application:** live reload, no restart. Disable this to retain night light while fullscreen windows still inhibit idle/sleep.
+
+### `clipboard`
+
+- **File/type/purpose:** `[clipboard]` table in `config.toml`; regular clipboard monitoring/ownership and bounded memory-only history. Omission uses child defaults; unknown keys are errors.
+- **Example:** [clipboard.toml](../examples/config/clipboard.toml), or [disabled alternative](../examples/config/clipboard-disabled.toml).
+- **Dependencies/interactions:** native `ext_data_control_manager_v1` and one Wayland seat (niri baseline). Missing protocol/disconnect reports unavailable; reconnect waits two seconds. UTF-8 text and PNG only; primary selection is untouched. `x-kde-passwordManagerHint` offers are skipped before reading. This hint cannot identify every secret. No clipboard payload is logged or written to history files.
+- **Application:** live reload. Coordinator restart loses history; desktop restart preserves it. Invalid config retains the previous history policy.
+- **Migration:** newly enabled by default. Disable explicitly to opt out. Optional `clipboard` bar widget opens the picker; default regions stay unchanged. `cabby clipboard` opens it through the existing desktop host; no additional process/service.
+
+### `clipboard.enabled`
+
+- **File/type/default:** `[clipboard]` in `config.toml`, boolean `true`; monitor and retain supported regular clipboard selections.
+- **Values/example:** `enabled = false` in [disabled alternative](../examples/config/clipboard-disabled.toml); no units.
+- **Interactions:** disabling clears history and releases any Cabby-owned selection, cancels transfers and closes the Wayland connection. External selections are left alone. Re-enabling observes the current selection without restoring stale history. Deleting an actively owned entry or clearing history also releases its selection.
+- **Application:** live reload, no restart. Picker remains accessible and displays disabled state.
+
+### `clipboard.max_items`
+
+- **File/type/default:** `[clipboard]` in `config.toml`, integer `50`; retained history count, range `1..200`, no units.
+- **Example:** `max_items = 100` in [clipboard.toml](../examples/config/clipboard.toml).
+- **Interactions:** newest first, duplicate bytes/MIME move the existing entry to the front without adding another. Oldest entries evict when either count or byte budget is reached. Reselecting Cabby's own source is ignored by monitoring. Search is case-insensitive over full text; the picker shows at most 50 matches with 160-character previews.
+- **Application:** live reload trims oldest entries immediately. No restart or persistence.
+
+### `clipboard.max_item_bytes`
+
+- **File/type/default:** `[clipboard]` in `config.toml`, integer `4194304` (4 MiB); encoded bytes per text/PNG item, range `65536..16777216`, units bytes.
+- **Example:** `max_item_bytes = 8388608` in [clipboard.toml](../examples/config/clipboard.toml).
+- **Interactions:** must be at most `clipboard.memory_bytes`. Larger/empty/malformed/unsupported offers are ignored without replacing their source. Text must be valid UTF-8 without NUL; images must decode as PNG within 8192×8192, 16,777,216 pixels and a 64 MiB decoder allocation budget. Per-transfer deadline three seconds; one incoming and at most eight outgoing transfers.
+- **Application:** live reload removes oversized retained entries and bounds in-flight reception. An existing owned selection or outgoing transfer can retain its already accepted bytes until cancellation/deadline; restart is unnecessary.
+
+### `clipboard.memory_bytes`
+
+- **File/type/default:** `[clipboard]` in `config.toml`, integer `33554432` (32 MiB); retained encoded-payload budget, at least `clipboard.max_item_bytes` and at most `134217728`, units bytes.
+- **Example:** `memory_bytes = 67108864` in [clipboard.toml](../examples/config/clipboard.toml).
+- **Interactions:** oldest entries evict first. This bounds retained payloads, not total process RSS: metadata, one incoming item, current selection, bounded pending sends and image decode allocations are additional. No disk cache/history is created.
+- **Application:** live reload trims history immediately; coordinator restart clears all memory. No UI restart.

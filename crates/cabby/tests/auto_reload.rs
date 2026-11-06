@@ -43,6 +43,7 @@ fn atomic_saves_invalid_edits_directory_recreation_and_symlinks() {
     fs::write(&config, "bar_height=40").unwrap();
     let _server = Server(
         Command::new(env!("CARGO_BIN_EXE_cabby"))
+            .env("WAYLAND_DISPLAY", temp.path().join("no-live-display"))
             .args(["serve", "--config"])
             .arg(&config)
             .arg("--runtime-dir")

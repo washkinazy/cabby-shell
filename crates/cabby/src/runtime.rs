@@ -136,6 +136,7 @@ pub fn serve(
         idle.policy_handle(),
         night.policy_handle(),
     );
+    let clipboard = cabby_clipboard::Service::new(&store.active().clipboard, &path);
     notify_ready()?;
     loop {
         let incoming = watcher
@@ -177,6 +178,7 @@ pub fn serve(
                 deadline = Some(Instant::now() + watch::DEBOUNCE);
             }
         }
+        clipboard.configure(&store.active().clipboard);
         caffeine.configure(&store.active().caffeine);
         night.configure(store.active());
         sleep.configure(store.active().lock_before_sleep, night.observing());
@@ -199,57 +201,70 @@ pub fn serve(
         let response = if result.is_err() || command.len() > 4096 || !command.ends_with('\n') {
             serde_json::json!({"ok": false, "error": "invalid or timed-out request"})
         } else {
-            match command.trim() {
-                "status" => {
-                    serde_json::json!({"ok": true, "source": store.source.path, "config": store.active(), "pid": std::process::id(), "caffeine":caffeine.status(), "idle": idle.status(), "sleep": sleep.status(), "night_light": night.status()})
+            if command.starts_with('{') {
+                match serde_json::from_str::<cabby_clipboard::Request>(&command) {
+                    Ok(request) => clipboard.request(request),
+                    Err(_) => serde_json::json!({"ok":false,"error":"invalid clipboard request"}),
                 }
-                "nightlight-status"
-                | "nightlight-enable"
-                | "nightlight-disable"
-                | "nightlight-toggle"
-                | "nightlight-force-toggle" => {
-                    night.control(command.trim());
-                    sleep.configure(store.active().lock_before_sleep, night.observing());
-                    serde_json::json!({"ok":true,"night_light":night.status()})
-                }
-                "caffeine-status"
-                | "caffeine-on"
-                | "caffeine-off"
-                | "caffeine-toggle"
-                | "idle-status"
-                | "idle-inhibit-on"
-                | "idle-inhibit-off"
-                | "idle-inhibit-toggle" => {
-                    caffeine.control(command.trim());
-                    serde_json::json!({"ok": true, "caffeine":caffeine.status(), "idle": idle.status(), "sleep": sleep.status(), "night_light": night.status()})
-                }
-                "reload" => {
-                    let response = reload(
-                        &mut store,
-                        &path,
-                        &ui_unit,
-                        &wallpaper_unit,
-                        &notifications_unit,
-                    );
-                    if watcher
-                        .refresh(watch::paths(
-                            &store.source.path,
-                            &store.active().wallpaper_image,
-                        ))
-                        .map_err(|e| e.to_string())?
-                    {
-                        deadline = Some(Instant::now() + watch::DEBOUNCE);
+            } else {
+                match command.trim() {
+                    "clipboard" => desktop_request(&path, "clipboard"),
+                    "clipboard-status" => {
+                        serde_json::json!({"ok":true,"clipboard":clipboard.status()})
                     }
-                    caffeine.configure(&store.active().caffeine);
-                    night.configure(store.active());
-                    sleep.configure(store.active().lock_before_sleep, night.observing());
-                    idle.configure(
-                        store.active().idle_lock_seconds,
-                        store.active().idle_display_off_seconds,
-                    );
-                    response
+                    "clipboard-clear" => clipboard.request(cabby_clipboard::Request::Clear),
+                    "status" => {
+                        serde_json::json!({"ok": true, "source": store.source.path, "config": store.active(), "pid": std::process::id(), "clipboard":clipboard.status(), "caffeine":caffeine.status(), "idle": idle.status(), "sleep": sleep.status(), "night_light": night.status()})
+                    }
+                    "nightlight-status"
+                    | "nightlight-enable"
+                    | "nightlight-disable"
+                    | "nightlight-toggle"
+                    | "nightlight-force-toggle" => {
+                        night.control(command.trim());
+                        sleep.configure(store.active().lock_before_sleep, night.observing());
+                        serde_json::json!({"ok":true,"night_light":night.status()})
+                    }
+                    "caffeine-status"
+                    | "caffeine-on"
+                    | "caffeine-off"
+                    | "caffeine-toggle"
+                    | "idle-status"
+                    | "idle-inhibit-on"
+                    | "idle-inhibit-off"
+                    | "idle-inhibit-toggle" => {
+                        caffeine.control(command.trim());
+                        serde_json::json!({"ok": true, "clipboard":clipboard.status(), "caffeine":caffeine.status(), "idle": idle.status(), "sleep": sleep.status(), "night_light": night.status()})
+                    }
+                    "reload" => {
+                        let response = reload(
+                            &mut store,
+                            &path,
+                            &ui_unit,
+                            &wallpaper_unit,
+                            &notifications_unit,
+                        );
+                        if watcher
+                            .refresh(watch::paths(
+                                &store.source.path,
+                                &store.active().wallpaper_image,
+                            ))
+                            .map_err(|e| e.to_string())?
+                        {
+                            deadline = Some(Instant::now() + watch::DEBOUNCE);
+                        }
+                        clipboard.configure(&store.active().clipboard);
+                        caffeine.configure(&store.active().caffeine);
+                        night.configure(store.active());
+                        sleep.configure(store.active().lock_before_sleep, night.observing());
+                        idle.configure(
+                            store.active().idle_lock_seconds,
+                            store.active().idle_display_off_seconds,
+                        );
+                        response
+                    }
+                    _ => serde_json::json!({"ok": false, "error": "unknown request"}),
                 }
-                _ => serde_json::json!({"ok": false, "error": "unknown request"}),
             }
         };
         // An abandoned caller must not take down the coordinator.
@@ -314,4 +329,24 @@ pub fn request(path: &Path, command: &str) -> Result<serde_json::Value> {
         return Err("oversized response".into());
     }
     serde_json::from_str(&response).map_err(|error| error.to_string())
+}
+
+fn desktop_request(path: &Path, action: &str) -> serde_json::Value {
+    let result = (|| -> std::io::Result<()> {
+        let mut s = UnixStream::connect(path.join("desktop.sock"))?;
+        s.set_read_timeout(Some(Duration::from_secs(2)))?;
+        s.set_write_timeout(Some(Duration::from_secs(2)))?;
+        writeln!(s, "{action}")?;
+        let mut answer = String::new();
+        BufReader::new(s.take(257)).read_line(&mut answer)?;
+        if answer.trim() != "ok" {
+            return Err(std::io::Error::other("desktop did not accept request"));
+        }
+        Ok(())
+    })();
+    if result.is_ok() {
+        serde_json::json!({"ok":true})
+    } else {
+        serde_json::json!({"ok":false,"error":"desktop unavailable"})
+    }
 }

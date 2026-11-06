@@ -1,0 +1,7 @@
+# Optional picker button; CLI/keybinding works without it.
+bar_left = ["workspaces", "clipboard"]
+[clipboard]
+enabled = true
+max_items = 100
+max_item_bytes = 8388608
+memory_bytes = 67108864

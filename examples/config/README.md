@@ -25,3 +25,5 @@ Night light examples cover [custom times](nightlight-custom.toml), [manual coord
 [caffeine.toml](caffeine.toml) enables automatic audio/fullscreen reasons with default effects; [caffeine-effects.toml](caffeine-effects.toml) demonstrates independent idle/sleep and manual/fullscreen night-light switches. All settings live in `[caffeine]` and reload live. Explicit bar lists must add `caffeine` for its indicator.
 
 [caffeine-background.toml](caffeine-background.toml) explicitly includes background/hidden fullscreen windows; the default requires keyboard focus.
+
+[clipboard.toml](clipboard.toml) demonstrates the optional picker contribution and larger memory limits; [clipboard-disabled.toml](clipboard-disabled.toml) opts out. History is memory-only, follows the coordinator lifetime and accepts UTF-8 text/PNG. The default bar stays unchanged; `cabby clipboard` also opens the picker.

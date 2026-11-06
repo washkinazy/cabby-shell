@@ -4,7 +4,7 @@ use super::{
     panel::{self, Origin},
 };
 use crate::{
-    plugins::{audio, bar, bluetooth, tray, wallpaper},
+    plugins::{audio, bar, bluetooth, clipboard, tray, wallpaper},
     ui,
 };
 use cabby_config::{BarPosition, Config};
@@ -58,6 +58,7 @@ impl Surfaces {
 }
 
 enum PanelPlugin {
+    Clipboard(clipboard::Picker),
     Tray,
     Audio,
     Bluetooth,
@@ -108,6 +109,9 @@ enum Message {
     Shell(ShellEvent),
     Resized,
     Config(super::live_config::Update),
+    Control(super::control::Command),
+    Clipboard(window::Id, clipboard::Message),
+    ClipboardRevision,
 }
 
 pub(super) fn run(
@@ -247,6 +251,36 @@ impl Desktop {
     }
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
+            if self.bar.is_some() {
+                self.config_path
+                    .as_deref()
+                    .and_then(super::control::directory)
+                    .map(super::control::subscription)
+                    .map(|s| s.map(Message::Control))
+                    .unwrap_or_else(Subscription::none)
+            } else {
+                Subscription::none()
+            },
+            if self
+                .panel
+                .as_ref()
+                .is_some_and(|p| matches!(p.plugin, PanelPlugin::Clipboard(_)))
+            {
+                self.config_path
+                    .as_deref()
+                    .and_then(super::control::directory)
+                    .map(|root| {
+                        Subscription::run_with(root.join("clipboard.json"), |path| {
+                            crate::runtime_status::updates::<clipboard::Revision>(Some(
+                                path.clone(),
+                            ))
+                        })
+                        .map(|_| Message::ClipboardRevision)
+                    })
+                    .unwrap_or_else(Subscription::none)
+            } else {
+                Subscription::none()
+            },
             self.config_path
                 .as_ref()
                 .map(|p| {
@@ -280,6 +314,20 @@ impl Desktop {
                 if matches!(event, iced::Event::Window(window::Event::Unfocused)) {
                     return Some(Message::Focus(id, false));
                 }
+                if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                    key: iced::keyboard::Key::Named(key),
+                    ..
+                }) = &event
+                {
+                    let command = match key {
+                        iced::keyboard::key::Named::ArrowUp => Some(clipboard::Message::Move(-1)),
+                        iced::keyboard::key::Named::ArrowDown => Some(clipboard::Message::Move(1)),
+                        _ => None,
+                    };
+                    if let Some(command) = command {
+                        return Some(Message::Clipboard(id, command));
+                    }
+                }
                 matches!(
                     event,
                     iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
@@ -299,6 +347,40 @@ impl Desktop {
     }
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Control(super::control::Command::Clipboard) => {
+                if let Some(name) = self.bar.as_ref().and_then(|b| b.focused_output())
+                    && let Some((output, _)) = self
+                        .surfaces
+                        .outputs
+                        .iter()
+                        .find(|(_, n)| n.as_str() == name)
+                    && let Some(size) = self.output_sizes.get(output)
+                {
+                    self.origin = Some(Origin {
+                        output: *output,
+                        x: size.0 as f32 / 2.0,
+                    });
+                }
+                return self.open_clipboard();
+            }
+            Message::ClipboardRevision => {
+                if let Some(p) = &self.panel {
+                    return self.update(Message::Clipboard(p.id, clipboard::Message::Refresh));
+                }
+            }
+            Message::Clipboard(id, message) => {
+                if let Some(p) = &mut self.panel
+                    && p.id == id
+                    && let PanelPlugin::Clipboard(picker) = &mut p.plugin
+                {
+                    return match picker.update(message) {
+                        clipboard::Action::Close => self.close_panel(),
+                        clipboard::Action::Update(task) => {
+                            task.map(move |m| Message::Clipboard(id, m))
+                        }
+                    };
+                }
+            }
             Message::Pointer(id, point) => {
                 self.pointers.insert(id, point.x);
             }
@@ -321,6 +403,9 @@ impl Desktop {
                 }
                 let acquired = focused && !panel.focused;
                 panel.focused = focused;
+                if acquired && matches!(panel.plugin, PanelPlugin::Clipboard(_)) {
+                    return iced::widget::operation::focus("clipboard-query");
+                }
                 if acquired && self.panel_probe {
                     return Task::perform(
                         async move {
@@ -379,6 +464,7 @@ impl Desktop {
             {
                 return self.update(Message::Bar(bar::Message::Tray(message)));
             }
+            Message::Bar(bar::Message::Clipboard) => return self.open_clipboard(),
             Message::Bar(bar::Message::Audio) => return self.toggle_panel(false),
             Message::Bar(bar::Message::Bluetooth) => return self.toggle_panel(true),
             Message::AudioState(message) => {
@@ -665,6 +751,35 @@ impl Desktop {
             },
         }))
     }
+    fn open_clipboard(&mut self) -> Task<Message> {
+        let previous = self.close_panel();
+        let Some(origin) = self.selected_origin() else {
+            return previous;
+        };
+        let Some(root) = self
+            .config_path
+            .as_deref()
+            .and_then(super::control::directory)
+        else {
+            return previous;
+        };
+        let (picker, task) = clipboard::Picker::new(root);
+        let id = window::Id::unique();
+        self.panel = Some(DevicePanel {
+            id,
+            output: Some(origin.output),
+            origin,
+            shield: window::Id::unique(),
+            focused: false,
+            plugin: PanelPlugin::Clipboard(picker),
+        });
+        Task::batch([
+            previous,
+            self.create_panel("cabby-clipboard"),
+            task.map(move |m| Message::Clipboard(id, m)),
+            iced::widget::operation::focus("clipboard-query"),
+        ])
+    }
     fn open_tray_menu(&mut self) -> Task<Message> {
         let previous = self.close_panel();
         let id = window::Id::unique();
@@ -740,6 +855,9 @@ impl Desktop {
             && panel.id == id
         {
             return match &panel.plugin {
+                PanelPlugin::Clipboard(picker) => picker
+                    .view(&self.config)
+                    .map(move |m| Message::Clipboard(id, m)),
                 PanelPlugin::Tray => self
                     .bar
                     .as_ref()

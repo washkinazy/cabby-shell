@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+cabby-clipboard = { path = "../clipboard" }
 cabby-audio = { path = "../audio" }
 wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
 futures-util = "=0.3.34"

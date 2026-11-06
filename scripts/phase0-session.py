@@ -34,7 +34,7 @@ def selected_adapter(log):
     return {"name": name.group(1), "backend": backend.group(1), "device_type": kind.group(1)}
 
 
-def inside(directory, interactive, renderer):
+def inside(directory, interactive, renderer, only=None):
     """Invoked by the nested compositor, with its private display and IPC socket."""
     directory = Path(directory)
     runtime = directory / "runtime"
@@ -58,6 +58,25 @@ def inside(directory, interactive, renderer):
                 raise RuntimeError(f"Required probe protocol missing: {protocol}")
         outputs = json.loads(run("niri", "msg", "--json", "outputs"))
         (directory / "outputs.json").write_text(json.dumps(outputs, indent=2))
+        if only == "clipboard":
+            config = directory / "clipboard-only.toml"
+            config.write_text('renderer="'+('vulkan' if renderer=='gpu' else 'software')+'"\n')
+            with (directory / "idle-coordinator.log").open("w") as coordinator_log:
+                coordinator = subprocess.Popen([ROOT/'target/debug/cabby','serve','--config',config], stdout=coordinator_log, stderr=coordinator_log, env=dict(os.environ,DBUS_SYSTEM_BUS_ADDRESS='unix:path='+str(directory/'no-system-bus')))
+                children.append(coordinator)
+                end=time.monotonic()+10
+                while not (runtime/'cabby-shell/control.sock').exists():
+                    if time.monotonic()>end:raise TimeoutError('clipboard coordinator unavailable')
+                    time.sleep(.05)
+                from clipboard_acceptance import check
+                check(directory,config,runtime/'cabby-shell',renderer,children)
+                adapters={}
+                if renderer=='gpu':
+                    adapter=selected_adapter((directory/'clipboard.log').read_text())
+                    assert adapter['backend']=='Vulkan' and adapter['device_type']=='DiscreteGpu' and 'RTX 4070' in adapter['name']
+                    adapters['clipboard']=adapter
+                (directory/'result.json').write_text(json.dumps({'status':'passed','adapters':adapters,'checks':['clipboard-native-clients-and-picker'],'not_proven':['physical-multiple-seats']},indent=2))
+            return
         config = directory / "cabby.toml"
         config.write_text(f'renderer = "{"vulkan" if renderer == "gpu" else "software"}"\nbar_height = 40\nbar_position = "{"top" if renderer == "gpu" else "bottom"}"\n')
         with (directory / "bar.log").open("w") as log:
@@ -161,6 +180,8 @@ def inside(directory, interactive, renderer):
                         run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(capture), f"caffeine-{mode}-{'top' if renderer == 'gpu' else 'bottom'}")
                     run(str(ROOT / "target/debug/cabby"), "caffeine-off")
                     bar.terminate(); bar.wait(timeout=5)
+                from clipboard_acceptance import check as check_clipboard
+                check_clipboard(directory, idle_config, idle_root, renderer, children)
                 coordinator.terminate(); coordinator.wait(timeout=5)
             bar = subprocess.Popen([ROOT / "target/debug/cabby", "ui", "--config", config], stdout=log, stderr=log)
             children.append(bar)
@@ -529,7 +550,7 @@ def inside(directory, interactive, renderer):
                     lock.wait(timeout=180)
             adapters = {}
             if renderer == "gpu":
-                for client in ("bar", "launcher", "wallpaper", "notifications", "composition", "audio", "bluetooth", "tray", "idle", "caffeine", "lock"):
+                for client in ("bar", "launcher", "wallpaper", "notifications", "composition", "audio", "bluetooth", "tray", "idle", "caffeine", "clipboard", "lock"):
                     adapter = selected_adapter((directory / f"{client}.log").read_text())
                     if adapter["backend"] != "Vulkan" or adapter["device_type"] not in ("DiscreteGpu", "IntegratedGpu"):
                         raise RuntimeError(f"{client} did not use hardware Vulkan: {adapter}")
@@ -537,7 +558,7 @@ def inside(directory, interactive, renderer):
             (directory / "result.json").write_text(json.dumps({
                 "status": "passed", "renderer_request": os.environ.get("ICED_BACKEND", "automatic"),
                 "adapters": adapters,
-                "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action", "bar-region-clock-pixel-alignment", "caffeine-manual-off-on-render-and-status", "launcher-mapped-with-keyboard-focus", "notifications-render-replace-queue-expire-conflict-passive", "wallpaper-solid-and-four-image-modes-pixels", "wallpaper-scaled-pixels",
+                "checks": ["protocols", "bar-mapped-and-buffer-attached", "PNG-capture-via-grim", "niri-workspace-event-and-action", "bar-region-clock-pixel-alignment", "caffeine-manual-off-on-render-and-status", "clipboard-native-ownership-history-picker", "launcher-mapped-with-keyboard-focus", "notifications-render-replace-queue-expire-conflict-passive", "wallpaper-solid-and-four-image-modes-pixels", "wallpaper-scaled-pixels",
                 "scale-change-process-survival", "composed-bar-wallpaper-pixels-scales", "audio-panel-fixture-focus-render-close-cleanup", "bluetooth-panel-pairing-discovery-close-cleanup", "tray-item-menu-focus-render-close", "lock-confirmed", "lock-survives-bar-crash"],
                 "not_proven": ["popup-keyboard-focus", "focus-restoration", "multiple-outputs",
                 "PAM", "DRM-lock-security", "gamma", "suspend"],
@@ -562,10 +583,11 @@ def main():
     parser.add_argument("--interactive", action="store_true", help="Wait for bar inspection and lock release")
     parser.add_argument("--renderer", choices=("gpu", "software"), default="gpu",
                         help="gpu requires hardware Vulkan; software explicitly selects tiny-skia")
+    parser.add_argument("--only", choices=("clipboard",), help="Run only the isolated clipboard workflow")
     parser.add_argument("--inside", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.inside:
-        inside(args.inside, args.interactive, args.renderer)
+        inside(args.inside, args.interactive, args.renderer, args.only)
         return
     for binary in ("cabby", "cabby-platform-spike", "cabby-launcher", "lock-probe", "bar-ipc-probe", "cabby-wallpaper", "wallpaper-pixel-probe", "cabby-notifications", "notification-probe", "cabby-desktop", "audio-panel-probe", "bluetooth-panel-probe", "examples/bluez-fixture", "tray-panel-probe", "examples/tray-fixture"):
         if not (ROOT / "target/debug" / binary).is_file():
@@ -599,6 +621,8 @@ def main():
     command = ["systemd-run", "--user", "--scope", "--quiet", "--collect", f"--unit={unit}",
                "--property=RuntimeMaxSec=360", "--", *isolated_env, "dbus-run-session", "--", "niri", "-c", str(config), "--", sys.executable,
                str(Path(__file__).resolve()), "--inside", str(directory), "--renderer", args.renderer]
+    if args.only:
+        command.extend(["--only", args.only])
     if args.interactive:
         command.append("--interactive")
     print(f"Artifacts: {directory}", flush=True)
