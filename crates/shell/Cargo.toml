@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+cabby-clipboard = { path = "../clipboard" }
 image_codec = { package = "image", version = "=0.25.10", default-features = false, features = ["png", "jpeg"] }
 cabby-lock = { path = "../lock" }
 futures-util = "=0.3.34"

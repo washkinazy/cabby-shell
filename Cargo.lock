@@ -250,6 +250,7 @@ name = "cabby"
 version = "0.1.0"
 dependencies = [
  "cabby-audio",
+ "cabby-clipboard",
  "cabby-config",
  "cabby-launcher",
  "futures-util",
@@ -281,6 +282,19 @@ dependencies = [
  "tempfile",
  "tokio",
  "zbus",
+]
+
+[[package]]
+name = "cabby-clipboard"
+version = "0.1.0"
+dependencies = [
+ "cabby-config",
+ "image",
+ "libc",
+ "serde",
+ "serde_json",
+ "wayland-client",
+ "wayland-protocols",
 ]
 
 [[package]]
@@ -344,6 +358,7 @@ version = "0.1.0"
 dependencies = [
  "cabby-audio",
  "cabby-bluetooth",
+ "cabby-clipboard",
  "cabby-config",
  "cabby-launcher",
  "cabby-lock",

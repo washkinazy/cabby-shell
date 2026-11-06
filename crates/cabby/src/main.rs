@@ -21,6 +21,7 @@ const HELP: &str = "Usage:
   cabby restart-ui [--ui-unit UNIT] [--session-unit UNIT]
   cabby launcher [--launcher-unit UNIT] [--target UNIT] [--session-unit UNIT]
   cabby launcher-ui [--config PATH]
+  cabby clipboard|clipboard-status|clipboard-clear [--runtime-dir PATH]
   cabby caffeine-status|caffeine-on|caffeine-off|caffeine-toggle [--runtime-dir PATH]
   cabby nightlight-status|nightlight-enable|nightlight-disable|nightlight-toggle|nightlight-force-toggle [--runtime-dir PATH]
   cabby lock|suspend|display-off [--lock-unit UNIT] [--session-unit UNIT]
@@ -151,6 +152,9 @@ fn run() -> Result<()> {
         | "idle-inhibit-on"
         | "idle-inhibit-off"
         | "idle-inhibit-toggle"
+        | "clipboard"
+        | "clipboard-status"
+        | "clipboard-clear"
         | "caffeine-status"
         | "caffeine-on"
         | "caffeine-off"
@@ -236,6 +240,9 @@ fn run() -> Result<()> {
         | "idle-inhibit-on"
         | "idle-inhibit-off"
         | "idle-inhibit-toggle"
+        | "clipboard"
+        | "clipboard-status"
+        | "clipboard-clear"
         | "caffeine-status"
         | "caffeine-on"
         | "caffeine-off"

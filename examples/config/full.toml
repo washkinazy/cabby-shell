@@ -86,3 +86,10 @@ inhibit_idle = true
 inhibit_sleep = true
 manual_pause_nightlight = false
 fullscreen_pause_nightlight = true
+
+# Memory-only clipboard history; primary selection is untouched.
+[clipboard]
+enabled = true
+max_items = 50
+max_item_bytes = 4194304
+memory_bytes = 33554432

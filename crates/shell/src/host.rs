@@ -3,6 +3,7 @@
 //! Each existing executable selects one built-in plugin. This registry defines
 //! code ownership, not process isolation or a dynamic loading interface.
 use crate::ui;
+mod control;
 mod launcher;
 mod live_config;
 mod lock;

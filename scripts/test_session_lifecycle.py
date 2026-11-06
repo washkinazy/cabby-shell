@@ -55,6 +55,7 @@ def main():
         content = content.replace('/usr/bin/cabby', str(BIN))
         content = content.replace(f'serve --ui-unit {names["ui"]}',
                                   f'serve --ui-unit {names["ui"]} --config {config} --runtime-dir {runtime}')
+        content = content.replace('[Service]', '[Service]\nEnvironment=WAYLAND_DISPLAY=/nonexistent/cabby-lifecycle-display')
         content = content.replace('RuntimeDirectory=cabby-shell', f'RuntimeDirectory={prefix}')
         if source.name in ('cabby-ui.service', 'cabby-launcher.service', 'cabby-notifications.service'):
             # Synthetic UI launches a descendant in another process group. The

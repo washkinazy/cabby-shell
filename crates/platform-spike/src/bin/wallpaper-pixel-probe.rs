@@ -102,9 +102,16 @@ fn main() {
                 );
             }
         }
-        mode if mode.starts_with("audio-") || mode.starts_with("tray-") => {
+        mode if mode.starts_with("audio-")
+            || mode.starts_with("tray-")
+            || mode.starts_with("clipboard-") =>
+        {
             // The nested audio probe runs after scale 1.5 is established.
-            let scale = 1.5f32;
+            let scale = if mode.starts_with("clipboard-") {
+                1.0f32
+            } else {
+                1.5f32
+            };
             let top = if mode.ends_with("-top") {
                 48.0
             } else {
@@ -142,8 +149,13 @@ fn main() {
                 assert!(icon_pixels > 4, "tray icon missing: {icon_pixels} pixels");
             }
             assert!(
-                text_pixels > 300,
-                "audio panel content missing: {text_pixels} text pixels"
+                text_pixels
+                    > if mode.starts_with("clipboard-") {
+                        200
+                    } else {
+                        300
+                    },
+                "panel content missing: {text_pixels} text pixels"
             );
         }
         "launcher-icon" => {

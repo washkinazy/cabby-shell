@@ -41,6 +41,7 @@ pub enum BarWidget {
     Idle,
     Nightlight,
     Caffeine,
+    Clipboard,
 }
 pub const BAR_WIDGETS: &[BarWidget] = &[
     BarWidget::Workspaces,
@@ -55,6 +56,7 @@ pub const BAR_WIDGETS: &[BarWidget] = &[
     BarWidget::Idle,
     BarWidget::Nightlight,
     BarWidget::Caffeine,
+    BarWidget::Clipboard,
 ];
 
 // Field names for coverage are generated from the same declaration as the
@@ -96,6 +98,13 @@ section!(Location, LOCATION_KEYS, {
     longitude: Option<f64> = None,
 });
 
+section!(Clipboard, CLIPBOARD_KEYS, {
+    enabled: bool = true,
+    max_items: u16 = 50,
+    max_item_bytes: u32 = 4_194_304,
+    memory_bytes: u32 = 33_554_432,
+});
+
 section!(Caffeine, CAFFEINE_KEYS, {
     audio: bool = false,
     fullscreen: bool = false,
@@ -107,6 +116,7 @@ section!(Caffeine, CAFFEINE_KEYS, {
 });
 
 configuration! {
+    clipboard: Clipboard = Clipboard::default(),
     caffeine: Caffeine = Caffeine::default(),
     nightlight: Nightlight = Nightlight::default(),
     location: Location = Location::default(),
@@ -226,6 +236,13 @@ impl Config {
         }
         if config.location.latitude.is_some() != config.location.longitude.is_some() {
             return Err("location requires both latitude and longitude".into());
+        }
+        if !(1..=200).contains(&config.clipboard.max_items)
+            || !(65_536..=16_777_216).contains(&config.clipboard.max_item_bytes)
+            || config.clipboard.memory_bytes < config.clipboard.max_item_bytes
+            || config.clipboard.memory_bytes > 134_217_728
+        {
+            return Err("clipboard requires max_items=1..200, max_item_bytes=65536..16777216, memory_bytes>=max_item_bytes and <=134217728".into());
         }
         if config.idle_lock_seconds > 86400 {
             return Err("idle_lock_seconds must be 0..86400 seconds".into());
@@ -510,6 +527,26 @@ mod tests {
     }
 
     #[test]
+    fn clipboard_limits_are_validated_even_when_disabled() {
+        for settings in [
+            "max_items=0",
+            "max_items=201",
+            "max_item_bytes=65535",
+            "max_item_bytes=16777217",
+            "memory_bytes=134217729",
+            "max_item_bytes=1048576\nmemory_bytes=65536",
+        ] {
+            assert!(Config::parse(&format!("[clipboard]\nenabled=false\n{settings}")).is_err());
+        }
+        assert!(
+            Config::parse(
+                "[clipboard]\nmax_items=200\nmax_item_bytes=16777216\nmemory_bytes=16777216"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
     fn every_example_and_setting_has_reference_coverage() {
         assert!(Config::parse("idle_lock_seconds=86400").is_ok());
         assert!(Config::parse("idle_lock_seconds=10\nidle_display_off_seconds=11").is_ok());
@@ -538,6 +575,7 @@ mod tests {
             ("nightlight", NIGHTLIGHT_KEYS),
             ("location", LOCATION_KEYS),
             ("caffeine", CAFFEINE_KEYS),
+            ("clipboard", CLIPBOARD_KEYS),
         ] {
             let values = table[section].as_table().unwrap();
             assert!(values.len() <= keys.len());

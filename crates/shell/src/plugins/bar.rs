@@ -29,6 +29,7 @@ pub(crate) struct Bar {
 }
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
+    Clipboard,
     Niri(niri::Event),
     Tray(super::tray::Message),
     Disconnected,
@@ -209,6 +210,13 @@ impl Bar {
         }
         Task::none()
     }
+    pub(crate) fn focused_output(&self) -> Option<&str> {
+        self.model
+            .workspaces
+            .values()
+            .find(|w| w.is_focused)
+            .and_then(|w| w.output.as_deref())
+    }
     fn workspaces(&self, output: &str) -> Element<'_, Message> {
         if !self.model.connected {
             return text("niri unavailable")
@@ -255,6 +263,9 @@ impl Bar {
                 .line_height(1.0)
         };
         match widget {
+            BarWidget::Clipboard => button(ui::body(&self.config, "Clipboard"))
+                .on_press(Message::Clipboard)
+                .into(),
             BarWidget::Workspaces => self.workspaces(output),
             BarWidget::Caffeine => {
                 let icon = iced::widget::svg(self.caffeine.icon())
