@@ -4,7 +4,7 @@ use super::{
     panel::{self, Origin},
 };
 use crate::{
-    plugins::{audio, bar, bluetooth, clipboard, tray, wallpaper},
+    plugins::{audio, bar, bluetooth, clipboard, screenshot, tray, wallpaper},
     ui,
 };
 use cabby_config::{BarPosition, Config};
@@ -59,6 +59,7 @@ impl Surfaces {
 
 enum PanelPlugin {
     Clipboard(clipboard::Picker),
+    Screenshot(Box<screenshot::Picker>),
     Tray,
     Audio,
     Bluetooth,
@@ -112,6 +113,7 @@ enum Message {
     Control(super::control::Command),
     Clipboard(window::Id, clipboard::Message),
     ClipboardRevision,
+    Screenshot(window::Id, screenshot::Message),
 }
 
 pub(super) fn run(
@@ -307,12 +309,31 @@ impl Desktop {
             } else {
                 Subscription::none()
             },
-            iced::event::listen_raw(|event, _, id| {
+            iced::event::listen_raw(|event, status, id| {
                 if matches!(event, iced::Event::Window(window::Event::Focused)) {
                     return Some(Message::Focus(id, true));
                 }
                 if matches!(event, iced::Event::Window(window::Event::Unfocused)) {
                     return Some(Message::Focus(id, false));
+                }
+                let pointer = match &event {
+                    iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+                        Some(screenshot::Message::Move(*position))
+                    }
+                    iced::Event::Mouse(iced::mouse::Event::ButtonPressed(
+                        iced::mouse::Button::Left,
+                    )) if status == iced::event::Status::Ignored => {
+                        Some(screenshot::Message::Press)
+                    }
+                    iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
+                        iced::mouse::Button::Left,
+                    )) if status == iced::event::Status::Ignored => {
+                        Some(screenshot::Message::Release)
+                    }
+                    _ => None,
+                };
+                if let Some(pointer) = pointer {
+                    return Some(Message::Screenshot(id, pointer));
                 }
                 if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                     key: iced::keyboard::Key::Named(key),
@@ -347,6 +368,45 @@ impl Desktop {
     }
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Control(super::control::Command::ScreenshotCancel) => {
+                if self
+                    .panel
+                    .as_ref()
+                    .is_some_and(|p| matches!(p.plugin, PanelPlugin::Screenshot(_)))
+                {
+                    return self.close_panel();
+                }
+            }
+            Message::Control(super::control::Command::Screenshot(monitor)) => {
+                return self.open_screenshot(monitor, None);
+            }
+            Message::Screenshot(id, message) => {
+                if let Some(p) = &mut self.panel
+                    && p.id == id
+                    && let PanelPlugin::Screenshot(picker) = &mut p.plugin
+                {
+                    let fullscreen = picker.fullscreen();
+                    let action = picker.update(message, &self.config);
+                    let map = !picker.mapped() && !picker.capturing();
+                    let changed = fullscreen != picker.fullscreen();
+                    if map {
+                        picker.mark_mapped();
+                    }
+                    return match action {
+                        screenshot::Action::Close => self.close_panel(),
+                        screenshot::Action::Update(task) => Task::batch([
+                            if map {
+                                self.create_panel("cabby-screenshot")
+                            } else if changed {
+                                self.layout_panel()
+                            } else {
+                                Task::none()
+                            },
+                            task.map(move |m| Message::Screenshot(id, m)),
+                        ]),
+                    };
+                }
+            }
             Message::Control(super::control::Command::Clipboard) => {
                 if let Some(name) = self.bar.as_ref().and_then(|b| b.focused_output())
                     && let Some((output, _)) = self
@@ -463,6 +523,9 @@ impl Desktop {
                     .is_some_and(|p| p.id == id && matches!(p.plugin, PanelPlugin::Tray)) =>
             {
                 return self.update(Message::Bar(bar::Message::Tray(message)));
+            }
+            Message::Bar(bar::Message::Screenshot) => {
+                return self.open_screenshot(false, self.origin.map(|o| o.output));
             }
             Message::Bar(bar::Message::Clipboard) => return self.open_clipboard(),
             Message::Bar(bar::Message::Audio) => return self.toggle_panel(false),
@@ -590,6 +653,10 @@ impl Desktop {
                 }
             }
             Message::Shell(ShellEvent::OutputAdded(info) | ShellEvent::OutputUpdated(info)) => {
+                let capture_changed = self.output_sizes.contains_key(&info.id)
+                    && self.panel.as_ref().is_some_and(|p| {
+                        p.output == Some(info.id) && matches!(p.plugin, PanelPlugin::Screenshot(_))
+                    });
                 let size = info.logical_size.unwrap_or((800, 600));
                 self.output_sizes
                     .insert(info.id, (size.0.max(1) as u32, size.1.max(1) as u32));
@@ -603,7 +670,10 @@ impl Desktop {
                 let added = self
                     .surfaces
                     .add(info.id, info.name.unwrap_or_default(), &kinds);
-                let open = if self.open_audio_on_output || self.open_bluetooth_on_output {
+
+                let open = if capture_changed {
+                    self.close_panel()
+                } else if self.open_audio_on_output || self.open_bluetooth_on_output {
                     let bluetooth = self.open_bluetooth_on_output;
                     self.open_audio_on_output = false;
                     self.open_bluetooth_on_output = false;
@@ -672,6 +742,9 @@ impl Desktop {
         self.panel
             .take()
             .map(|panel| {
+                if matches!(&panel.plugin,PanelPlugin::Screenshot(picker) if !picker.mapped()) {
+                    return Task::none();
+                }
                 Task::batch([
                     Task::done(Message::RemoveWindow(panel.id)),
                     Task::done(Message::RemoveWindow(panel.shield)),
@@ -695,10 +768,13 @@ impl Desktop {
         let Some(p) = &self.panel else {
             return Task::none();
         };
+        if matches!(&p.plugin,PanelPlugin::Screenshot(picker) if !picker.mapped()) {
+            return Task::none();
+        }
         let Some(size) = self.output_sizes.get(&p.origin.output) else {
             return Task::none();
         };
-        let g = panel::geometry(&self.config, *size, p.origin.x);
+        let g = self.panel_geometry(p, *size);
         Task::batch([
             Task::done(Message::LayoutChange {
                 id: p.id,
@@ -718,11 +794,7 @@ impl Desktop {
     }
     fn create_panel(&self, namespace: &str) -> Task<Message> {
         let p = self.panel.as_ref().unwrap();
-        let g = panel::geometry(
-            &self.config,
-            self.output_sizes[&p.origin.output],
-            p.origin.x,
-        );
+        let g = self.panel_geometry(p, self.output_sizes[&p.origin.output]);
         Task::done(Message::NewLayerShell {
             id: p.shield,
             settings: NewLayerShellSettings {
@@ -750,6 +822,88 @@ impl Desktop {
                 ..Default::default()
             },
         }))
+    }
+    fn panel_geometry(&self, p: &DevicePanel, size: (u32, u32)) -> panel::Geometry {
+        let mut g = panel::geometry(&self.config, size, p.origin.x);
+        if let PanelPlugin::Screenshot(picker) = &p.plugin {
+            g.anchor = Anchor::Top | Anchor::Left;
+            g.shield_anchor = Anchor::all();
+            g.shield_size = LayerSize::FILL;
+            if picker.fullscreen() {
+                // The selector covers the output itself. Keep its older shield
+                // tiny until preview, preserving stacking without an opaque flash.
+                g.shield_anchor = Anchor::Top | Anchor::Left;
+                g.shield_size = LayerSize::px(1, 1);
+                g.width = size.0;
+                g.height = size.1;
+                g.margin = (0, 0, 0, 0);
+            } else {
+                g.margin = (
+                    (size.1.saturating_sub(g.height) / 2) as i32,
+                    0,
+                    0,
+                    (size.0.saturating_sub(g.width) / 2) as i32,
+                );
+            }
+        }
+        g
+    }
+    fn open_screenshot(&mut self, monitor: bool, requested: Option<u32>) -> Task<Message> {
+        if let Some(p) = &self.panel
+            && matches!(p.plugin, PanelPlugin::Screenshot(_))
+        {
+            return self.update(Message::Screenshot(
+                p.id,
+                if monitor {
+                    screenshot::Message::Monitor
+                } else {
+                    screenshot::Message::Reselect
+                },
+            ));
+        }
+        let previous = self.close_panel();
+        let output = requested
+            .filter(|o| self.output_sizes.contains_key(o))
+            .or_else(|| {
+                self.bar
+                    .as_ref()
+                    .and_then(|b| b.focused_output())
+                    .and_then(|name| {
+                        self.surfaces
+                            .outputs
+                            .iter()
+                            .find(|(_, n)| n.as_str() == name)
+                            .map(|(o, _)| *o)
+                    })
+                    .or_else(|| self.selected_origin().map(|o| o.output))
+            });
+        let Some(output) = output else {
+            return previous;
+        };
+        let Some(root) = self
+            .config_path
+            .as_deref()
+            .and_then(super::control::directory)
+        else {
+            return previous;
+        };
+        let logical = self.output_sizes[&output];
+        let name = self.surfaces.outputs[&output].clone();
+        let id = window::Id::unique();
+        let picker = screenshot::Picker::new(root, name, logical, monitor);
+        self.panel = Some(DevicePanel {
+            id,
+            output: Some(output),
+            origin: Origin {
+                output,
+                x: logical.0 as f32 / 2.,
+            },
+            shield: window::Id::unique(),
+            focused: false,
+            plugin: PanelPlugin::Screenshot(Box::new(picker)),
+        });
+        let begin = self.update(Message::Screenshot(id, screenshot::Message::Begin));
+        previous.chain(begin)
     }
     fn open_clipboard(&mut self) -> Task<Message> {
         let previous = self.close_panel();
@@ -855,6 +1009,9 @@ impl Desktop {
             && panel.id == id
         {
             return match &panel.plugin {
+                PanelPlugin::Screenshot(picker) => picker
+                    .view(&self.config)
+                    .map(move |m| Message::Screenshot(id, m)),
                 PanelPlugin::Clipboard(picker) => picker
                     .view(&self.config)
                     .map(move |m| Message::Clipboard(id, m)),

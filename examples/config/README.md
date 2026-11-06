@@ -27,3 +27,5 @@ Night light examples cover [custom times](nightlight-custom.toml), [manual coord
 [caffeine-background.toml](caffeine-background.toml) explicitly includes background/hidden fullscreen windows; the default requires keyboard focus.
 
 [clipboard.toml](clipboard.toml) demonstrates the optional picker contribution and larger memory limits; [clipboard-disabled.toml](clipboard-disabled.toml) opts out. History is memory-only, follows the coordinator lifetime and accepts UTF-8 text/PNG. The default bar stays unchanged; `cabby clipboard` also opens the picker.
+
+[screenshot.toml](screenshot.toml) demonstrates an optional bar button, relative capture destination and cursor inclusion. Capture/preview/copy are memory-only; the destination is created only on explicit Save. [Screenshot workflow](../../docs/screenshots.md) documents commands, cancellation and filesystem support.

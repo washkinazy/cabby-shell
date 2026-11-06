@@ -1,5 +1,7 @@
 //! In-memory clipboard policy. Payloads never enter logs, files or Debug output.
+mod fd;
 mod transport;
+pub use fd::{copy_png, receive_request};
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, sync::Arc};
 pub use transport::Service;
@@ -45,6 +47,7 @@ pub enum Request {
     Select { id: u64 },
     Delete { id: u64 },
     Clear,
+    ImportPng,
 }
 impl std::fmt::Debug for Request {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

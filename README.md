@@ -84,7 +84,7 @@ Clipboard history is bounded and memory-only, supports UTF-8 text and PNG, and p
 
 Screenshots need a small but complete graphical workflow. Flameshot is more elaborate than desired, while sparse capture tools do not provide enough workflow. The goal is a useful middle ground with a focused interface.
 
-The agreed screenshot scope is region or monitor capture, preview, copy, save and cancel. Annotation, OCR, uploads and recording are outside the baseline.
+[Screenshots](docs/screenshots.md) now support region or monitor capture, frozen-image selection, preview, copy, atomic PNG save and cancel in the desktop host. Use `cabby screenshot` or `cabby screenshot-monitor`; dotfiles bind Mod+Print and Mod+Shift+Print. Annotation, OCR, uploads and recording are outside the baseline.
 
 Run `just deps` once to install Fedora dependencies, including Rust/Cargo and native development headers. After applying the local dotfiles setup, run `just install` to build/install Cabby and its user units, reload systemd, and validate configuration. Cabby owns the service files; dotfiles contain preferences, keybindings and session startup. `just uninstall` removes the tracked local install after stopping Cabby and unlocking normally. Use `just build` to build only.
 
