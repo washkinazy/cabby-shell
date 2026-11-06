@@ -3,7 +3,7 @@
 use std::{
     collections::HashMap,
     fs::File,
-    io::Write,
+    io::{Seek, Write},
     os::{
         fd::{AsFd, AsRawFd, FromRawFd},
         unix::net::UnixStream,
@@ -122,6 +122,8 @@ fn upload(control: &ZwlrGammaControlV1, size: u32, temperature: u16) -> std::io:
     }
     let mut file = unsafe { File::from_raw_fd(fd) };
     file.write_all(&bytes)?;
+    // SCM_RIGHTS preserves the open-file offset; niri reads from that cursor.
+    file.rewind()?;
     control.set_gamma(file.as_fd());
     Ok(())
 }

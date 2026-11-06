@@ -58,7 +58,10 @@ class Fixture:
                     elif kind=='gamma' and op==0:
                         assert fds;fd=fds.pop(0)
                         try:
-                            raw=os.pread(fd,500000,0);assert len(raw)==self.size*6
+                            # Match niri's sequential FD read. pread(..., 0) hid
+                            # uploads accidentally sent with their cursor at EOF.
+                            assert os.lseek(fd,0,os.SEEK_CUR)==0, 'gamma FD must start at byte zero'
+                            raw=os.read(fd,500000);assert len(raw)==self.size*6
                             values=struct.unpack('='+str(self.size*3)+'H',raw)
                             assert values[self.size-1]>values[self.size*2-1]>values[self.size*3-1]
                             self.uploads.append(values)
