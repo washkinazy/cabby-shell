@@ -237,6 +237,7 @@ pub fn serve(
                         serde_json::json!({"ok":true,"screenshot":status})
                     }
                     "clipboard" => desktop_request(&path, "clipboard"),
+                    "session-menu" => desktop_request(&path, "session-menu"),
                     "clipboard-status" => {
                         serde_json::json!({"ok":true,"clipboard":clipboard.status()})
                     }

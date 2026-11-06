@@ -105,4 +105,6 @@ The [clipboard plugin](clipboard.md) separates native ownership and memory polic
 
 The [screenshot plugin](screenshots.md) separates UI stage/selection from the `cabby-screenshot` capture/geometry/save backend. The desktop owns focus, output geometry and helper lifetime; the existing clipboard backend receives a sealed memory FD. Capture before mapping, frozen-image selection and preview reuse one panel surface with stage-specific geometry.
 
+The [session plugin](session-menu.md) owns action selection, confirmation and pending-client state in the shared desktop panel slot. The coordinator's private activation command opens its UI; actual lock/power/session policy stays in the Cabby CLI. The desktop supervises one cancellable client, preserves pending suspend through lock-induced focus loss, and never unlocks on dismissal. It adds no service or third-party plugin API.
+
 The [OSD plugin](osd.md) owns feedback policy and rendering, with typed audio/LED observations and a single cancellable expiry subscription. The desktop host owns one passive surface independently of device panels. It shares the existing audio worker and uses read-only keyboard LED state for global lock-key feedback; no daemon or unit is added.

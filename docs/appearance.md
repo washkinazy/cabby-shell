@@ -2,7 +2,7 @@
 
 Cabby's visual direction is solid Fluent 2: opaque neutral surfaces, modest corner rounding, compact headings, subtle borders and clear selected states. The bar keeps its configured edge, height and left/middle/right layout. There is no glass, backdrop blur, wallpaper tinting or translucent panel fill. This is a repository-owned Iced treatment inspired by [Fluent 2's solid material](https://fluent2.microsoft.design/material), not a Microsoft toolkit dependency.
 
-The shared implementation in `crates/shell/src/ui/fluent.rs` styles the bar, audio/Bluetooth panels, tray menus, launcher, notifications, clipboard picker and screenshot controls. Native application/tray icons keep their original artwork. Existing lock rendering and security behavior are unchanged; the lock continues to use the existing shared color preferences.
+The shared implementation in `crates/shell/src/ui/fluent.rs` styles the bar, audio/Bluetooth panels, tray/session menus, launcher, notifications, clipboard picker and screenshot controls. Native application/tray icons keep their original artwork. Existing lock rendering and security behavior are unchanged; the lock continues to use the existing shared color preferences.
 
 ## Surfaces and controls
 

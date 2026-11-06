@@ -247,6 +247,8 @@ Renderer changes reset start counters before restarting active components. Other
 The [system tray](tray.md) shares desktop appearance. Left click activates the application, falling back to its exported menu on failure or a one-second activation timeout; right click opens the exported menu directly. Menu-only items open their menu on either click. Ordinary reload preserves open menus and item ownership; renderer changes require a desktop restart. No tray-specific settings are added. Existing configurations gain the activation fallback after upgrading/restarting the desktop; no configuration migration is needed.
 Device panels and tray menus open beside the clicked widget on its output, below a top bar or above a bottom bar, clamped to the available space. Changing `bar_position` or `bar_height` moves an open panel in place. Escape, outside click, focus loss, close and removal of its output dismiss the panel.
 
+The [session menu](session-menu.md) shares the palette/typography and desktop panel slot, with centered placement and no additional setting. `cabby session-menu` toggles it; ordinary reload preserves selection/confirmation and updates layout in place. Renderer changes require a desktop restart. Lock-induced focus loss preserves an already pending suspend request; ordinary menu dismissal never unlocks a locker.
+
 ### `idle_lock_seconds`
 
 - **File/purpose:** `config.toml`; automatic lock after compositor-reported inactivity.

@@ -92,6 +92,12 @@ pub fn theme(config: &Config) -> Theme {
 }
 /// Helpers stay in the caller's systemd cgroup. No shell invocation or global environment mutation.
 pub async fn command(args: Vec<std::ffi::OsString>) -> Result<(), String> {
+    command_with_timeout(args, std::time::Duration::from_secs(10)).await
+}
+pub(crate) async fn command_with_timeout(
+    args: Vec<std::ffi::OsString>,
+    timeout: std::time::Duration,
+) -> Result<(), String> {
     let executable = std::env::current_exe()
         .map_err(|_| "Cannot locate cabby executable")?
         .with_file_name("cabby");
@@ -102,7 +108,7 @@ pub async fn command(args: Vec<std::ffi::OsString>) -> Result<(), String> {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true);
-    let status = tokio::time::timeout(std::time::Duration::from_secs(10), command.status())
+    let status = tokio::time::timeout(timeout, command.status())
         .await
         .map_err(|_| "Operation timed out; check session status before retrying")?
         .map_err(|_| "Cannot start cabby helper")?;

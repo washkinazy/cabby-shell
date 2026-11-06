@@ -17,6 +17,10 @@ pub(crate) enum Symbol {
     Apps,
     Lock,
     Warning,
+    Power,
+    Reboot,
+    Logout,
+    Suspend,
 }
 impl Symbol {
     pub fn handle(self) -> svg::Handle {
@@ -53,6 +57,10 @@ impl Symbol {
                 "<rect x='5' y='10' width='14' height='12' rx='2'/><path d='M8 10V6a4 4 0 0 1 8 0v4m-4 5v3'/>"
             }
             Self::Warning => "<path d='m12 3 10 18H2Z M12 9v5m0 3v1'/>",
+            Self::Power => "<path d='M12 2v10M6 5a9 9 0 1 0 12 0'/>",
+            Self::Reboot => "<path d='M20 8a9 9 0 1 0 1 8M20 2v6h-6'/>",
+            Self::Logout => "<path d='M10 3H4v18h6M8 12h14m-5-5 5 5-5 5'/>",
+            Self::Suspend => "<path d='M20 15a9 9 0 0 1-11-11 9 9 0 1 0 11 11ZM16 3h5l-5 5h5'/>",
         };
         svg::Handle::from_memory(format!("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><g fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'>{path}</g></svg>").into_bytes())
     }

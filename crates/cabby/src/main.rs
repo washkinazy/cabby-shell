@@ -27,6 +27,8 @@ const HELP: &str = "Usage:
   cabby nightlight-status|nightlight-enable|nightlight-disable|nightlight-toggle|nightlight-force-toggle [--runtime-dir PATH]
   cabby lock|suspend|display-off [--lock-unit UNIT] [--session-unit UNIT]
   cabby display-on
+  cabby session-menu [--runtime-dir PATH]
+  cabby logout|reboot|poweroff [--session-unit UNIT]
   cabby lock-ui [--config PATH]
   cabby launch-app --desktop-id ID [--config PATH] [--session-unit UNIT]
   cabby launch [--session-unit UNIT] [--working-directory PATH] -- PROGRAM [ARG...]
@@ -158,6 +160,7 @@ fn run() -> Result<()> {
         | "screenshot-cancel"
         | "screenshot-status"
         | "clipboard"
+        | "session-menu"
         | "clipboard-status"
         | "clipboard-clear"
         | "caffeine-status"
@@ -173,6 +176,7 @@ fn run() -> Result<()> {
         "restart-ui" => &["--ui-unit", "--session-unit"],
         "lock" | "suspend" | "display-off" => &["--lock-unit", "--session-unit"],
         "display-on" => &[],
+        "logout" | "reboot" | "poweroff" => &["--session-unit"],
         "launcher" => &["--launcher-unit", "--target", "--session-unit"],
         "launch-app" => &["--desktop-id", "--config", "--session-unit"],
         "launch" => &["--session-unit", "--working-directory"],
@@ -250,6 +254,7 @@ fn run() -> Result<()> {
         | "screenshot-cancel"
         | "screenshot-status"
         | "clipboard"
+        | "session-menu"
         | "clipboard-status"
         | "clipboard-clear"
         | "caffeine-status"
@@ -319,6 +324,14 @@ fn run() -> Result<()> {
             }
         }
         "display-on" => power::monitors(false)?,
+        "logout" | "reboot" | "poweroff" => power::session_action(
+            &session,
+            match command {
+                "logout" => power::SessionAction::Logout,
+                "reboot" => power::SessionAction::Reboot,
+                _ => power::SessionAction::PowerOff,
+            },
+        )?,
         "launcher" => {
             let launcher = text_option("--launcher-unit", "cabby-launcher.service")?;
             unit(&launcher, ".service")?;

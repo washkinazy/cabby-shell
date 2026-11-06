@@ -1,5 +1,7 @@
 # Cabby Shell
 
+**This was an experiment, archived**
+
 Cabby Shell is a personal, simplified alternative to Noctalia and Dank shells. It provides the everyday shell features needed alongside a tiling or scrolling window manager, with a deliberately small scope.
 
 This is a personal project in a public repository; competing with other shells or pursuing broad adoption is not its purpose. [Internal plugins](docs/plugins.md) are the intended design pattern for consistent, maintainable feature development within this repository. Existing features live in built-in plugin modules with shared startup. Bar and wallpaper share one desktop host and service. Launcher and notification plugins use host adapters with distinct lifecycle policies; audio and Bluetooth plugins provide passive status and share an on-demand device-panel slot in the desktop host.
@@ -31,6 +33,7 @@ The baseline is a niri environment without Noctalia or DMS. Cabby Shell should p
 - Bluetooth controls.
 - Audio device picker and audio management.
 - Screen locking.
+- A [session menu](docs/session-menu.md) for lock, suspend, log out, reboot and power off.
 - Clipboard management.
 - A basic screenshot GUI workflow.
 - Passive bottom-center [OSD feedback](docs/osd.md) for volume/microphone and lock-key changes, with volume progress meters.
