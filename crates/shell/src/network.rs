@@ -12,12 +12,22 @@ const TIMEOUT: Duration = Duration::from_secs(3);
 pub struct Status {
     pub label: String,
     pub detail: &'static str,
+    pub transport: Transport,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Transport {
+    #[default]
+    Offline,
+    Wired,
+    Wifi,
+    Other,
 }
 impl Default for Status {
     fn default() -> Self {
         Self {
             label: "Network ?".into(),
             detail: "NetworkManager unavailable",
+            transport: Transport::Offline,
         }
     }
 }
@@ -176,7 +186,19 @@ fn decode(props: HashMap<String, OwnedValue>) -> Result<Status, ()> {
             "NetworkManager reports an unknown state",
         ),
     };
-    Ok(Status { label, detail })
+    Ok(Status {
+        label,
+        detail,
+        transport: if state < 50 {
+            Transport::Offline
+        } else {
+            match kind {
+                "802-11-wireless" => Transport::Wifi,
+                "802-3-ethernet" => Transport::Wired,
+                _ => Transport::Other,
+            }
+        },
+    })
 }
 
 #[cfg(test)]

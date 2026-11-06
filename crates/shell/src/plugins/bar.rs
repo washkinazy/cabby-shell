@@ -2,7 +2,7 @@ use crate::niri::{self, Model};
 use crate::ui;
 use cabby_config::{BarWidget, Config};
 use iced::futures::SinkExt;
-use iced::widget::{container, row, scrollable, text, tooltip};
+use iced::widget::{container, mouse_area, row, scrollable, text};
 use iced::{Element, Length, Subscription, Task};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -13,6 +13,8 @@ pub(crate) struct Bar {
     model: Model,
     clock: String,
     pub(crate) audio_label: String,
+    pub(crate) audio_icon: ui::symbol::Symbol,
+    pub(crate) bluetooth_icon: ui::symbol::Symbol,
     pub(crate) bluetooth_label: String,
     network: crate::network::Status,
     caffeine: super::caffeine::Status,
@@ -30,6 +32,7 @@ pub(crate) struct Bar {
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     Clipboard,
+    Hint(Option<String>),
     Screenshot,
     Niri(niri::Event),
     Tray(super::tray::Message),
@@ -85,6 +88,8 @@ impl Bar {
             model: Model::default(),
             clock: super::clock::now(),
             audio_label: "Audio ?".into(),
+            audio_icon: ui::symbol::Symbol::Muted,
+            bluetooth_icon: ui::symbol::Symbol::BluetoothOff,
             bluetooth_label: "Bluetooth ?".into(),
             network: crate::network::Status::default(),
             caffeine: Default::default(),
@@ -274,7 +279,25 @@ impl Bar {
         }
         workspaces.into()
     }
+    fn icon<'a>(
+        &self,
+        symbol: ui::symbol::Symbol,
+        label: String,
+        action: Option<Message>,
+        active: bool,
+    ) -> Element<'a, Message> {
+        let control = crate::ui::button(ui::symbol::view(symbol.handle()))
+            .padding([2, 4])
+            .style(if active { ui::selected } else { ui::quiet });
+        let control = if let Some(action) = action {
+            control.on_press(action)
+        } else {
+            control
+        };
+        hint(control.into(), label)
+    }
     fn widget(&self, widget: BarWidget, output: &str) -> Element<'_, Message> {
+        use ui::symbol::Symbol;
         let label = |value: String| {
             text(value)
                 .size(f32::from(self.config.font_size))
@@ -282,12 +305,18 @@ impl Bar {
                 .line_height(1.0)
         };
         match widget {
-            BarWidget::Screenshot => crate::ui::button(ui::body(&self.config, "Screenshot"))
-                .on_press(Message::Screenshot)
-                .into(),
-            BarWidget::Clipboard => crate::ui::button(ui::body(&self.config, "Clipboard"))
-                .on_press(Message::Clipboard)
-                .into(),
+            BarWidget::Screenshot => self.icon(
+                Symbol::Screenshot,
+                "Take a screenshot".into(),
+                Some(Message::Screenshot),
+                false,
+            ),
+            BarWidget::Clipboard => self.icon(
+                Symbol::Clipboard,
+                "Clipboard history".into(),
+                Some(Message::Clipboard),
+                false,
+            ),
             BarWidget::Workspaces => self.workspaces(output),
             BarWidget::Caffeine => {
                 let style = self.caffeine.style(self.caffeine_failed);
@@ -297,75 +326,70 @@ impl Bar {
                     .style(move |theme: &iced::Theme, _| iced::widget::svg::Style {
                         color: Some(style(theme, iced::widget::button::Status::Active).text_color),
                     });
-                let control = crate::ui::button(icon).padding([2, 3]).style(style);
+                let control = crate::ui::button(icon).padding([2, 4]).style(style);
                 let control = if self.caffeine_pending {
                     control
                 } else {
                     control.on_press(Message::CaffeineToggle)
                 };
-                tooltip(
-                    control,
-                    text(self.caffeine.detail()),
-                    tooltip::Position::Bottom,
-                )
-                .into()
-            }
-            BarWidget::Nightlight => {
-                let control = crate::ui::button(ui::body(
-                    &self.config,
-                    if self.nightlight_failed {
-                        "Night action failed"
+                hint(
+                    control.into(),
+                    if self.caffeine_failed {
+                        "Caffeine action failed".into()
                     } else {
-                        self.nightlight.label()
+                        self.caffeine.detail()
                     },
-                ));
-                let control = if self.nightlight_pending {
-                    control
-                } else {
-                    control.on_press(Message::NightlightToggle)
-                };
-                tooltip(
-                    control,
-                    text(self.nightlight.detail()),
-                    tooltip::Position::Bottom,
                 )
-                .into()
             }
-            BarWidget::Idle => {
-                let label = if self.idle_failed {
-                    "Idle action failed"
+            BarWidget::Nightlight => self.icon(
+                self.nightlight.icon(),
+                if self.nightlight_failed {
+                    "Night light action failed".into()
                 } else {
-                    self.idle.label()
-                };
-                let control = crate::ui::button(ui::body(&self.config, label));
-                if self.idle_pending {
-                    control.into()
+                    format!("{} · {}", self.nightlight.label(), self.nightlight.detail())
+                },
+                (!self.nightlight_pending).then_some(Message::NightlightToggle),
+                self.nightlight.active(),
+            ),
+            BarWidget::Idle => self.icon(
+                Symbol::Lock,
+                if self.idle_failed {
+                    "Idle action failed".into()
                 } else {
-                    control.on_press(Message::IdleToggle).into()
-                }
-            }
+                    self.idle.label().into()
+                },
+                (!self.idle_pending).then_some(Message::IdleToggle),
+                false,
+            ),
             BarWidget::Clock => label(self.clock.clone()).into(),
-            BarWidget::Audio => crate::ui::button(ui::body(&self.config, &self.audio_label))
-                .on_press(Message::Audio)
-                .into(),
-            BarWidget::Bluetooth => {
-                crate::ui::button(ui::body(&self.config, &self.bluetooth_label))
-                    .on_press(Message::Bluetooth)
-                    .into()
-            }
-            BarWidget::Apps => crate::ui::button(if self.action_failed {
-                "Action failed"
-            } else {
-                "Apps"
-            })
-            .on_press(Message::Launcher)
-            .into(),
-            BarWidget::Network => tooltip(
-                label(self.network.label.clone()),
-                text(self.network.detail),
-                tooltip::Position::Bottom,
-            )
-            .into(),
+            BarWidget::Audio => self.icon(
+                self.audio_icon,
+                self.audio_label.clone(),
+                Some(Message::Audio),
+                false,
+            ),
+            BarWidget::Bluetooth => self.icon(
+                self.bluetooth_icon,
+                self.bluetooth_label.clone(),
+                Some(Message::Bluetooth),
+                false,
+            ),
+            BarWidget::Apps => self.icon(
+                Symbol::Apps,
+                "Open applications".into(),
+                Some(Message::Launcher),
+                false,
+            ),
+            BarWidget::Network => self.icon(
+                match self.network.transport {
+                    crate::network::Transport::Wifi => Symbol::Wifi,
+                    crate::network::Transport::Offline => Symbol::Offline,
+                    _ => Symbol::Wired,
+                },
+                format!("{} · {}", self.network.label, self.network.detail),
+                None,
+                false,
+            ),
             BarWidget::Tray => self.tray.view(&self.config).map(Message::Tray),
             BarWidget::Title => label(if self.config.show_window_title {
                 self.model.title(output)
@@ -373,8 +397,8 @@ impl Bar {
                 String::new()
             })
             .into(),
-            BarWidget::Status => label(
-                if !self.model.connected {
+            BarWidget::Status => {
+                let status = if !self.model.connected {
                     "niri unavailable"
                 } else if self.action_failed {
                     "Action failed"
@@ -382,10 +406,13 @@ impl Bar {
                     "Waiting for output"
                 } else {
                     ""
+                };
+                if status.is_empty() {
+                    iced::widget::Space::new().into()
+                } else {
+                    self.icon(Symbol::Warning, status.into(), None, false)
                 }
-                .into(),
-            )
-            .into(),
+            }
         }
     }
     fn region(
@@ -495,4 +522,11 @@ fn network_events() -> impl iced::futures::Stream<Item = Message> {
             }
         },
     )
+}
+
+fn hint<'a>(content: Element<'a, Message>, label: String) -> Element<'a, Message> {
+    mouse_area(content)
+        .on_enter(Message::Hint(Some(label)))
+        .on_exit(Message::Hint(None))
+        .into()
 }

@@ -9,6 +9,7 @@ The shared implementation in `crates/shell/src/ui/fluent.rs` styles the bar, aud
 - Main surfaces use the configured `background` exactly, with 8-pixel panel corners and a one-pixel neutral border.
 - Controls and device groups use 4-pixel corners and small neutral surface steps. Ordinary actions are neutral; primary actions and active Caffeine use the accent with contrasting text.
 - Workspace selection uses a short accent underline on a neutral fill. Launcher selection and selected audio devices use a narrow accent marker; device selection also retains its text label.
+- Status/action bar widgets use consistent 18-pixel outline SVG icons, including audio, Bluetooth, network, night light and clipboard. Workspace names and date/time retain text. Brief hover hints use their own opaque, input-transparent surface beside the bar, avoiding clipped text inside its reserved height.
 - Audio/Bluetooth devices have bounded, grouped controls. Audio keeps its heading outside scrolling; device actions wrap when constrained. Volume sliders have a narrow track and circular handle.
 - Headings derive from body text size with a five-pixel increase and semibold weight. Supporting text uses a lower-emphasis foreground mix. Search fields use an accent focus border.
 - Vulkan panel styling includes a restrained shadow. Software rendering omits the shadow because the pinned tiny-skia renderer darkens panel content when a clipped shadow is present. Opaque fill, border, geometry and interactions remain the same.
@@ -17,7 +18,7 @@ Surfaces step toward `foreground` from `background`, so both light and dark pale
 
 ## Configuration and upgrades
 
-Use the existing [`background`, `foreground`, `accent` and `font_size` settings](configuration.md#background). Their types, defaults and validation ranges are unchanged. Layout settings still own bar placement and density. Wallpaper rendering remains independent of UI surface colors. No configuration migration or dotfiles edit is required for this visual update, and no preferences are overwritten.
+Use the existing [`background`, `foreground`, `accent` and `font_size` settings](configuration.md#background). Their types, defaults and validation ranges are unchanged. Layout settings still own bar placement and density. Wallpaper rendering remains independent of UI surface colors. Icon/hint styling needs no new key. Clipboard is now included before the tray in the default right region; add `clipboard` to existing explicit region lists to show it, keeping it in only one region. No preferences are overwritten by installation.
 
 An updated build requires an ordinary shell restart to replace the running UI binaries. Subsequent valid color changes reload in place using the documented rules; launcher and lock preferences apply at their next opening. There is no theme picker or additional service.
 

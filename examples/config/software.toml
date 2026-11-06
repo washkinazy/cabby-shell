@@ -2,7 +2,8 @@
 # Launcher row sizing includes 24-pixel icons; search/close/status stay outside result scrolling.
 # Audio/Bluetooth widgets observe status while configured; Bluetooth interaction ends on panel close.
 # Device panels follow the clicked widget/output and configured bar edge.
-# Default regions: workspaces left; clock/date middle; audio, network, Bluetooth, night light, tray right.
+# Default regions: workspaces left; clock/date middle; audio, network, Bluetooth, Caffeine, night light, clipboard, tray right.
+# Status widgets use outline icons and opaque hover hints; clipboard opens history.
 # Tray icons and menus share desktop styling; ordinary reloads preserve menus and tray ownership.
 # The coordinator automatically reloads valid saves (300 ms debounce); invalid edits retain the old config.
 # Bluetooth shares theme/layout settings; ordinary reload preserves the panel and discovery/pairing.

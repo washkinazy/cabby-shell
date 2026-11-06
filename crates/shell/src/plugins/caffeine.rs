@@ -6,8 +6,6 @@ pub(crate) struct Status {
     manual: bool,
     reasons: Vec<String>,
     sleep_state: String,
-    audio_state: String,
-    fullscreen_state: String,
 }
 impl Status {
     pub fn style(
@@ -36,7 +34,7 @@ impl Status {
     }
     pub fn detail(&self) -> String {
         format!(
-            "Caffeine {}. Reasons: {}. Sleep: {}. Fullscreen: {}. Audio: {}. Click to toggle manual caffeine.",
+            "Caffeine {} · {}{}",
             if self.manual {
                 "manual"
             } else if self.active {
@@ -49,9 +47,11 @@ impl Status {
             } else {
                 self.reasons.join(", ")
             },
-            self.sleep_state,
-            self.fullscreen_state,
-            self.audio_state
+            if self.active && self.sleep_state == "unavailable" {
+                " · Sleep inhibition unavailable"
+            } else {
+                ""
+            }
         )
     }
 }

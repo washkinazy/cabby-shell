@@ -205,6 +205,22 @@ impl Audio {
             None => "Audio ?".into(),
         }
     }
+    pub(crate) fn bar_icon(&self) -> crate::ui::symbol::Symbol {
+        if self
+            .snapshot
+            .as_ref()
+            .and_then(|s| {
+                s.devices
+                    .iter()
+                    .find(|d| d.kind == Kind::Output && s.is_default(d))
+            })
+            .is_some_and(|d| !d.muted)
+        {
+            crate::ui::symbol::Symbol::Volume
+        } else {
+            crate::ui::symbol::Symbol::Muted
+        }
+    }
     fn send(&mut self, request: Request) {
         if self
             .sender

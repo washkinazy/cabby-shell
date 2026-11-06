@@ -12,6 +12,18 @@ pub(crate) struct Status {
     failed: usize,
 }
 impl Status {
+    pub fn active(&self) -> bool {
+        self.inhibited_outputs == 0
+            && self.outputs > 0
+            && matches!(self.phase.as_str(), "night" | "forced")
+    }
+    pub fn icon(&self) -> crate::ui::symbol::Symbol {
+        if self.inhibited_outputs > 0 || !(self.enabled || self.force) {
+            crate::ui::symbol::Symbol::MoonOff
+        } else {
+            crate::ui::symbol::Symbol::Moon
+        }
+    }
     pub fn label(&self) -> &'static str {
         if self.inhibited_outputs > 0 {
             return "Night paused";
@@ -34,11 +46,8 @@ impl Status {
     }
     pub fn detail(&self) -> String {
         match self.temperature {
-            Some(t) => format!(
-                "Night light: {t} K; {} outputs, {} failed. Click to toggle schedule.",
-                self.outputs, self.failed
-            ),
-            None => format!("Night light: {}. Click to toggle schedule.", self.state),
+            Some(t) => format!("{t} K; {} outputs, {} failed", self.outputs, self.failed),
+            None => self.state.clone(),
         }
     }
 }

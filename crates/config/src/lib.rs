@@ -145,7 +145,7 @@ configuration! {
     bar_height: u16 = 40,
     bar_left: Vec<BarWidget> = vec![BarWidget::Workspaces],
     bar_middle: Vec<BarWidget> = vec![BarWidget::Clock],
-    bar_right: Vec<BarWidget> = vec![BarWidget::Audio, BarWidget::Network, BarWidget::Bluetooth, BarWidget::Caffeine, BarWidget::Nightlight, BarWidget::Tray],
+    bar_right: Vec<BarWidget> = vec![BarWidget::Audio, BarWidget::Network, BarWidget::Bluetooth, BarWidget::Caffeine, BarWidget::Nightlight, BarWidget::Clipboard, BarWidget::Tray],
     bar_position: BarPosition = BarPosition::Top,
     bar_padding: u16 = 8,
     bar_spacing: u16 = 8,
@@ -478,7 +478,9 @@ mod tests {
         assert_eq!(defaults.bar_middle, vec![Clock]);
         assert_eq!(
             defaults.bar_right,
-            vec![Audio, Network, Bluetooth, Caffeine, Nightlight, Tray]
+            vec![
+                Audio, Network, Bluetooth, Caffeine, Nightlight, Clipboard, Tray
+            ]
         );
         let custom = Config::parse(
             "bar_left=['tray','audio']\nbar_middle=[]\nbar_right=['clock','workspaces']",
