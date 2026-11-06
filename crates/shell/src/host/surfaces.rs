@@ -679,7 +679,7 @@ impl Desktop {
                         return Task::batch([
                             icons,
                             Task::done(Message::Bar(bar::Message::Tray(tray::Message::Action(
-                                cabby_tray::Command::Menu(item.token.clone(), 0),
+                                cabby_tray::Command::Activate(item.token.clone()),
                             )))),
                         ]);
                     }
@@ -886,11 +886,14 @@ impl Desktop {
             self.bluetooth_generation = self.bluetooth_generation.wrapping_add(1);
             self.bluetooth.reset_interaction();
         }
+        // A worker snapshot can close an old surface while another item's menu
+        // is loading. Do not cancel that request after the old menu is cleared.
         if self
             .panel
             .as_ref()
             .is_some_and(|p| matches!(p.plugin, PanelPlugin::Tray))
             && let Some(bar) = &mut self.bar
+            && bar.tray.state.menu.is_some()
         {
             let _ = bar.tray.update(tray::Message::Close);
         }
@@ -1248,6 +1251,65 @@ mod tests {
             tray_probe_stage: None,
             output_sizes: BTreeMap::from([(1, (320, 400))]),
         }
+    }
+    #[test]
+    fn old_tray_snapshots_cannot_cancel_a_new_item_menu() {
+        let mut state = desktop();
+        let first = cabby_tray::Token {
+            owner: ":1.2".into(),
+            path: "/Item".into(),
+        };
+        let second = cabby_tray::Token {
+            owner: ":1.3".into(),
+            path: "/Item".into(),
+        };
+        let snapshot = |token| cabby_tray::State {
+            available: true,
+            menu: Some(cabby_tray::menu::Menu {
+                token,
+                path: "/Menu".into(),
+                parent: 0,
+                entries: Vec::new(),
+            }),
+            ..Default::default()
+        };
+        let action = |token| {
+            Message::Bar(bar::Message::Tray(tray::Message::Action(
+                cabby_tray::Command::Menu(token, 0),
+            )))
+        };
+        let update = |snapshot| Message::Bar(bar::Message::Tray(tray::Message::State(snapshot)));
+        let _ = state.update(action(first.clone()));
+        let _ = state.update(update(snapshot(first.clone())));
+        assert!(state.panel.is_some());
+        let _ = state.update(action(second.clone()));
+        let _ = state.update(update(snapshot(first)));
+        assert!(state.panel.is_none());
+        let _ = state.update(update(snapshot(second.clone())));
+        assert!(
+            state.panel.is_some(),
+            "closing the previous item's surface must preserve the pending request"
+        );
+        assert_eq!(
+            state
+                .bar
+                .as_ref()
+                .unwrap()
+                .tray
+                .state
+                .menu
+                .as_ref()
+                .unwrap()
+                .token,
+            second
+        );
+        let id = state.panel.as_ref().unwrap().id;
+        let _ = state.update(Message::Escape(id));
+        let _ = state.update(update(snapshot(second)));
+        assert!(
+            state.panel.is_none(),
+            "actual dismissal must still reject late snapshots"
+        );
     }
     #[test]
     fn osd_replaces_without_dismissing_panels_and_rejects_stale_expiry() {

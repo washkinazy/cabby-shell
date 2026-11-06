@@ -533,6 +533,11 @@ def inside(directory, interactive, renderer, only=None):
                     time.sleep(0.1)
                 if bar.poll() is not None:
                     raise RuntimeError("Tray menu dismissal stopped desktop")
+                deadline = time.monotonic() + 3
+                while run("busctl", "--user", "call", "org.cabby.TrayFixture", "/Fixture", "org.cabby.TrayFixture", "Status").strip() != "uuu 1 1 1":
+                    if time.monotonic() > deadline:
+                        raise RuntimeError("Tray activation fallback or paired menu lifecycle failed")
+                    time.sleep(0.05)
                 fixture.terminate()
                 fixture.wait(timeout=5)
             if interactive:

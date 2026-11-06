@@ -19,7 +19,7 @@ pub(crate) struct Tray {
     pub state: State,
     handle: Option<Handle>,
     icons: HashMap<Token, Icon>,
-    menu_requested: bool,
+    menu_requested: Option<Token>,
     cache: Cache,
     loading: bool,
     resolved: HashMap<Token, Key>,
@@ -62,11 +62,16 @@ impl Tray {
         match message {
             Message::Connected(handle) => self.handle = Some(handle),
             Message::State(mut state) => {
-                if !self.menu_requested {
+                if state
+                    .menu
+                    .as_ref()
+                    .is_some_and(|m| self.menu_requested.as_ref() != Some(&m.token))
+                {
                     state.menu = None;
                 }
                 if !state.available {
                     self.handle = None;
+                    self.menu_requested = None;
                 }
                 self.icons
                     .retain(|token, _| state.items.iter().any(|i| &i.token == token));
@@ -112,13 +117,14 @@ impl Tray {
             }
             Message::Action(command) => {
                 match &command {
-                    Command::Menu(_, _) => self.menu_requested = true,
+                    Command::Menu(token, _) => self.menu_requested = Some(token.clone()),
                     Command::Activate(token) => {
                         self.menu_requested = self
                             .state
                             .items
                             .iter()
-                            .any(|i| i.token == *token && i.is_menu)
+                            .find(|i| i.token == *token && (i.is_menu || i.menu_path.is_some()))
+                            .map(|i| i.token.clone())
                     }
                     _ => (),
                 }
@@ -131,7 +137,7 @@ impl Tray {
                 }
             }
             Message::Close => {
-                self.menu_requested = false;
+                self.menu_requested = None;
                 self.state.menu = None;
                 if let Some(h) = &self.handle {
                     let _ = h.commands.try_send(Command::CloseMenu);
@@ -306,5 +312,58 @@ mod tests {
         let _ = tray.update(Message::Close);
         let _ = tray.update(Message::State(snapshot));
         assert!(tray.state.menu.is_none());
+    }
+    #[test]
+    fn activation_fallback_is_visible_and_other_owners_late_menus_are_rejected() {
+        let token = Token {
+            owner: ":1.2".into(),
+            path: "/Item".into(),
+        };
+        let item = cabby_tray::Item {
+            token: token.clone(),
+            title: "Fixture".into(),
+            attention: false,
+            passive: false,
+            icon_name: String::new(),
+            icon_theme_path: String::new(),
+            pixmap: None,
+            menu_path: Some("/Menu".into()),
+            is_menu: false,
+        };
+        let mut tray = Tray {
+            state: State {
+                available: true,
+                items: vec![item],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let _ = tray.update(Message::Action(Command::Activate(token.clone())));
+        let snapshot = State {
+            menu: Some(cabby_tray::menu::Menu {
+                token,
+                path: "/Menu".into(),
+                parent: 0,
+                entries: Vec::new(),
+            }),
+            ..tray.state.clone()
+        };
+        let _ = tray.update(Message::State(snapshot.clone()));
+        assert!(
+            tray.state.menu.is_some(),
+            "left-click fallback must reach the host panel"
+        );
+        let _ = tray.update(Message::Action(Command::Menu(
+            Token {
+                owner: ":1.3".into(),
+                path: "/Item".into(),
+            },
+            0,
+        )));
+        let _ = tray.update(Message::State(snapshot));
+        assert!(
+            tray.state.menu.is_none(),
+            "previous owner's pending layout must not replace the requested menu"
+        );
     }
 }

@@ -53,6 +53,240 @@ async fn register(c: &Connection) {
         .await
         .unwrap();
 }
+async fn events_until(data: &std::sync::Mutex<support::Data>, count: usize) {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while data.lock().unwrap().events.len() < count {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn unsupported_activation_uses_lazy_menu_with_paired_lifecycle() {
+    let bus = Bus::new();
+    let (service, mut handle) = Service::connect(&bus.address).await.unwrap();
+    let worker = tokio::spawn(service.run());
+    let (client, data) = support::fixture(&bus.address).await;
+    {
+        let mut data = data.lock().unwrap();
+        data.activate_unsupported = true;
+        data.require_open = true;
+    }
+    register(&client).await;
+    let token = until(&mut handle, |s| s.items.len() == 1).await.items[0]
+        .token
+        .clone();
+    handle
+        .commands
+        .send(Command::Activate(token.clone()))
+        .await
+        .unwrap();
+    let state = until(&mut handle, |s| s.menu.is_some() || s.failed).await;
+    assert!(!state.failed, "exported menu must replace failed Activate");
+    assert_eq!(state.menu.unwrap().entries.len(), 3);
+    handle
+        .commands
+        .send(Command::Click(token.clone(), 3))
+        .await
+        .unwrap();
+    until(&mut handle, |s| {
+        s.menu.as_ref().is_some_and(|m| m.parent == 3)
+    })
+    .await;
+    handle
+        .commands
+        .send(Command::Menu(token.clone(), 0))
+        .await
+        .unwrap();
+    until(&mut handle, |s| {
+        s.menu.as_ref().is_some_and(|m| m.parent == 0)
+    })
+    .await;
+    handle.commands.send(Command::CloseMenu).await.unwrap();
+    until(&mut handle, |s| s.menu.is_none()).await;
+    events_until(&data, 4).await;
+    assert_eq!(
+        data.lock().unwrap().events,
+        [
+            (0, "opened".into()),
+            (3, "opened".into()),
+            (3, "closed".into()),
+            (0, "closed".into())
+        ]
+    );
+    handle
+        .commands
+        .send(Command::Menu(token.clone(), 0))
+        .await
+        .unwrap();
+    until(&mut handle, |s| s.menu.is_some()).await;
+    handle
+        .commands
+        .send(Command::Click(token.clone(), 1))
+        .await
+        .unwrap();
+    until(&mut handle, |s| s.menu.is_none()).await;
+    events_until(&data, 7).await;
+    assert_eq!(
+        &data.lock().unwrap().events[4..],
+        [
+            (0, "opened".into()),
+            (1, "clicked".into()),
+            (0, "closed".into())
+        ]
+    );
+    handle.commands.send(Command::Menu(token, 0)).await.unwrap();
+    until(&mut handle, |s| s.menu.is_some()).await;
+    drop(handle);
+    worker.await.unwrap().unwrap();
+    events_until(&data, 9).await;
+    let data = data.lock().unwrap();
+    assert_eq!(data.about_calls, [0, 3]);
+    assert_eq!(
+        &data.events[7..],
+        [(0, "opened".into()), (0, "closed".into())]
+    );
+}
+
+#[tokio::test]
+async fn optional_preparation_cannot_stall_layouts_or_form_signal_loops() {
+    let bus = Bus::new();
+    let (service, mut handle) = Service::connect(&bus.address).await.unwrap();
+    let worker = tokio::spawn(service.run());
+    let (client, data) = support::fixture(&bus.address).await;
+    data.lock().unwrap().about_stalled = true;
+    register(&client).await;
+    let token = until(&mut handle, |s| s.items.len() == 1).await.items[0]
+        .token
+        .clone();
+    handle
+        .commands
+        .send(Command::Menu(token.clone(), 0))
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_millis(400), async {
+        while data.lock().unwrap().layout_calls.is_empty() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("root GetLayout must not wait for optional AboutToShow");
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        until(&mut handle, |s| s.menu.is_some()),
+    )
+    .await
+    .unwrap();
+    client
+        .emit_signal(
+            None::<&str>,
+            "/Menu",
+            "com.canonical.dbusmenu",
+            "LayoutUpdated",
+            &(2u32, 0i32),
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while data.lock().unwrap().layout_calls.len() < 2 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    handle
+        .commands
+        .send(Command::Click(token, 3))
+        .await
+        .unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        until(&mut handle, |s| {
+            s.menu.as_ref().is_some_and(|m| m.parent == 3)
+        }),
+    )
+    .await
+    .unwrap();
+    drop(handle);
+    worker.await.unwrap().unwrap();
+    events_until(&data, 4).await;
+    let data = data.lock().unwrap();
+    assert_eq!(data.about_calls, [0, 3]);
+    assert_eq!(data.layout_calls, [0, 0, 3]);
+    assert_eq!(
+        data.events,
+        [
+            (0, "opened".into()),
+            (3, "opened".into()),
+            (3, "closed".into()),
+            (0, "closed".into())
+        ]
+    );
+}
+
+#[tokio::test]
+async fn timed_out_activation_falls_back_and_failed_layout_closes_exporter() {
+    let bus = Bus::new();
+    let (service, mut handle) = Service::connect(&bus.address).await.unwrap();
+    let worker = tokio::spawn(service.run());
+    let (client, data) = support::fixture(&bus.address).await;
+    data.lock().unwrap().activate_stalled = true;
+    register(&client).await;
+    let token = until(&mut handle, |s| s.items.len() == 1).await.items[0]
+        .token
+        .clone();
+    handle
+        .commands
+        .send(Command::Activate(token.clone()))
+        .await
+        .unwrap();
+    let state = tokio::time::timeout(
+        Duration::from_secs(2),
+        until(&mut handle, |s| s.menu.is_some() || s.failed),
+    )
+    .await
+    .unwrap();
+    assert!(!state.failed);
+    data.lock().unwrap().fail_layout = true;
+    handle
+        .commands
+        .send(Command::Click(token, 3))
+        .await
+        .unwrap();
+    until(&mut handle, |s| s.failed && s.menu.is_none()).await;
+    events_until(&data, 4).await;
+    assert_eq!(
+        data.lock().unwrap().events,
+        [
+            (0, "opened".into()),
+            (3, "opened".into()),
+            (3, "closed".into()),
+            (0, "closed".into())
+        ]
+    );
+    drop(handle);
+    worker.await.unwrap().unwrap();
+}
+#[tokio::test]
+async fn preparation_requesting_an_update_refreshes_the_initial_layout() {
+    let bus = Bus::new();
+    let (service, mut handle) = Service::connect(&bus.address).await.unwrap();
+    let worker = tokio::spawn(service.run());
+    let (client, data) = support::fixture(&bus.address).await;
+    data.lock().unwrap().about_changes = true;
+    register(&client).await;
+    let token = until(&mut handle, |s| s.items.len() == 1).await.items[0]
+        .token
+        .clone();
+    handle.commands.send(Command::Menu(token, 0)).await.unwrap();
+    let state = until(&mut handle, |s| s.menu.is_some()).await;
+    assert_eq!(state.menu.unwrap().entries.len(), 3);
+    assert_eq!(data.lock().unwrap().layout_calls, [0, 0]);
+    drop(handle);
+    worker.await.unwrap().unwrap();
+}
 #[tokio::test(flavor = "current_thread")]
 async fn registration_icons_actions_menus_updates_and_owner_loss() {
     let bus = Bus::new();

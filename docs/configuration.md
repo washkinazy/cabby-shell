@@ -242,7 +242,7 @@ Bluetooth uses the same shared appearance and panel geometry as audio. Ordinary 
 
 Renderer changes reset start counters before restarting active components. Other changes do not restart processes. Stopped components stay stopped; automatic crash recovery remains bounded.
 
-The [system tray](tray.md) shares desktop appearance. Ordinary reload preserves open menus and item ownership; renderer changes require a desktop restart. No tray-specific settings are added.
+The [system tray](tray.md) shares desktop appearance. Left click activates the application, falling back to its exported menu on failure or a one-second activation timeout; right click opens the exported menu directly. Menu-only items open their menu on either click. Ordinary reload preserves open menus and item ownership; renderer changes require a desktop restart. No tray-specific settings are added. Existing configurations gain the activation fallback after upgrading/restarting the desktop; no configuration migration is needed.
 Device panels and tray menus open beside the clicked widget on its output, below a top bar or above a bottom bar, clamped to the available space. Changing `bar_position` or `bar_height` moves an open panel in place. Escape, outside click, focus loss, close and removal of its output dismiss the panel.
 
 ### `idle_lock_seconds`

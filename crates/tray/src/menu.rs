@@ -17,6 +17,50 @@ pub struct Entry {
     pub checked: Option<bool>,
 }
 type Layout = (i32, Properties, Vec<OwnedValue>);
+/// Optional exporter preparation must not hold up an otherwise valid menu.
+pub(super) async fn prepare(
+    connection: &Connection,
+    token: &Token,
+    path: &str,
+    parent: i32,
+) -> bool {
+    let call = async {
+        let proxy = Proxy::new(
+            connection,
+            token.owner.as_str(),
+            path,
+            "com.canonical.dbusmenu",
+        )
+        .await?;
+        proxy.call::<_, _, bool>("AboutToShow", &(parent,)).await
+    };
+    tokio::time::timeout(Duration::from_millis(500), call)
+        .await
+        .ok()
+        .and_then(std::result::Result::ok)
+        .unwrap_or(false)
+}
+pub(super) async fn event(
+    connection: &Connection,
+    token: &Token,
+    path: &str,
+    id: i32,
+    name: &str,
+) -> Result<()> {
+    let proxy = Proxy::new(
+        connection,
+        token.owner.as_str(),
+        path,
+        "com.canonical.dbusmenu",
+    )
+    .await?;
+    // Dispatch without requiring a reply: several exporters do not acknowledge
+    // lifecycle events. This does not assert remote execution of a clicked action.
+    proxy
+        .call_noreply("Event", &(id, name, Value::from(0i32), 0u32))
+        .await?;
+    Ok(())
+}
 pub async fn load(connection: &Connection, token: &Token, path: &str, parent: i32) -> Result<Menu> {
     let proxy = Proxy::new(
         connection,
@@ -25,8 +69,6 @@ pub async fn load(connection: &Connection, token: &Token, path: &str, parent: i3
         "com.canonical.dbusmenu",
     )
     .await?;
-    // Some exporters omit AboutToShow; GetLayout still provides the static menu.
-    let _ = proxy.call::<_, _, bool>("AboutToShow", &(parent,)).await;
     let reply = proxy
         .call_method("GetLayout", &(parent, 1i32, Vec::<String>::new()))
         .await?;

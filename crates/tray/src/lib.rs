@@ -1,7 +1,7 @@
 //! Session-bus StatusNotifier host. Protocol/state ownership is independent of Iced.
 use futures_util::StreamExt;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -209,6 +209,7 @@ pub struct Service {
     state: State,
     owns_watcher: bool,
     watcher_owner: String,
+    primed_menus: HashSet<(Token, String)>,
 }
 impl Service {
     pub async fn connect(address: &str) -> Result<(Self, Handle)> {
@@ -311,6 +312,7 @@ impl Service {
                 state,
                 owns_watcher,
                 watcher_owner,
+                primed_menus: HashSet::new(),
             },
             Handle {
                 commands: commands_tx,
@@ -320,6 +322,7 @@ impl Service {
     }
     pub async fn run(mut self) -> Result<()> {
         let result = self.run_inner().await;
+        self.close_menu().await;
         self.snapshots.send_replace(State::default());
         let _ = self.connection.clone().close().await;
         result
@@ -348,6 +351,12 @@ impl Service {
                     self.signal(&signal).await?;
                 }
             }
+            self.primed_menus.retain(|(token, path)| {
+                self.state
+                    .items
+                    .iter()
+                    .any(|i| &i.token == token && i.menu_path.as_ref() == Some(path))
+            });
             self.snapshots.send_if_modified(|current| {
                 if *current == self.state {
                     return false;
@@ -488,13 +497,19 @@ impl Service {
             && header.path().is_some_and(|p| p.as_str() == menu.path)
         {
             let next = menu::load(&self.connection, &menu.token, &menu.path, menu.parent).await;
-            self.state.menu = next.ok();
+            match next {
+                Ok(menu) => self.state.menu = Some(menu),
+                Err(_) => {
+                    self.close_menu().await;
+                    self.state.failed = true;
+                }
+            }
         }
         Ok(())
     }
     async fn command(&mut self, command: Command) -> Result<()> {
         if matches!(command, Command::CloseMenu) {
-            self.state.menu = None;
+            self.close_menu().await;
             return Ok(());
         }
         let token = match &command {
@@ -520,7 +535,18 @@ impl Service {
         .await?;
         match command {
             Command::Activate(_) if !item.is_menu => {
-                let _: () = proxy.call("Activate", &(0i32, 0i32)).await?;
+                self.close_menu().await;
+                let activation = tokio::time::timeout(
+                    Duration::from_secs(1),
+                    proxy.call::<_, _, ()>("Activate", &(0i32, 0i32)),
+                )
+                .await;
+                match activation {
+                    Ok(Ok(())) => (),
+                    _ if item.menu_path.is_some() => self.open_menu(&item, 0).await?,
+                    Ok(Err(error)) => return Err(error.into()),
+                    Err(_) => return Err(Error::Unavailable),
+                }
             }
             Command::Secondary(_) => {
                 let _: () = proxy.call("SecondaryActivate", &(0i32, 0i32)).await?;
@@ -542,18 +568,8 @@ impl Service {
                 if entry.submenu {
                     self.open_menu(&item, id).await?;
                 } else {
-                    let proxy = Proxy::new(
-                        &self.connection,
-                        item.token.owner.as_str(),
-                        menu.path.as_str(),
-                        "com.canonical.dbusmenu",
-                    )
-                    .await?;
-                    // Event is specified as no-reply; never block waiting for a reply.
-                    proxy
-                        .call_noreply("Event", &(id, "clicked", Value::from(0i32), 0u32))
-                        .await?;
-                    self.state.menu = None;
+                    menu::event(&self.connection, &item.token, &menu.path, id, "clicked").await?;
+                    self.close_menu().await;
                 }
             }
             Command::CloseMenu => (),
@@ -562,8 +578,60 @@ impl Service {
     }
     async fn open_menu(&mut self, item: &Item, parent: i32) -> Result<()> {
         if let Some(path) = &item.menu_path {
-            self.state.menu = Some(menu::load(&self.connection, &item.token, path, parent).await?);
+            let previous = self
+                .state
+                .menu
+                .as_ref()
+                .filter(|m| m.token == item.token && &m.path == path)
+                .map(|m| m.parent);
+            if let Some(previous) = previous {
+                if previous != parent && previous != 0 {
+                    let _ =
+                        menu::event(&self.connection, &item.token, path, previous, "closed").await;
+                }
+            } else {
+                self.close_menu().await;
+                let _ = menu::event(&self.connection, &item.token, path, 0, "opened").await;
+            }
+            if previous != Some(parent) && parent != 0 {
+                let _ = menu::event(&self.connection, &item.token, path, parent, "opened").await;
+            }
+            // Track the open lifecycle before fetching, so failure and shutdown
+            // still send matching closed events. Only run_inner publishes snapshots.
+            self.state.menu = Some(menu::Menu {
+                token: item.token.clone(),
+                path: path.clone(),
+                parent,
+                entries: Vec::new(),
+            });
+            let next =
+                if parent == 0 && self.primed_menus.insert((item.token.clone(), path.clone())) {
+                    // Fetch immediately even when root AboutToShow never replies.
+                    // A true reply requests a fresh layout; signals use load alone.
+                    let (layout, changed) = tokio::join!(
+                        menu::load(&self.connection, &item.token, path, parent),
+                        menu::prepare(&self.connection, &item.token, path, parent),
+                    );
+                    if changed {
+                        menu::load(&self.connection, &item.token, path, parent).await
+                    } else {
+                        layout
+                    }
+                } else {
+                    if parent != 0 {
+                        menu::prepare(&self.connection, &item.token, path, parent).await;
+                    }
+                    menu::load(&self.connection, &item.token, path, parent).await
+                };
+            match next {
+                Ok(menu) => self.state.menu = Some(menu),
+                Err(error) => {
+                    self.close_menu().await;
+                    return Err(error);
+                }
+            }
         } else {
+            self.close_menu().await;
             let proxy = Proxy::new(
                 &self.connection,
                 item.token.owner.as_str(),
@@ -574,6 +642,21 @@ impl Service {
             let _: () = proxy.call("ContextMenu", &(0i32, 0i32)).await?;
         }
         Ok(())
+    }
+    async fn close_menu(&mut self) {
+        if let Some(menu) = self.state.menu.take() {
+            if menu.parent != 0 {
+                let _ = menu::event(
+                    &self.connection,
+                    &menu.token,
+                    &menu.path,
+                    menu.parent,
+                    "closed",
+                )
+                .await;
+            }
+            let _ = menu::event(&self.connection, &menu.token, &menu.path, 0, "closed").await;
+        }
     }
 }
 pub(crate) fn string(props: &Properties, key: &str) -> String {
