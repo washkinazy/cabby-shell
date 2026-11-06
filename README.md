@@ -33,6 +33,7 @@ The baseline is a niri environment without Noctalia or DMS. Cabby Shell should p
 - Screen locking.
 - Clipboard management.
 - A basic screenshot GUI workflow.
+- Passive bottom-center [OSD feedback](docs/osd.md) for volume/microphone and lock-key changes, with volume progress meters.
 
 These features define the required scope; whether each is implemented directly or integrated through an existing service remains an implementation decision. Interactive controls belong in the shell, while persistent configuration remains file-driven.
 

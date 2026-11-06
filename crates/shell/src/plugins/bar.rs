@@ -108,6 +108,11 @@ impl Bar {
         if [BarWidget::Workspaces, BarWidget::Title, BarWidget::Status]
             .iter()
             .any(|w| self.config.has_widget(*w))
+            || self.config.osd.enabled
+                && (self.config.osd.volume
+                    || self.config.osd.microphone
+                    || self.config.osd.caps_lock
+                    || self.config.osd.num_lock)
         {
             subscriptions.push(Subscription::run(events));
         }

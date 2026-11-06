@@ -24,3 +24,5 @@ An updated build requires an ordinary shell restart to replace the running UI bi
 ## Validation scope
 
 Style-contract tests check opaque fills and preservation of configured text/surface colors across light, dark and custom palettes, including interaction states. Nested pixel checks cover neutral workspace selection with an accent marker, exact opaque panel padding, selected Caffeine contrast and enabled screenshot controls. Existing private client/device fixtures continue to exercise behavior. Renderer results and environment blockers are recorded in [PLAN.md](../PLAN.md); passing software rendering never substitutes for the required RTX 4070 Vulkan check.
+
+The [bottom-center OSD](osd.md) uses the same solid Fluent surface and typography. Volume/microphone feedback follows the GNOME interaction pattern of an in-place filled progress bar; lock keys use brief On/Off messages. No alternate visual theme is introduced.

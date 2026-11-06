@@ -1,0 +1,27 @@
+# On-screen feedback
+
+Cabby shows a compact passive OSD in the bottom-center portion of the focused output when the default speaker/headphone volume or mute changes, the default microphone level/mute changes, or Caps Lock toggles. Num Lock is optional. This uses GNOME's volume-feedback interaction pattern—a filled progress bar that updates in place—within Cabby's opaque, solid Fluent appearance. It is independent of ordinary notification cards and does not take their D-Bus name or history.
+
+Volume shows the actual percentage and a 0–100% meter. External amplification above 100% keeps its numeric percentage while the meter stays full. Mute shows a muted icon/message and an empty meter; unmute restores the current level. Caps/Num Lock show On/Off text without a progress bar. New feedback replaces the previous item rather than queueing; repeated changes reuse one surface and reset its timeout. No animation, glass or blur is added.
+
+The surface never requests keyboard focus, accepts pointer input or reserves compositor work area. It is separate from the device-panel slot, so showing it does not close an open panel. It follows the currently focused output reported by niri, falling back to the first available output while focus is unknown. It remains on that output until another event, expiry or removal. Scale/size/config changes update placement; output removal dismisses it. A bottom bar establishes a minimum clearance of bar height plus 12 logical pixels. Small outputs clamp its geometry within the available space.
+
+## Observation and ownership
+
+The existing desktop process and its systemd cgroup own all OSD state/subscriptions; there is no additional daemon, installed executable or unit. The audio worker already used for passive bar/device state supplies default-output and default-input snapshots, including changes initiated by external volume keys/tools. OSD can keep this subscription active when the audio widget is omitted. Unrelated playback/device updates and changes to non-default devices do not trigger feedback. Startup, default-device replacement and reconnect establish silent baselines. Audio operations retain their existing supervision and timeout policy.
+
+Global lock-key state follows Noctalia's read-only Linux keyboard-LED approach. Ordinary Wayland clients receive keyboard modifier events only while focused; Cabby does not steal focus to obtain them. It reads bounded `/sys/class/leds/*::capslock/brightness` and optional `*::numlock/brightness` files, without `/dev/input`, keycodes, extra permissions or a privileged helper. These LED attributes do not provide a portable change-event stream, so a background worker reads cached files every 200 ms and rescans membership every two seconds; when all state is unavailable it backs off to two seconds. Only changes reach the UI. Scans consider at most 256 LED entries and 32 paths per kind; each read is capped at 16 bytes and serialized off the UI thread.
+
+State aggregates On if any applicable readable LED is on. Missing/unreadable/invalid files make that kind unknown; unknown state and keyboard membership changes reestablish a silent baseline rather than inventing a toggle. Multiple seats are not distinguished, and keyboard/driver combinations without readable LEDs cannot provide global lock-key feedback. This is indicator observation, not a guarantee that every custom key remapping updates an LED. It does not alter the keyboard state or the lock screen's independent modifier indicators.
+
+One cancellable expiry subscription runs only while feedback is visible; serial numbers reject stale expiry messages. Disabling the feature removes the surface and releases source subscriptions unless another widget/panel needs audio. Desktop restart discards transient feedback. The compositor's session-lock protocol controls visibility while locked; this ordinary surface cannot replace or unlock the independent locker. Screen captures may include a currently visible OSD, as they can other desktop overlays.
+
+## Configuration
+
+Use `[osd]` in `$HOME/.config/cabby-shell/config.toml`. The [configuration reference](configuration.md#osd) lists every field, range, default and reload interaction; the [examples](../examples/config/osd.toml) are parsed by the production validator. Defaults are enabled volume/microphone/Caps Lock, Num Lock off, 1500 ms timeout and 96-pixel bottom margin. All fields reload live; no dotfiles binding is needed for event-driven observation.
+
+No device names, clipboard contents or keycodes are written to OSD logs/state files; feedback stays in memory. The guarded, non-installed `osd-probe` can log synthetic feedback during private tests. Those tests inject explicit private audio helpers and LED files; production does not read their override variables.
+
+## Acceptance
+
+Policy tests cover silent startup/reconnect, default-device filtering, independent source settings, replacement, stale expiry, missing LED state and bounded geometry. Private LED files exercise aggregation, unreadable/disappearing devices and recovery. Native nested acceptance verifies actual volume-meter proportions, mute/microphone, Caps Lock On/Off, Num Lock opt-in, surface reuse, timeout/config changes, fractional scaling, passive input/focus and disable/reaping. Renderer evidence and remaining hardware limits are recorded in [PLAN.md](../PLAN.md). Physical LED drivers/multiple seats remain unverified unless separately observed; fixtures never toggle live keys or modify real audio.

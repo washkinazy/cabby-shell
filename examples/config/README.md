@@ -4,6 +4,8 @@ Copy one example to `$HOME/.config/cabby-shell/config.toml` after creating the d
 
 All examples use the [solid Fluent-inspired appearance](../../docs/appearance.md): opaque surfaces, neutral controls and accent selection markers. Existing palette/layout keys remain the complete customization interface. Vulkan adds a subtle panel shadow; software uses the same opaque surfaces without that shadow. No theme-selection key or glass effect is supported.
 
+[osd.toml](osd.toml) demonstrates bottom-center volume/microphone progress feedback and both lock-key indicators; [osd-disabled.toml](osd-disabled.toml) disables the feature. Omitted OSD settings use their defaults, including enabled volume, microphone and Caps Lock feedback. See [OSD behavior](../../docs/osd.md).
+
 | File | Purpose |
 | --- | --- |
 | [wallpaper.toml](wallpaper.toml) | Relative PNG path and fit mode; copy `assets/` too |

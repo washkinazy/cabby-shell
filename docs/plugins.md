@@ -104,3 +104,5 @@ Night light follows the same internal feature boundary: the coordinator owns its
 The [clipboard plugin](clipboard.md) separates native ownership and memory policy (`cabby-clipboard`) from its Iced picker. The coordinator owns the backend; the desktop reuses its existing panel slot. Typed private IPC carries actions and bounded previews, while an event-driven revision subscription refreshes the open picker.
 
 The [screenshot plugin](screenshots.md) separates UI stage/selection from the `cabby-screenshot` capture/geometry/save backend. The desktop owns focus, output geometry and helper lifetime; the existing clipboard backend receives a sealed memory FD. Capture before mapping, frozen-image selection and preview reuse one panel surface with stage-specific geometry.
+
+The [OSD plugin](osd.md) owns feedback policy and rendering, with typed audio/LED observations and a single cancellable expiry subscription. The desktop host owns one passive surface independently of device panels. It shares the existing audio worker and uses read-only keyboard LED state for global lock-key feedback; no daemon or unit is added.

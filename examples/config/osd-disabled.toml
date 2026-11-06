@@ -1,0 +1,3 @@
+# Stop OSD source observation and dismiss any current feedback.
+[osd]
+enabled = false

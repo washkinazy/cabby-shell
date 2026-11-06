@@ -58,13 +58,17 @@ def inside(directory, interactive, renderer, only=None):
                 raise RuntimeError(f"Required probe protocol missing: {protocol}")
         outputs = json.loads(run("niri", "msg", "--json", "outputs"))
         (directory / "outputs.json").write_text(json.dumps(outputs, indent=2))
+        if only == "osd":
+            from osd_acceptance import check
+            check(directory, renderer, children, selected_adapter)
+            return
         if only == "readiness":
             from readiness_acceptance import check
             check(directory, renderer, children, selected_adapter)
             return
         if only in ("clipboard", "screenshot"):
             config = directory / (only+"-only.toml")
-            config.write_text('renderer="'+('vulkan' if renderer=='gpu' else 'software')+'"\n')
+            config.write_text('osd={enabled=false}\nrenderer="'+('vulkan' if renderer=='gpu' else 'software')+'"\n')
             with (directory / "idle-coordinator.log").open("w") as coordinator_log:
                 coordinator = subprocess.Popen([ROOT/'target/debug/cabby','serve','--config',config], stdout=coordinator_log, stderr=coordinator_log, env=dict(os.environ,DBUS_SYSTEM_BUS_ADDRESS='unix:path='+str(directory/'no-system-bus')))
                 children.append(coordinator)
@@ -84,7 +88,7 @@ def inside(directory, interactive, renderer, only=None):
                 (directory/'result.json').write_text(json.dumps({'status':'passed','adapters':adapters,'checks':[only+'-native-workflow'],'not_proven':['physical-multiple-seats']},indent=2))
             return
         config = directory / "cabby.toml"
-        config.write_text(f'renderer = "{"vulkan" if renderer == "gpu" else "software"}"\nbar_height = 40\nbar_position = "{"top" if renderer == "gpu" else "bottom"}"\n')
+        config.write_text(f'osd={{enabled=false}}\nrenderer = "{"vulkan" if renderer == "gpu" else "software"}"\nbar_height = 40\nbar_position = "{"top" if renderer == "gpu" else "bottom"}"\n')
         with (directory / "bar.log").open("w") as log:
             bar = subprocess.Popen([ROOT / "target/debug/cabby", "ui", "--config", config], stdout=log, stderr=log)
             children.append(bar)
@@ -593,7 +597,7 @@ def main():
     parser.add_argument("--interactive", action="store_true", help="Wait for bar inspection and lock release")
     parser.add_argument("--renderer", choices=("gpu", "software"), default="gpu",
                         help="gpu requires hardware Vulkan; software explicitly selects tiny-skia")
-    parser.add_argument("--only", choices=("clipboard", "screenshot", "readiness"), help="Run only the selected isolated workflow")
+    parser.add_argument("--only", choices=("clipboard", "screenshot", "readiness", "osd"), help="Run only the selected isolated workflow")
     parser.add_argument("--inside", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.inside:

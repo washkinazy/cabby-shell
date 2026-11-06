@@ -104,6 +104,15 @@ section!(Screenshot, SCREENSHOT_KEYS, {
     directory: String = String::new(),
     include_cursor: bool = false,
 });
+section!(Osd, OSD_KEYS, {
+    enabled: bool = true,
+    volume: bool = true,
+    microphone: bool = true,
+    caps_lock: bool = true,
+    num_lock: bool = false,
+    timeout_ms: u16 = 1500,
+    bottom_margin: u16 = 96,
+});
 
 section!(Clipboard, CLIPBOARD_KEYS, {
     enabled: bool = true,
@@ -123,6 +132,7 @@ section!(Caffeine, CAFFEINE_KEYS, {
 });
 
 configuration! {
+    osd: Osd = Osd::default(),
     screenshot: Screenshot = Screenshot::default(),
     clipboard: Clipboard = Clipboard::default(),
     caffeine: Caffeine = Caffeine::default(),
@@ -200,6 +210,9 @@ impl Config {
             return Err("configuration exceeds 64 KiB".into());
         }
         let config: Self = toml::from_str(source).map_err(|error| error.to_string())?;
+        if !(500..=5000).contains(&config.osd.timeout_ms) || config.osd.bottom_margin > 512 {
+            return Err("osd.timeout_ms must be 500..5000 milliseconds and osd.bottom_margin must be 0..512 logical pixels".into());
+        }
         if !(1000..=10000).contains(&config.nightlight.temperature_day)
             || !(1000..=10000).contains(&config.nightlight.temperature_night)
             || config.nightlight.temperature_day
@@ -485,6 +498,26 @@ mod tests {
     }
 
     #[test]
+    fn osd_settings_have_bounded_timing_and_placement() {
+        for source in [
+            "[osd]\ntimeout_ms=500\nbottom_margin=0",
+            "[osd]\ntimeout_ms=5000\nbottom_margin=512\nnum_lock=true",
+            "[osd]\nenabled=false\nvolume=false\nmicrophone=false\ncaps_lock=false",
+        ] {
+            assert!(Config::parse(source).is_ok(), "{source}");
+        }
+        for source in [
+            "[osd]\ntimeout_ms=499",
+            "[osd]\ntimeout_ms=5001",
+            "[osd]\nbottom_margin=513",
+            "[osd]\nbottom_margin=-1",
+            "[osd]\nvolume=1",
+            "[osd]\nfuture=true",
+        ] {
+            assert!(Config::parse(source).is_err(), "{source}");
+        }
+    }
+    #[test]
     fn invalid_candidates_never_replace_active_config() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("config.toml");
@@ -619,6 +652,7 @@ mod tests {
             ("caffeine", CAFFEINE_KEYS),
             ("clipboard", CLIPBOARD_KEYS),
             ("screenshot", SCREENSHOT_KEYS),
+            ("osd", OSD_KEYS),
         ] {
             let values = table[section].as_table().unwrap();
             assert!(values.len() <= keys.len());
