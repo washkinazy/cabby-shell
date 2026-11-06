@@ -1,0 +1,10 @@
+# Solid Fluent surfaces; GNOME-style volume feedback uses a filled progress bar.
+# All OSD settings apply live. Keys require readable Linux keyboard LED state.
+[osd]
+enabled = true
+volume = true
+microphone = true
+caps_lock = true
+num_lock = true
+timeout_ms = 2000
+bottom_margin = 120

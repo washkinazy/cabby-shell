@@ -24,7 +24,7 @@ def check(directory, config, runtime, renderer, children):
             assert child.wait(timeout=8)==0,'source was not replaced by manager'
         return child
     def paste(mime):return subprocess.run(['wl-paste','--no-newline','--type',mime],capture_output=True,timeout=6)
-    base=f'renderer = "{"vulkan" if renderer=="gpu" else "software"}"\nbar_position = "{"top" if renderer=="gpu" else "bottom"}"\nbar_left=["clipboard"]\nbar_middle=[]\nbar_right=[]\n'
+    base=f'osd={{enabled=false}}\nrenderer = "{"vulkan" if renderer=="gpu" else "software"}"\nbar_position = "{"top" if renderer=="gpu" else "bottom"}"\nbar_left=["clipboard"]\nbar_middle=[]\nbar_right=[]\n'
     policy='[clipboard]\nenabled=true\nmax_items=3\nmax_item_bytes=65536\nmemory_bytes=65536\n'
     config.write_text(base+policy);assert cli('reload').returncode==0
     wait(lambda:rpc({'clipboard':'list','query':''})['clipboard']['state']=='watching')

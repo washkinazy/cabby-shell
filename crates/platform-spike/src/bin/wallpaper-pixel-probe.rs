@@ -20,6 +20,55 @@ fn main() {
     let left = [40, 90, 130];
     let right = [180, 130, 60];
     match args[2].as_str() {
+        mode if mode.starts_with("osd-meter-") => {
+            let values: Vec<i32> = mode
+                .trim_start_matches("osd-meter-")
+                .split('-')
+                .map(|s| s.parse().unwrap())
+                .collect();
+            // The sentinel for a lock-key card is encoded as 101 (no meter).
+            let (percent, lw, lh, margin) = (
+                values[0],
+                values[1] as u32,
+                values[2] as u32,
+                values[3] as u32,
+            );
+            let pw = 320.min(lw.saturating_sub(16).max(1));
+            let ph = 100.min(lh);
+            let (left, top) = ((lw - pw) / 2, lh - margin.min(lh - ph) - ph);
+            let sx = |x: u32| (u64::from(x) * u64::from(w) / u64::from(lw)) as u32;
+            let sy = |y: u32| (u64::from(y) * u64::from(h) / u64::from(lh)) as u32;
+            check(sx(left + 8), sy(top + 8), [24, 27, 34]);
+            let mut longest = 0;
+            let mut bright = 0;
+            for y in sy(top + 16)..sy(top + ph - 12) {
+                let mut run = 0;
+                for x in sx(left + 16)..sx(left + pw - 16) {
+                    let i = ((y * w + x) * 4) as usize;
+                    let rgb = &asset.rgba[i..i + 3];
+                    if rgb
+                        .iter()
+                        .zip([136u8, 192, 208])
+                        .all(|(a, b)| a.abs_diff(b) <= 3)
+                    {
+                        run += 1;
+                        longest = longest.max(run);
+                    } else {
+                        run = 0;
+                    }
+                    bright += usize::from(rgb.iter().all(|v| *v > 180));
+                }
+            }
+            let expected = if percent == 101 {
+                0
+            } else {
+                ((pw - 32) as f32 * w as f32 / lw as f32 * percent as f32 / 100.).round() as i32
+            };
+            assert!(
+                (longest - expected).abs() <= 4 && bright > 20,
+                "OSD meter/text missing: {longest}, expected {expected}, text {bright}"
+            );
+        }
         mode if mode.starts_with("fluent-bar-") => {
             let rows = if mode.ends_with("top") {
                 0..40

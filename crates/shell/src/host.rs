@@ -95,6 +95,33 @@ pub fn audio_probe() -> iced_exwlshell::Result {
         Some(cabby_audio::Client::with_executable(helper)),
     )
 }
+/// Synthetic audio/LED sources on a disposable display; production never reads these overrides.
+pub fn osd_probe() -> iced_exwlshell::Result {
+    let guard = std::env::var("CABBY_TEST_WAYLAND").expect("private display guard required");
+    assert!(!guard.is_empty());
+    assert_eq!(Some(guard), std::env::var("WAYLAND_DISPLAY").ok());
+    let helper = std::path::PathBuf::from(
+        std::env::var_os("CABBY_TEST_AUDIO_HELPER").expect("fixture helper required"),
+    );
+    let leds = std::path::PathBuf::from(
+        std::env::var_os("CABBY_TEST_LEDS").expect("fixture LEDs required"),
+    );
+    assert!(
+        helper.is_absolute()
+            && leds.is_absolute()
+            && leds.starts_with(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../.artifacts")
+                    .canonicalize()
+                    .unwrap()
+            )
+    );
+    surfaces::run_with_osd(
+        prepare(Plugin::Desktop),
+        cabby_audio::Client::with_executable(helper),
+        leds,
+    )
+}
 
 /// Disposable-session entrypoint with an explicitly supplied private BlueZ bus.
 pub fn bluetooth_probe() -> iced_exwlshell::Result {

@@ -4,7 +4,7 @@ use super::{
     panel::{self, Origin},
 };
 use crate::{
-    plugins::{audio, bar, bluetooth, clipboard, screenshot, tray, wallpaper},
+    plugins::{audio, bar, bluetooth, clipboard, osd, screenshot, tray, wallpaper},
     ui,
 };
 use cabby_config::{BarPosition, Config};
@@ -73,6 +73,10 @@ struct DevicePanel {
     plugin: PanelPlugin,
 }
 struct Desktop {
+    osd: osd::Feedback,
+    osd_surface: Option<osd::Surface>,
+    osd_leds: std::path::PathBuf,
+    osd_probe: bool,
     config: Config,
     config_path: Option<std::path::PathBuf>,
     shell: ShellReceiver,
@@ -95,6 +99,7 @@ struct Desktop {
 #[to_exwlshell_message]
 #[derive(Clone, Debug)]
 enum Message {
+    Osd(osd::Message),
     Bar(bar::Message),
     FromBar(window::Id, bar::Message),
     Pointer(window::Id, iced::Point),
@@ -130,17 +135,32 @@ pub(super) fn run_with_audio(
     with_wallpaper: bool,
     fixture: Option<cabby_audio::Client>,
 ) -> iced_exwlshell::Result {
-    run_with_panels(context, with_bar, with_wallpaper, fixture, None, false)
+    run_with_panels(
+        context,
+        with_bar,
+        with_wallpaper,
+        fixture,
+        None,
+        false,
+        None,
+    )
 }
 
 pub(super) fn run_with_bluetooth(
     context: Context,
     endpoint: cabby_bluetooth::Endpoint,
 ) -> iced_exwlshell::Result {
-    run_with_panels(context, true, true, None, Some(endpoint), false)
+    run_with_panels(context, true, true, None, Some(endpoint), false, None)
 }
 pub(super) fn run_with_tray(context: Context) -> iced_exwlshell::Result {
-    run_with_panels(context, true, true, None, None, true)
+    run_with_panels(context, true, true, None, None, true, None)
+}
+pub(super) fn run_with_osd(
+    context: Context,
+    audio: cabby_audio::Client,
+    leds: std::path::PathBuf,
+) -> iced_exwlshell::Result {
+    run_with_panels(context, true, true, Some(audio), None, false, Some(leds))
 }
 fn run_with_panels(
     context: Context,
@@ -149,6 +169,7 @@ fn run_with_panels(
     fixture: Option<cabby_audio::Client>,
     bluetooth_fixture: Option<cabby_bluetooth::Endpoint>,
     tray_probe: bool,
+    osd_leds: Option<std::path::PathBuf>,
 ) -> iced_exwlshell::Result {
     let config_path = context.source.path;
     let config = context.config;
@@ -163,6 +184,10 @@ fn run_with_panels(
     let text_size = iced::Pixels(f32::from(config.font_size));
     daemon(
         move || Desktop {
+            osd: osd::Feedback::default(),
+            osd_surface: None,
+            osd_leds: osd_leds.clone().unwrap_or_else(osd::default_leds),
+            osd_probe: osd_leds.is_some(),
             config: config.clone(),
             config_path: Some(config_path.clone()),
             shell: receiver.clone(),
@@ -173,8 +198,10 @@ fn run_with_panels(
             origin: None,
             pointers: BTreeMap::new(),
             audio: audio::Audio::new(fixture.clone().unwrap_or_default()),
-            open_audio_on_output: fixture.is_some(),
-            panel_probe: fixture.is_some() || bluetooth_fixture.is_some() || tray_probe,
+            open_audio_on_output: fixture.is_some() && osd_leds.is_none(),
+            panel_probe: (fixture.is_some() && osd_leds.is_none())
+                || bluetooth_fixture.is_some()
+                || tray_probe,
             bluetooth: bluetooth::Bluetooth::new(bluetooth_fixture.clone().unwrap_or_default()),
             bluetooth_generation: 0,
             open_bluetooth_on_output: bluetooth_fixture.is_some(),
@@ -254,6 +281,13 @@ impl Desktop {
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
             if self.bar.is_some() {
+                self.osd
+                    .subscription(&self.config.osd, &self.osd_leds)
+                    .map(Message::Osd)
+            } else {
+                Subscription::none()
+            },
+            if self.bar.is_some() {
                 self.config_path
                     .as_deref()
                     .and_then(super::control::directory)
@@ -292,7 +326,10 @@ impl Desktop {
                 .unwrap_or_else(Subscription::none),
             self.shell.listen().map(Message::Shell),
             if self.bar.is_some()
-                && (self.config.has_widget(cabby_config::BarWidget::Audio) || self.audio_open())
+                && (self.config.has_widget(cabby_config::BarWidget::Audio)
+                    || self.audio_open()
+                    || self.config.osd.enabled
+                        && (self.config.osd.volume || self.config.osd.microphone))
             {
                 self.audio.subscription().map(Message::AudioState)
             } else {
@@ -368,6 +405,16 @@ impl Desktop {
     }
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Osd(osd::Message::Keys(keys)) => {
+                if let Some(value) = self.osd.keys(keys, &self.config.osd) {
+                    return self.show_osd(value);
+                }
+            }
+            Message::Osd(osd::Message::Expire(serial)) => {
+                if self.osd.expire(serial) {
+                    return self.close_osd();
+                }
+            }
             Message::Control(super::control::Command::ScreenshotCancel) => {
                 if self
                     .panel
@@ -487,8 +534,9 @@ impl Desktop {
                         update.asset.as_deref(),
                     ));
                 }
+                self.osd.configure(&self.config.osd, &update.config.osd);
                 self.config = update.config;
-                let panel_task = self.layout_panel();
+                let panel_task = Task::batch([self.layout_panel(), self.layout_osd()]);
                 if changes.bar_geometry {
                     return Task::batch([
                         panel_task,
@@ -531,8 +579,18 @@ impl Desktop {
             Message::Bar(bar::Message::Audio) => return self.toggle_panel(false),
             Message::Bar(bar::Message::Bluetooth) => return self.toggle_panel(true),
             Message::AudioState(message) => {
+                let value = match &message {
+                    audio::Message::Connected(_) => self.osd.audio(None, &self.config.osd),
+                    audio::Message::Snapshot(result) => {
+                        self.osd.audio(result.as_ref().ok(), &self.config.osd)
+                    }
+                    _ => None,
+                };
                 self.audio.update(message);
                 self.refresh_labels();
+                if let Some(value) = value {
+                    return self.show_osd(value);
+                }
             }
             Message::BluetoothState(generation, message)
                 if generation == self.bluetooth_generation =>
@@ -683,6 +741,7 @@ impl Desktop {
                 };
                 return Task::batch([
                     open,
+                    self.layout_osd(),
                     Task::batch(added.into_iter().map(|(id, kind)| {
                         Task::done(Message::NewLayerShell {
                             id,
@@ -693,6 +752,15 @@ impl Desktop {
             }
             Message::Shell(ShellEvent::OutputRemoved(info)) => {
                 self.output_sizes.remove(&info.id);
+                let osd = if self
+                    .osd_surface
+                    .as_ref()
+                    .is_some_and(|s| s.output == info.id)
+                {
+                    self.close_osd()
+                } else {
+                    Task::none()
+                };
                 let close = if self.panel.as_ref().is_some_and(|panel| {
                     panel.output == Some(info.id) || self.output_sizes.is_empty()
                 }) {
@@ -702,6 +770,7 @@ impl Desktop {
                 };
                 return Task::batch([
                     close,
+                    osd,
                     Task::batch(
                         self.surfaces
                             .remove_output(info.id)
@@ -711,6 +780,10 @@ impl Desktop {
                 ]);
             }
             Message::Shell(ShellEvent::Closed(id)) => {
+                if self.osd_surface.as_ref().is_some_and(|s| s.id == id) {
+                    self.osd_surface = None;
+                    self.osd.active = None;
+                }
                 self.surfaces.windows.remove(&id);
                 self.pointers.remove(&id);
                 if self
@@ -724,6 +797,88 @@ impl Desktop {
             _ => (),
         }
         Task::none()
+    }
+    fn close_osd(&mut self) -> Task<Message> {
+        self.osd.active = None;
+        self.osd_surface
+            .take()
+            .map(|s| Task::done(Message::RemoveWindow(s.id)))
+            .unwrap_or_else(Task::none)
+    }
+    fn layout_osd(&mut self) -> Task<Message> {
+        if self.osd.active.is_none() {
+            return self.close_osd();
+        }
+        let Some(surface) = &self.osd_surface else {
+            return Task::none();
+        };
+        let Some(size) = self.output_sizes.get(&surface.output) else {
+            return self.close_osd();
+        };
+        let (width, height, bottom) = osd::geometry(&self.config, *size);
+        Task::batch([
+            Task::done(Message::LayoutChange {
+                id: surface.id,
+                anchor: Anchor::Bottom,
+                size: LayerSize::px(width, height),
+            }),
+            Task::done(Message::MarginChange {
+                id: surface.id,
+                margin: (0, 0, bottom, 0),
+            }),
+        ])
+    }
+    fn show_osd(&mut self, value: osd::Content) -> Task<Message> {
+        let output = self
+            .bar
+            .as_ref()
+            .and_then(|b| b.focused_output())
+            .and_then(|name| {
+                self.surfaces
+                    .outputs
+                    .iter()
+                    .find(|(_, n)| n.as_str() == name)
+                    .map(|(id, _)| *id)
+            })
+            .filter(|id| self.output_sizes.contains_key(id))
+            .or_else(|| self.output_sizes.keys().next().copied());
+        let Some(output) = output else {
+            return Task::none();
+        };
+        if self.osd_probe {
+            eprintln!("osd-probe: {value:?}");
+        }
+        self.osd.show(value);
+        if self
+            .osd_surface
+            .as_ref()
+            .is_some_and(|s| s.output == output)
+        {
+            return Task::none();
+        }
+        let old = self
+            .osd_surface
+            .take()
+            .map(|s| Task::done(Message::RemoveWindow(s.id)))
+            .unwrap_or_else(Task::none);
+        let id = window::Id::unique();
+        let (width, height, bottom) = osd::geometry(&self.config, self.output_sizes[&output]);
+        self.osd_surface = Some(osd::Surface { id, output });
+        old.chain(Task::done(Message::NewLayerShell {
+            id,
+            settings: NewLayerShellSettings {
+                namespace: Some("cabby-osd".into()),
+                output_option: OutputOption::GlobalName(output),
+                layer: Layer::Overlay,
+                anchor: Anchor::Bottom,
+                size: LayerSize::px(width, height),
+                margin: Some((0, 0, bottom, 0)),
+                exclusive_zone: Some(-1),
+                keyboard_interactivity: KeyboardInteractivity::None,
+                events_transparent: true,
+                ..Default::default()
+            },
+        }))
     }
     fn close_panel(&mut self) -> Task<Message> {
         self.audio.close();
@@ -994,6 +1149,9 @@ impl Desktop {
         ])
     }
     fn view(&self, id: window::Id) -> Element<'_, Message> {
+        if self.osd_surface.as_ref().is_some_and(|s| s.id == id) {
+            return self.osd.view(&self.config).map(Message::Osd);
+        }
         if self.panel.as_ref().is_some_and(|p| p.shield == id) {
             return mouse_area(
                 Space::new()
@@ -1065,9 +1223,12 @@ impl Desktop {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn audio_panel_toggle_and_stale_callbacks_preserve_desktop_plugins() {
-        let mut state = Desktop {
+    fn desktop() -> Desktop {
+        Desktop {
+            osd: osd::Feedback::default(),
+            osd_surface: None,
+            osd_leds: osd::default_leds(),
+            osd_probe: false,
             config: Config::default(),
             config_path: None,
             shell: shell::channel().1,
@@ -1086,7 +1247,48 @@ mod tests {
             bluetooth_probe_stage: None,
             tray_probe_stage: None,
             output_sizes: BTreeMap::from([(1, (320, 400))]),
-        };
+        }
+    }
+    #[test]
+    fn osd_replaces_without_dismissing_panels_and_rejects_stale_expiry() {
+        let mut state = desktop();
+        let _ = state.toggle_panel(false);
+        let panel = state.panel.as_ref().unwrap().id;
+        let _ = state.show_osd(osd::Content::Volume {
+            input: false,
+            percent: 75,
+            muted: false,
+        });
+        let id = state.osd_surface.as_ref().unwrap().id;
+        let serial = state.osd.serial;
+        let _ = state.show_osd(osd::Content::Lock {
+            caps: true,
+            on: true,
+        });
+        assert_eq!(state.osd_surface.as_ref().unwrap().id, id);
+        let _ = state.update(Message::Osd(osd::Message::Expire(serial)));
+        assert!(state.osd_surface.is_some());
+        assert_eq!(state.panel.as_ref().unwrap().id, panel);
+        let _ = state.update(Message::Osd(osd::Message::Expire(state.osd.serial)));
+        assert!(state.osd_surface.is_none());
+        assert_eq!(state.panel.as_ref().unwrap().id, panel);
+        let _ = state.show_osd(osd::Content::Volume {
+            input: false,
+            percent: 25,
+            muted: false,
+        });
+        let mut config = state.config.clone();
+        config.osd.enabled = false;
+        let _ = state.update(Message::Config(super::super::live_config::Update {
+            config,
+            asset: None,
+        }));
+        assert!(state.osd_surface.is_none());
+        assert_eq!(state.panel.as_ref().unwrap().id, panel);
+    }
+    #[test]
+    fn audio_panel_toggle_and_stale_callbacks_preserve_desktop_plugins() {
+        let mut state = desktop();
         let _ = state.toggle_panel(false);
         let first = state.panel.as_ref().unwrap().id;
         let config = Config {

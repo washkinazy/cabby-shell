@@ -64,7 +64,7 @@ Create `$HOME/.config/cabby-shell` and copy one example to `config.toml` only if
 
 #### Widget behavior
 
-`workspaces` follows niri and shows an unavailable label if disconnected. `clock` shows local date and 24-hour time (for example `Thu 05 Nov  09:07`) and updates at minute boundaries; wall-clock jumps are reflected within a minute. Timezone/format configuration is not exposed; restart after changing the process timezone. `audio` and `bluetooth` show event-driven status and open their device panels. Audio reports default-output volume/mute; Bluetooth reports power/connected count. Omitting either widget stops its observation when its panel is closed. Bluetooth registers its agent only while the panel is open; passive observation never starts discovery. `network` reads NetworkManager's connection type/state and connectivity events on the system bus, including offline, connecting, local-only, limited and captive-portal states. Missing NetworkManager shows `Network ?`; owner/bus loss clears status and reconnects after two seconds. No network scan or connectivity-check command is issued. `tray` hosts [StatusNotifier items and menus](tray.md). `caffeine` shows off/manual/automatic state and sleep-inhibitor failures, with a tooltip listing reasons and source availability. Clicking toggles only the manual reason. `idle` shows automatic-lock status (`Idle lock`, `Idle disabled`, `Locking`, `Idle failed`, or unavailable `Idle ?`) and toggles a coordinator-lifetime manual Caffeine reason; `Keep awake` means inhibited. Changes from CLI controls appear through atomic runtime status updates. No subscription starts when omitted. The default regions do not include it; see [idle.toml](../examples/config/idle.toml). `nightlight` shows off/scheduled/night/forced/unavailable state and toggles the same coordinator-owned state as `cabby nightlight-toggle`; its tooltip reports temperature/output failures. Forced mode returns to scheduled-on on toggle, then the next toggle disables it. It is included before the tray by default; explicit old bar lists must add it to show the indicator. `apps` opens the launcher. `title` shows the output's active window title when `show_window_title` is true. `status` shows niri connection/action errors. The middle region uses its content width; equal side regions share the remaining space, keeping the middle centered while leaving room for side indicators. Overflow scrolls horizontally within its region. Shared typography, colors, spacing and the bar's top/bottom placement apply to every region.
+`workspaces` follows niri and shows an unavailable label if disconnected. `clock` shows local date and 24-hour time (for example `Thu 05 Nov  09:07`) and updates at minute boundaries; wall-clock jumps are reflected within a minute. Timezone/format configuration is not exposed; restart after changing the process timezone. `audio` and `bluetooth` show event-driven status and open their device panels. Audio reports default-output volume/mute; Bluetooth reports power/connected count. Omitting Bluetooth stops its observation when its panel is closed. Audio observation stops only when its widget/panel and volume/microphone OSD are all inactive. Enabled OSD sources also keep niri focus events active for output selection, even without workspaces/title/status widgets. Bluetooth registers its agent only while the panel is open; passive observation never starts discovery. `network` reads NetworkManager's connection type/state and connectivity events on the system bus, including offline, connecting, local-only, limited and captive-portal states. Missing NetworkManager shows `Network ?`; owner/bus loss clears status and reconnects after two seconds. No network scan or connectivity-check command is issued. `tray` hosts [StatusNotifier items and menus](tray.md). `caffeine` shows off/manual/automatic state and sleep-inhibitor failures, with a tooltip listing reasons and source availability. Clicking toggles only the manual reason. `idle` shows automatic-lock status (`Idle lock`, `Idle disabled`, `Locking`, `Idle failed`, or unavailable `Idle ?`) and toggles a coordinator-lifetime manual Caffeine reason; `Keep awake` means inhibited. Changes from CLI controls appear through atomic runtime status updates. No subscription starts when omitted. The default regions do not include it; see [idle.toml](../examples/config/idle.toml). `nightlight` shows off/scheduled/night/forced/unavailable state and toggles the same coordinator-owned state as `cabby nightlight-toggle`; its tooltip reports temperature/output failures. Forced mode returns to scheduled-on on toggle, then the next toggle disables it. It is included before the tray by default; explicit old bar lists must add it to show the indicator. `apps` opens the launcher. `title` shows the output's active window title when `show_window_title` is true. `status` shows niri connection/action errors. The middle region uses its content width; equal side regions share the remaining space, keeping the middle centered while leaving room for side indicators. Overflow scrolls horizontally within its region. Shared typography, colors, spacing and the bar's top/bottom placement apply to every region.
 
 ### `bar_height`
 
@@ -482,3 +482,62 @@ Device panels and tray menus open beside the clicked widget on its output, below
 - **Values/example:** `include_cursor = true` in [screenshot.toml](../examples/config/screenshot.toml); no units.
 - **Interactions:** passes grim's explicit `-c` option. The source is captured before selection controls are rendered; changing this cannot alter an already frozen image. Encoded capture maximum 32 MiB, dimensions at most 8192 per axis / 16,777,216 pixels and decoder allocation at most 64 MiB. Capture helper timeout five seconds; cancellation kills/reaps it.
 - **Application:** live reload affects the next capture. No restart or recapture of an open preview.
+
+## OSD
+
+### `osd`
+
+- **File/type/default:** optional TOML table in `config.toml`, with field defaults below. Omission enables bottom-center feedback for volume, microphone and Caps Lock; Num Lock is off.
+- **Purpose:** passive, transient [on-screen feedback](osd.md) using Cabby's solid Fluent appearance. Volume/microphone show a filled progress bar and percentage; lock keys show On/Off text. No ordinary notification or input focus is involved.
+- **Example:** complete defaults in [full.toml](../examples/config/full.toml), a longer/higher variant in [osd.toml](../examples/config/osd.toml), and disabled alternative in [osd-disabled.toml](../examples/config/osd-disabled.toml).
+- **Interactions:** the existing desktop process owns the surface. Niri focus events select an output even when workspace/title widgets are omitted; fallback is the first available output. Shared colors/font/renderer apply. Startup, reconnect and new-device baselines are silent. The latest event replaces the previous one. OSD is hidden by the compositor's active session lock, independently of lock authentication.
+- **Application/migration:** all fields apply live after a valid reload; invalid edits retain the previous valid configuration. New optional table: existing configs remain valid and gain default feedback after the updated UI starts. No compositor bindings, extra services or user config overwrite are required.
+
+### `osd.enabled`
+
+- **Purpose/type/default:** boolean, `true`; master switch for OSD observation/display. Valid values are `true`/`false`, no units.
+- **Example:** `enabled = false` under `[osd]` in [osd-disabled.toml](../examples/config/osd-disabled.toml).
+- **Interactions:** false immediately dismisses feedback and drops LED observation; audio observation continues only if an audio bar widget/panel needs it. Other shell controls keep their existing behavior.
+- **Application:** live; newly started sources establish silent baselines.
+
+### `osd.volume`
+
+- **Purpose/type/default:** boolean, `true`; feedback for default-output volume and mute changes. Valid values `true`/`false`, no units.
+- **Example:** `volume = true` under `[osd]` in [full.toml](../examples/config/full.toml).
+- **Interactions:** requires `osd.enabled`; observes the existing audio worker, including external key/tool changes. Non-default devices and playback-only events are ignored. Values above 100% retain their numeric value with a full meter. Muting displays Muted with an empty meter. No audio is changed by OSD itself.
+- **Application:** live; existing audio observation is retained across category toggles so the first new change is shown; newly started/reconnected workers establish silent baselines.
+
+### `osd.microphone`
+
+- **Purpose/type/default:** boolean, `true`; feedback for default-input level and mute changes. Valid values `true`/`false`, no units.
+- **Example:** `microphone = true` under `[osd]` in [full.toml](../examples/config/full.toml).
+- **Interactions:** requires `osd.enabled`; uses the same audio subscription as output feedback. It displays a microphone icon, level/mute status and a filled meter without accessing recording contents. If one snapshot changes both input and output, microphone feedback wins.
+- **Application:** live; existing observation is retained, while newly started workers establish silent baselines.
+
+### `osd.caps_lock`
+
+- **Purpose/type/default:** boolean, `true`; On/Off feedback for Caps Lock indicator changes. Valid values `true`/`false`, no units.
+- **Example:** `caps_lock = true` under `[osd]` in [full.toml](../examples/config/full.toml).
+- **Interactions:** requires `osd.enabled` and readable Linux capslock LED brightness files. A bounded worker reads cached files every 200 ms; unavailable state backs off to two seconds. Membership is rescanned every two seconds. Multiple keyboards aggregate On; seats are not distinguished. Missing/invalid state and hotplug establish silent baselines. No keycodes, input-device access or additional permissions are requested.
+- **Application:** live; disabling stops observation when Num Lock is also off.
+
+### `osd.num_lock`
+
+- **Purpose/type/default:** boolean, `false`; optional Num Lock On/Off feedback. Valid values `true`/`false`, no units.
+- **Example:** `num_lock = true` under `[osd]` in [osd.toml](../examples/config/osd.toml).
+- **Interactions:** requires `osd.enabled`; same read-only Linux LED bounds, availability and multi-keyboard behavior as Caps Lock. When one observation changes both lock keys, enabled Num Lock feedback wins.
+- **Application:** live; initial state after enabling is silent.
+
+### `osd.timeout_ms`
+
+- **Purpose/type/default:** integer milliseconds, `1500`; how long feedback remains visible after its latest event. Valid range `500..5000`.
+- **Example:** `timeout_ms = 2000` under `[osd]` in [osd.toml](../examples/config/osd.toml).
+- **Interactions:** repeated changes replace the content and start a fresh timeout on the same surface. One cancellable timer runs only while visible; stale expiry events cannot close refreshed feedback.
+- **Application:** live; changing this field gives visible feedback a fresh full countdown.
+
+### `osd.bottom_margin`
+
+- **Purpose/type/default:** integer logical pixels, `96`; distance from the output bottom to the centered OSD's bottom edge. Valid range `0..512`.
+- **Example:** `bottom_margin = 120` under `[osd]` in [osd.toml](../examples/config/osd.toml).
+- **Interactions:** horizontal center is fixed. A bottom bar sets a minimum of `bar_height + 12`; small outputs clamp size/margins to stay on screen. Card width starts at 320 pixels and grows with larger shared text; height starts at 100 pixels. Output size/scale changes recompute placement, removal dismisses it.
+- **Application:** live, including a currently visible OSD, without resetting its timer.

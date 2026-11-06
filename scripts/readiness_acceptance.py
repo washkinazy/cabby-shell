@@ -63,7 +63,7 @@ def check(directory, renderer, children, selected_adapter):
     assert os.environ["CABBY_TEST_WAYLAND"] == os.environ["WAYLAND_DISPLAY"]
     binaries = ROOT / "target/release"
     config = directory / "readiness.toml"
-    config.write_text(f'renderer="{"vulkan" if renderer == "gpu" else "software"}"\n')
+    config.write_text(f'osd={{enabled=false}}\nrenderer="{"vulkan" if renderer == "gpu" else "software"}"\n')
     env = os.environ | {
         "DBUS_SYSTEM_BUS_ADDRESS": "unix:path=" + str(directory / "no-system-bus"),
         "PULSE_SERVER": "unix:" + str(directory / "no-audio-server"),
@@ -152,6 +152,7 @@ def check(directory, renderer, children, selected_adapter):
                                  "default config; idle lock/display/sleep and automatic caffeine disabled",
                                  "private session bus; system bus/audio unavailable; bounded retry workers included",
                                  "clipboard healthy with empty memory-only history",
+                                 "OSD disabled for comparison with the pre-OSD baseline",
                                  "notification renderer initialized then expired; launcher excluded from idle",
                                  "three consecutive five-second idle windows; CPU is percent of one core",
                                  "RSS sums shared pages repeatedly; PSS apportions them; GPU allocations excluded",

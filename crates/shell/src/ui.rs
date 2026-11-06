@@ -2,6 +2,9 @@ use cabby_config::{Config, Source};
 use iced::{Color, Theme};
 use std::{os::unix::process::CommandExt, path::PathBuf};
 mod fluent;
+pub(crate) fn neutral_track(theme: &Theme) -> Color {
+    fluent::mix(theme.palette().background, theme.palette().text, 0.17)
+}
 pub(crate) use fluent::{
     accent_mark, bar as bar_style, blank, danger, input as input_style, primary, quiet, raised,
     selected, selected_group, slider_style, standard,

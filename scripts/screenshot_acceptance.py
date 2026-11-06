@@ -6,7 +6,7 @@ ROOT=Path(__file__).resolve().parents[1]
 def check(directory,config,runtime,renderer,children):
     assert os.environ.get('CABBY_TEST_WAYLAND')==os.environ['WAYLAND_DISPLAY']
     saves=directory/'saved-images';saves.mkdir()
-    base=f'renderer="{"vulkan" if renderer=="gpu" else "software"}"\nbar_left=["screenshot"]\nbar_middle=[]\nbar_right=[]\nwallpaper_color="#19334d"\n[screenshot]\ndirectory="{saves}"\n'
+    base=f'osd={{enabled=false}}\nrenderer="{"vulkan" if renderer=="gpu" else "software"}"\nbar_left=["screenshot"]\nbar_middle=[]\nbar_right=[]\nwallpaper_color="#19334d"\n[screenshot]\ndirectory="{saves}"\n'
     config.write_text(base)
     def cli(action):return subprocess.run([ROOT/'target/debug/cabby',action],capture_output=True,text=True,timeout=7)
     assert cli('reload').returncode==0
