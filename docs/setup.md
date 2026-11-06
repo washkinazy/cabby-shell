@@ -33,10 +33,12 @@ The default user file is `$HOME/.config/cabby-shell/config.toml`. Missing files 
 | Monitor screenshot | `cabby screenshot-monitor` | Mod+Shift+Print |
 | Night light | `cabby nightlight-toggle` | Mod+Shift+G |
 | Caffeine | `cabby caffeine-toggle` or bar button | Bar button |
+| Lock | `cabby lock` | Mod+Escape |
+| Lock and suspend | `cabby suspend` | Mod+Shift+Escape |
 
 Bindings are compositor preferences; Cabby does not install or rewrite them. Clipboard is memory-only and bounded. Screenshot pixels remain in memory until explicit Save; Copy uses the coordinator clipboard owner. Default bar regions are workspaces left, clock/date middle and audio/network/Bluetooth/Caffeine/night-light/tray right. Optional clipboard/screenshot buttons can be added through `bar_left`, `bar_middle` or `bar_right`.
 
-Automatic idle locking, display power, external-sleep locking and audio/fullscreen Caffeine sources are opt-in. Night light needs configured policy and gamma support. Follow [locking](locking.md), [Caffeine](caffeine.md) and [night light](night-light.md) for these interactions. For Fedora locking support, `just install-lock-support` installs the explicit PAM policy; it does not acquire a lock. Real-user PAM and physical lock/display/sleep behavior have separate validation limits.
+Automatic idle locking, display power, external-sleep locking and audio/fullscreen Caffeine sources are opt-in. The personal dotfiles select idle lock after 600 seconds, display-off after 660 seconds and lock-before-sleep. Before applying that configuration and the lock bindings, run `just install-lock-support` from the Cabby checkout to install the Fedora PAM policy, then `chezmoi apply`. The policy task needs sudo and does not acquire a lock. Night light needs configured policy and gamma support. Follow [locking](locking.md), [Caffeine](caffeine.md) and [night light](night-light.md) for these interactions. Real-user PAM and physical lock/display/sleep behavior have separate validation limits.
 
 ## Diagnose and recover
 
