@@ -9,6 +9,7 @@ This is a personal project in a public repository; competing with other shells o
 1. **Configuration lives in files.** There is no settings app. Persistent preferences, layout, and styling are configured through documented text files.
 2. **Use Rust/Iced styling.** The shell does not use GTK for its interface or theming. Phase 0 validated the pinned Rust/Iced stack documented in PLAN.md.
 3. **Provide the essentials around the window manager.** Combine the basic desktop interactions into one coherent shell without taking ownership of unrelated system services.
+4. **Use a solid Fluent-inspired appearance.** Opaque surfaces, restrained rounding, neutral controls and clear accent states form the shared [visual direction](docs/appearance.md). Existing configuration supplies the palette and layout; glass and backdrop blur are excluded.
 
 ## Scope boundaries
 

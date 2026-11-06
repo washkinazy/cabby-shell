@@ -1,3 +1,4 @@
+# Solid Fluent-inspired UI: opaque surfaces; neutral controls; accent markers.
 # Custom sunrise/sunset, with one-hour clock-anchored fades around each time.
 [nightlight]
 enabled = true

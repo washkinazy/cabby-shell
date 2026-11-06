@@ -1,3 +1,4 @@
+# Solid Fluent-inspired UI: opaque surfaces; neutral controls; accent markers.
 # Optional public city-name geocoding; auto_locate takes precedence if both are set.
 [nightlight]
 enabled = true

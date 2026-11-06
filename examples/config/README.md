@@ -2,6 +2,8 @@
 
 Copy one example to `$HOME/.config/cabby-shell/config.toml` after creating the directory, without overwriting an existing configuration. Each is a complete standalone input, not a file to merge with the others.
 
+All examples use the [solid Fluent-inspired appearance](../../docs/appearance.md): opaque surfaces, neutral controls and accent selection markers. Existing palette/layout keys remain the complete customization interface. Vulkan adds a subtle panel shadow; software uses the same opaque surfaces without that shadow. No theme-selection key or glass effect is supported.
+
 | File | Purpose |
 | --- | --- |
 | [wallpaper.toml](wallpaper.toml) | Relative PNG path and fit mode; copy `assets/` too |

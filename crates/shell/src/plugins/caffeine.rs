@@ -14,15 +14,14 @@ impl Status {
         &self,
         failed: bool,
     ) -> fn(&iced::Theme, iced::widget::button::Status) -> iced::widget::button::Style {
-        use iced::widget::button;
         if failed || self.active && self.sleep_state == "unavailable" {
-            button::danger
+            crate::ui::danger
         } else if self.manual {
-            button::primary
+            crate::ui::primary
         } else if self.active {
-            button::secondary
+            crate::ui::selected
         } else {
-            button::text
+            crate::ui::quiet
         }
     }
     pub fn icon(&self) -> iced::widget::svg::Handle {

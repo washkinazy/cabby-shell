@@ -1,3 +1,4 @@
+# Solid Fluent-inspired UI: opaque surfaces; neutral controls; accent markers.
 # Explicit opt-in to IP lookup through api.noctalia.dev; coordinates stay in memory.
 [nightlight]
 enabled = true

@@ -20,6 +20,35 @@ fn main() {
     let left = [40, 90, 130];
     let right = [180, 130, 60];
     match args[2].as_str() {
+        mode if mode.starts_with("fluent-bar-") => {
+            let rows = if mode.ends_with("top") {
+                0..40
+            } else {
+                h - 40..h
+            };
+            let mut accent = 0;
+            let mut selected = 0;
+            for y in rows {
+                for x in 0..w {
+                    let i = ((y * w + x) * 4) as usize;
+                    let rgb = &asset.rgba[i..i + 3];
+                    accent += usize::from(
+                        rgb.iter()
+                            .zip([136u8, 192, 208])
+                            .all(|(a, b)| a.abs_diff(b) <= 2),
+                    );
+                    selected += usize::from(
+                        rgb.iter()
+                            .zip([49u8, 52, 59])
+                            .all(|(a, b)| a.abs_diff(b) <= 2),
+                    );
+                }
+            }
+            assert!(
+                (16..300).contains(&accent) && selected > 100,
+                "workspace marker/neutral selection missing: {accent}/{selected}"
+            );
+        }
         mode if mode.starts_with("shot-select-ready-") => {
             let dims: Vec<u32> = mode
                 .trim_start_matches("shot-select-ready-")
@@ -33,10 +62,9 @@ fn main() {
                 let i = ((py * w + px) * 4) as usize;
                 let rgb = &asset.rgba[i..i + 3];
                 assert!(
-                    rgb[0] >= 120
-                        && rgb[1] >= 170
-                        && rgb[2] >= 180
-                        && rgb[2].saturating_sub(rgb[0]) > 50,
+                    rgb.iter()
+                        .zip([35u8, 38, 45])
+                        .all(|(a, b)| a.abs_diff(b) <= 2),
                     "selector controls not ready"
                 );
             }
@@ -53,16 +81,25 @@ fn main() {
                 500.min(lh.saturating_sub(56)),
             );
             let (left, top) = ((lw - pw) / 2, (lh - ph) / 2);
-            for x in [left + 24, left + pw / 2, left + pw - 24] {
+            for (button, x) in [left + 24, left + pw / 2, left + pw - 24]
+                .into_iter()
+                .enumerate()
+            {
                 let px = (u64::from(x) * u64::from(w) / u64::from(lw)) as u32;
                 let py = (u64::from(top + ph - 22) * u64::from(h) / u64::from(lh)) as u32;
                 let index = ((py * w + px) * 4) as usize;
                 let rgb = &asset.rgba[index..index + 3];
                 assert!(
-                    rgb[0] >= 120
-                        && rgb[1] >= 170
-                        && rgb[2] >= 180
-                        && rgb[2].saturating_sub(rgb[0]) > 50,
+                    if button == 1 {
+                        rgb[0] >= 120
+                            && rgb[1] >= 170
+                            && rgb[2] >= 180
+                            && rgb[2].saturating_sub(rgb[0]) > 50
+                    } else {
+                        rgb.iter()
+                            .zip([35u8, 38, 45])
+                            .all(|(a, b)| a.abs_diff(b) <= 2)
+                    },
                     "preview controls not ready"
                 );
             }
@@ -85,7 +122,11 @@ fn main() {
                 for x in 8..40 {
                     let offset = ((y * w + x) * 4) as usize;
                     let rgb = &asset.rgba[offset..offset + 3];
-                    if rgb.iter().all(|a| *a > 180) {
+                    if if mode.contains("-on-") {
+                        rgb.iter().all(|a| *a < 90)
+                    } else {
+                        rgb.iter().all(|a| *a > 180)
+                    } {
                         icon += 1;
                     }
                     if rgb[0] > 100 && rgb[1] > 80 && rgb[2] > 80 {
@@ -100,7 +141,7 @@ fn main() {
         }
         mode if mode.starts_with("idle-") => {
             let start = if mode.ends_with("top") { 0 } else { h - 40 };
-            let mut accent = 0;
+            let mut fill = 0;
             let mut letters = 0;
             for y in start + 8..start + 32 {
                 for x in 16..100 {
@@ -108,19 +149,19 @@ fn main() {
                     let rgb = &asset.rgba[offset..offset + 3];
                     if rgb
                         .iter()
-                        .zip([136u8, 192, 208])
-                        .all(|(a, b)| a.abs_diff(b) < 8)
+                        .zip([35u8, 38, 45])
+                        .all(|(a, b)| a.abs_diff(b) <= 2)
                     {
-                        accent += 1;
+                        fill += 1;
                     }
-                    if rgb.iter().all(|a| *a < 90) {
+                    if rgb.iter().all(|a| *a > 180) {
                         letters += 1;
                     }
                 }
             }
             assert!(
-                accent > 500 && letters > 60,
-                "idle button/text missing: {accent}/{letters}"
+                fill > 500 && letters > 60,
+                "solid idle button/text missing: {fill}/{letters}"
             );
         }
         mode if mode.starts_with("clock-") => {
@@ -175,6 +216,13 @@ fn main() {
                 (h as f32 / scale - 548.0).max(8.0)
             };
             let left_x = w.saturating_sub((448.0 * scale) as u32);
+            // Shared Fluent panels use the configured opaque surface, including
+            // their otherwise empty padding, over the synthetic wallpaper.
+            check(
+                left_x + (10.0 * scale) as u32,
+                ((top + 10.0) * scale) as u32,
+                [24, 27, 34],
+            );
             let mut text_pixels = 0;
             for y in ((top + 12.0) * scale) as u32..((top + 300.0) * scale).min(h as f32) as u32 {
                 for x in left_x + 20..w.saturating_sub(24) {

@@ -1,6 +1,45 @@
 use cabby_config::{Config, Source};
 use iced::{Color, Theme};
 use std::{os::unix::process::CommandExt, path::PathBuf};
+mod fluent;
+pub(crate) use fluent::{
+    accent_mark, bar as bar_style, blank, danger, input as input_style, primary, quiet, raised,
+    selected, selected_group, slider_style, standard,
+};
+pub(crate) fn panel(
+    renderer: cabby_config::Renderer,
+) -> impl Fn(&Theme) -> iced::widget::container::Style {
+    move |theme| fluent::panel(theme, renderer == cabby_config::Renderer::Vulkan)
+}
+
+pub(crate) fn button<'a, Message: 'a>(
+    content: impl Into<iced::Element<'a, Message>>,
+) -> iced::widget::Button<'a, Message> {
+    iced::widget::button(content)
+        .padding([5, 10])
+        .style(standard)
+}
+pub(crate) fn heading<'a>(
+    config: &Config,
+    value: impl iced::widget::text::IntoFragment<'a>,
+) -> iced::widget::Text<'a> {
+    body(config, value)
+        .size(f32::from(config.font_size) + 5.)
+        .font(iced::Font {
+            weight: iced::font::Weight::Semibold,
+            ..Default::default()
+        })
+}
+pub(crate) fn secondary<'a>(
+    config: &Config,
+    value: impl iced::widget::text::IntoFragment<'a>,
+) -> iced::widget::Text<'a> {
+    body(config, value).color(fluent::mix(
+        color(&config.background),
+        color(&config.foreground),
+        0.74,
+    ))
+}
 pub fn configuration_source() -> cabby_config::Result<Source> {
     let mut args = std::env::args_os().skip(1);
     let path = match args.next() {

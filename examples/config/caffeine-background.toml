@@ -1,3 +1,4 @@
+# Solid Fluent-inspired UI: opaque surfaces; neutral controls; accent markers.
 # Include background fullscreen windows, including niri hidden workspaces.
 [caffeine]
 fullscreen = true

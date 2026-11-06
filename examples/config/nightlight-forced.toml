@@ -1,3 +1,4 @@
+# Solid Fluent-inspired UI: opaque surfaces; neutral controls; accent markers.
 # Force night temperature independently of enable/schedule/location.
 [nightlight]
 enabled = false

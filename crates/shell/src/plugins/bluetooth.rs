@@ -3,7 +3,7 @@ use cabby_bluetooth::{Command, Endpoint, PromptKind, Reply, State};
 use iced::{
     Element, Length, Subscription,
     futures::SinkExt,
-    widget::{button, column, container, row, scrollable, text_input},
+    widget::{column, container, row, scrollable, text_input},
 };
 use tokio::sync::{mpsc, watch};
 #[derive(Clone)]
@@ -174,7 +174,7 @@ impl Bluetooth {
     pub(crate) fn view(&self, config: &cabby_config::Config) -> Element<'_, Message> {
         let enabled = self.state.available && !self.state.busy && !self.submitted;
         let action = |label: &'static str, command, allow: bool| {
-            let b = button(label);
+            let b = crate::ui::button(label);
             if enabled && allow {
                 b.on_press(Message::Action(command))
             } else {
@@ -182,10 +182,10 @@ impl Bluetooth {
             }
         };
         let header = row![
-            crate::ui::body(config, "Bluetooth")
-                .size(24)
-                .width(Length::Fill),
-            button("Close").on_press(Message::Close)
+            crate::ui::heading(config, "Bluetooth").width(Length::Fill),
+            crate::ui::button("Close")
+                .style(crate::ui::quiet)
+                .on_press(Message::Close)
         ];
         let mut contents = column![].spacing(12).padding(iced::Padding {
             right: 12.0,
@@ -202,26 +202,27 @@ impl Bluetooth {
                 .find(|d| d.path == prompt.device)
                 .map(|d| d.name.as_str())
                 .unwrap_or("Device");
-            contents = contents.push(crate::ui::body(config, format!("Pair with {name}")).size(20));
+            contents = contents.push(
+                crate::ui::body(config, format!("Pair with {name}"))
+                    .size(f32::from(config.font_size) + 2.),
+            );
             match &prompt.kind {
                 PromptKind::Confirm(key) => {
-                    contents = contents
-                        .push(crate::ui::body(
-                            config,
-                            format!("Does {key:06} match the code on the device?"),
-                        ))
-                        .push(
-                            button("Codes match").on_press(Message::Action(Command::Reply(
-                                prompt.id,
-                                Reply::Accept,
-                            ))),
-                        )
+                    contents =
+                        contents
+                            .push(crate::ui::body(
+                                config,
+                                format!("Does {key:06} match the code on the device?"),
+                            ))
+                            .push(crate::ui::button("Codes match").on_press(Message::Action(
+                                Command::Reply(prompt.id, Reply::Accept),
+                            )))
                 }
                 PromptKind::Authorize => {
                     contents =
                         contents
                             .push(crate::ui::body(config, "Allow this pairing request?"))
-                            .push(button("Allow pairing").on_press(Message::Action(
+                            .push(crate::ui::button("Allow pairing").on_press(Message::Action(
                                 Command::Reply(prompt.id, Reply::Accept),
                             )))
                 }
@@ -235,9 +236,11 @@ impl Bluetooth {
                         "Passkey (up to six digits)"
                     };
                     let input = text_input(placeholder, &self.input)
+                        .style(crate::ui::input_style)
+                        .padding([8, 10])
                         .secure(true)
                         .on_input(Message::Input);
-                    let submit = button("Submit");
+                    let submit = crate::ui::button("Submit");
                     contents =
                         contents
                             .push(input)
@@ -250,9 +253,9 @@ impl Bluetooth {
             }
         }
         if self.state.pairing.is_some() {
-            contents = contents
-                .push(crate::ui::body(config, "Pairing…"))
-                .push(button("Cancel pairing").on_press(Message::Action(Command::CancelPair)));
+            contents = contents.push(crate::ui::body(config, "Pairing…")).push(
+                crate::ui::button("Cancel pairing").on_press(Message::Action(Command::CancelPair)),
+            );
         }
         if let Some(path) = &self.remove
             && let Some(device) = self.state.devices.iter().find(|d| &d.path == path)
@@ -264,8 +267,8 @@ impl Bluetooth {
                 ))
                 .push(
                     row![
-                        button("Forget device").on_press(Message::ConfirmRemove),
-                        button("Keep device").on_press(Message::KeepDevice)
+                        crate::ui::button("Forget device").on_press(Message::ConfirmRemove),
+                        crate::ui::button("Keep device").on_press(Message::KeepDevice)
                     ]
                     .spacing(8),
                 );
@@ -277,7 +280,7 @@ impl Bluetooth {
         }
         for adapter in &self.state.adapters {
             contents = contents
-                .push(crate::ui::body(config, &adapter.name).size(20))
+                .push(crate::ui::body(config, &adapter.name).size(f32::from(config.font_size) + 2.))
                 .push(
                     row![
                         action(
@@ -314,10 +317,10 @@ impl Bluetooth {
             for device in devices {
                 let current = group(device);
                 if previous_group != Some(current) {
-                    contents = contents.push(
-                        crate::ui::body(config, ["Connected", "Paired", "Available"][current])
-                            .size(18),
-                    );
+                    contents = contents.push(crate::ui::secondary(
+                        config,
+                        ["Connected", "Paired", "Available"][current],
+                    ));
                     previous_group = Some(current);
                 }
                 count += 1;
@@ -349,25 +352,38 @@ impl Bluetooth {
                         adapter.powered,
                     ));
                 }
-                let remove = button("Forget");
+                let remove = crate::ui::button("Forget");
                 controls = controls.push(if enabled {
                     remove.on_press(Message::Remove(device.path.clone()))
                 } else {
                     remove
                 });
-                contents = contents
-                    .push(crate::ui::body(
-                        config,
-                        format!(
-                            "{} · {status}{}",
-                            device.name,
-                            device
-                                .battery
-                                .map(|v| format!(" · {v}% battery"))
-                                .unwrap_or_default()
-                        ),
-                    ))
-                    .push(controls);
+                contents = contents.push(
+                    container(
+                        column![
+                            crate::ui::body(
+                                config,
+                                format!(
+                                    "{} · {status}{}",
+                                    device.name,
+                                    device
+                                        .battery
+                                        .map(|v| format!(" · {v}% battery"))
+                                        .unwrap_or_default()
+                                ),
+                            ),
+                            controls.wrap()
+                        ]
+                        .spacing(10),
+                    )
+                    .padding(12)
+                    .width(Length::Fill)
+                    .style(if device.connected {
+                        crate::ui::selected_group
+                    } else {
+                        crate::ui::raised
+                    }),
+                );
             }
             if count == 0 {
                 contents = contents.push(crate::ui::body(
@@ -389,7 +405,7 @@ impl Bluetooth {
             .padding(16)
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(container::rounded_box)
+            .style(crate::ui::panel(config.renderer))
             .into()
     }
 }
