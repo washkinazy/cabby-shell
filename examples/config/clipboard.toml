@@ -1,6 +1,7 @@
 # Solid Fluent-inspired UI: opaque surfaces; neutral controls; accent markers.
 # Optional picker button; CLI/keybinding works without it.
 bar_left = ["workspaces", "clipboard"]
+bar_right = ["audio", "network", "bluetooth", "caffeine", "nightlight", "tray"] # Clipboard is already placed on the left.
 [clipboard]
 enabled = true
 max_items = 100

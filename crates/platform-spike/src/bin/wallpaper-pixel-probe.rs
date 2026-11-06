@@ -20,6 +20,53 @@ fn main() {
     let left = [40, 90, 130];
     let right = [180, 130, 60];
     match args[2].as_str() {
+        "bar-all-icons" => {
+            for index in 0..9 {
+                let right = w - 8 - index * 34;
+                let mut ink = 0;
+                for y in 10..30 {
+                    for x in right - 26..right {
+                        let i = ((y * w + x) * 4) as usize;
+                        ink += usize::from(asset.rgba[i..i + 3].iter().all(|v| *v > 100));
+                    }
+                }
+                assert!(ink > 8, "missing bar icon {index}: {ink}");
+            }
+        }
+        mode if mode.starts_with("bar-hint-") => {
+            let n: Vec<u32> = mode
+                .trim_start_matches("bar-hint-")
+                .split('-')
+                .map(|v| v.parse().unwrap())
+                .collect();
+            let (lw, lh, x, y, width, height, light) =
+                (n[0], n[1], n[2], n[3], n[4], n[5], n[6] != 0);
+            let px = |v: u32| v * w / lw;
+            let py = |v: u32| v * h / lh;
+            check(
+                px(x + width / 2),
+                py(y + 4),
+                if light { [231, 231, 236] } else { [35, 38, 45] },
+            );
+            let foreground = if light {
+                [32u8, 33, 40]
+            } else {
+                [229u8, 233, 240]
+            };
+            let mut ink = 0;
+            for yy in py(y + 8)..py(y + height - 8) {
+                for xx in px(x + 8)..px(x + width - 8) {
+                    let i = ((yy * w + xx) * 4) as usize;
+                    ink += usize::from(
+                        asset.rgba[i..i + 3]
+                            .iter()
+                            .zip(foreground)
+                            .all(|(a, b)| a.abs_diff(b) < 8),
+                    );
+                }
+            }
+            assert!(ink > 15, "hint text has no readable contrast: {ink}");
+        }
         mode if mode.starts_with("osd-meter-") => {
             let values: Vec<i32> = mode
                 .trim_start_matches("osd-meter-")
@@ -191,26 +238,28 @@ fn main() {
         mode if mode.starts_with("idle-") => {
             let start = if mode.ends_with("top") { 0 } else { h - 40 };
             let mut fill = 0;
-            let mut letters = 0;
+            let mut icon = 0;
+            let mut outside = 0;
             for y in start + 8..start + 32 {
-                for x in 16..100 {
+                for x in 8..110 {
                     let offset = ((y * w + x) * 4) as usize;
                     let rgb = &asset.rgba[offset..offset + 3];
                     if rgb
                         .iter()
-                        .zip([35u8, 38, 45])
+                        .zip([24u8, 27, 34])
                         .all(|(a, b)| a.abs_diff(b) <= 2)
                     {
-                        fill += 1;
+                        fill += usize::from(x < 34);
                     }
                     if rgb.iter().all(|a| *a > 180) {
-                        letters += 1;
+                        icon += usize::from(x < 34);
+                        outside += usize::from(x >= 40);
                     }
                 }
             }
             assert!(
-                fill > 500 && letters > 60,
-                "solid idle button/text missing: {fill}/{letters}"
+                fill > 250 && icon > 10 && outside == 0,
+                "compact idle/night-light icon missing or prose remains: {fill}/{icon}/{outside}"
             );
         }
         mode if mode.starts_with("clock-") => {

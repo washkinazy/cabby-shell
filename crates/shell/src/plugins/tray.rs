@@ -2,7 +2,7 @@
 use crate::icons::{self, Cache, Icon, Key};
 use cabby_tray::{Command, Handle, Service, State, Token};
 use iced::futures::SinkExt;
-use iced::widget::{column, container, image, mouse_area, row, rule, scrollable, svg, tooltip};
+use iced::widget::{column, container, image, mouse_area, row, rule, scrollable, svg};
 use iced::{Element, Length, Subscription, Task};
 use std::{collections::HashMap, time::Duration};
 
@@ -12,6 +12,7 @@ pub(crate) enum Message {
     State(State),
     Action(Command),
     Close,
+    Hint(Option<String>),
     Icons(Vec<(Key, Option<Icon>)>),
 }
 #[derive(Default)]
@@ -60,6 +61,7 @@ impl Tray {
     }
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Hint(_) => (),
             Message::Connected(handle) => self.handle = Some(handle),
             Message::State(mut state) => {
                 if state
@@ -192,12 +194,10 @@ impl Tray {
                 .on_press(Message::Action(Command::Activate(token.clone())));
             let mouse = mouse_area(button)
                 .on_right_press(Message::Action(Command::Menu(token.clone(), 0)))
-                .on_middle_press(Message::Action(Command::Secondary(token)));
-            icons = icons.push(tooltip(
-                mouse,
-                crate::ui::body(config, &item.title),
-                tooltip::Position::Bottom,
-            ));
+                .on_middle_press(Message::Action(Command::Secondary(token)))
+                .on_enter(Message::Hint(Some(item.title.clone())))
+                .on_exit(Message::Hint(None));
+            icons = icons.push(mouse);
         }
         if self.state.failed {
             icons = icons.push(crate::ui::body(config, "Tray action failed"));

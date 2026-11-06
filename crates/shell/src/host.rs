@@ -4,6 +4,7 @@
 //! code ownership, not process isolation or a dynamic loading interface.
 use crate::ui;
 mod control;
+mod hint;
 mod launcher;
 mod live_config;
 mod lock;

@@ -2,6 +2,7 @@ use cabby_config::{Config, Source};
 use iced::{Color, Theme};
 use std::{os::unix::process::CommandExt, path::PathBuf};
 mod fluent;
+pub(crate) mod symbol;
 pub(crate) fn neutral_track(theme: &Theme) -> Color {
     fluent::mix(theme.palette().background, theme.palette().text, 0.17)
 }

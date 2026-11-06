@@ -49,6 +49,14 @@ def inside(directory, interactive, renderer, only=None):
     os.environ["ICED_BACKEND"] = "wgpu" if renderer == "gpu" else "tiny-skia"
     os.environ["WGPU_BACKEND"] = "vulkan"
     os.environ["CABBY_RENDERER_DIAGNOSTICS"] = "1"
+    def dismiss_panel():
+        from virtual_pointer import Pointer
+        logical = next(iter(json.loads(run("niri", "msg", "--json", "outputs")).values()))["logical"]
+        pointer = Pointer()
+        try:
+            pointer.click(20, logical["height"]//2, (logical["width"], logical["height"]))
+        finally:
+            pointer.close()
     children = []
     try:
         protocols = run("wayland-info")
@@ -58,6 +66,10 @@ def inside(directory, interactive, renderer, only=None):
                 raise RuntimeError(f"Required probe protocol missing: {protocol}")
         outputs = json.loads(run("niri", "msg", "--json", "outputs"))
         (directory / "outputs.json").write_text(json.dumps(outputs, indent=2))
+        if only == "bar":
+            from bar_acceptance import check
+            check(directory, renderer, children, selected_adapter)
+            return
         if only == "osd":
             from osd_acceptance import check
             check(directory, renderer, children, selected_adapter)
@@ -428,7 +440,8 @@ def inside(directory, interactive, renderer, only=None):
                 capture = directory / "audio.png"
                 subprocess.run(["grim", str(capture)], check=True, timeout=15)
                 run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(capture), "audio-top" if renderer == "gpu" else "audio-bottom")
-                # Probe-only one-shot dismissal uses the same close path as the UI.
+                # Capture first, then exercise the actual outside-click dismissal.
+                dismiss_panel()
                 deadline = time.monotonic() + 15
                 while any(layer.get("namespace") in ("cabby-audio", "cabby-panel-shield") for layer in json.loads(run("niri", "msg", "--json", "layers"))):
                     if time.monotonic() > deadline:
@@ -483,6 +496,7 @@ def inside(directory, interactive, renderer, only=None):
                 capture = directory / "bluetooth.png"
                 subprocess.run(["grim", str(capture)], check=True, timeout=15)
                 run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(capture), "audio-top" if renderer == "gpu" else "audio-bottom")
+                dismiss_panel()
                 deadline = time.monotonic() + 15
                 while any(layer.get("namespace") == "cabby-bluetooth" for layer in json.loads(run("niri", "msg", "--json", "layers"))):
                     if time.monotonic() > deadline:
@@ -526,6 +540,7 @@ def inside(directory, interactive, renderer, only=None):
                 capture = directory / "tray.png"
                 subprocess.run(["grim", str(capture)], check=True, timeout=15)
                 run(str(ROOT / "target/debug/wallpaper-pixel-probe"), str(capture), "tray-top" if renderer == "gpu" else "tray-bottom")
+                dismiss_panel()
                 deadline = time.monotonic() + 15
                 while any(layer.get("namespace") == "cabby-tray-menu" for layer in json.loads(run("niri", "msg", "--json", "layers"))):
                     if time.monotonic() > deadline:
@@ -602,7 +617,7 @@ def main():
     parser.add_argument("--interactive", action="store_true", help="Wait for bar inspection and lock release")
     parser.add_argument("--renderer", choices=("gpu", "software"), default="gpu",
                         help="gpu requires hardware Vulkan; software explicitly selects tiny-skia")
-    parser.add_argument("--only", choices=("clipboard", "screenshot", "readiness", "osd"), help="Run only the selected isolated workflow")
+    parser.add_argument("--only", choices=("clipboard", "screenshot", "readiness", "osd", "bar"), help="Run only the selected isolated workflow")
     parser.add_argument("--inside", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.inside:

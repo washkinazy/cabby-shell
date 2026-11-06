@@ -9,7 +9,7 @@ use crate::{
 };
 use cabby_config::{BarPosition, Config};
 use iced::widget::{Space, mouse_area};
-use iced::{Element, Subscription, Task, window};
+use iced::{Element, Length, Subscription, Task, window};
 use iced_exwlshell::reexport::{
     Anchor, KeyboardInteractivity, Layer, LayerSize, NewLayerShellSettings, OutputOption,
 };
@@ -73,6 +73,7 @@ struct DevicePanel {
     plugin: PanelPlugin,
 }
 struct Desktop {
+    hint: super::hint::Hint,
     osd: osd::Feedback,
     osd_surface: Option<osd::Surface>,
     osd_leds: std::path::PathBuf,
@@ -93,12 +94,12 @@ struct Desktop {
     tray_probe_stage: Option<u8>,
     audio: audio::Audio,
     open_audio_on_output: bool,
-    panel_probe: bool,
     output_sizes: BTreeMap<u32, (u32, u32)>,
 }
 #[to_exwlshell_message]
 #[derive(Clone, Debug)]
 enum Message {
+    HintReady(u64),
     Osd(osd::Message),
     Bar(bar::Message),
     FromBar(window::Id, bar::Message),
@@ -111,7 +112,6 @@ enum Message {
     Bluetooth(window::Id, bluetooth::Message),
     Tray(window::Id, tray::Message),
     Escape(window::Id),
-    ProbeClose(window::Id),
     Shell(ShellEvent),
     Resized,
     Config(super::live_config::Update),
@@ -184,6 +184,7 @@ fn run_with_panels(
     let text_size = iced::Pixels(f32::from(config.font_size));
     daemon(
         move || Desktop {
+            hint: Default::default(),
             osd: osd::Feedback::default(),
             osd_surface: None,
             osd_leds: osd_leds.clone().unwrap_or_else(osd::default_leds),
@@ -199,9 +200,6 @@ fn run_with_panels(
             pointers: BTreeMap::new(),
             audio: audio::Audio::new(fixture.clone().unwrap_or_default()),
             open_audio_on_output: fixture.is_some() && osd_leds.is_none(),
-            panel_probe: (fixture.is_some() && osd_leds.is_none())
-                || bluetooth_fixture.is_some()
-                || tray_probe,
             bluetooth: bluetooth::Bluetooth::new(bluetooth_fixture.clone().unwrap_or_default()),
             bluetooth_generation: 0,
             open_bluetooth_on_output: bluetooth_fixture.is_some(),
@@ -276,10 +274,13 @@ impl Desktop {
         if let Some(bar) = &mut self.bar {
             bar.audio_label = self.audio.label();
             bar.bluetooth_label = self.bluetooth.label();
+            bar.audio_icon = self.audio.bar_icon();
+            bar.bluetooth_icon = self.bluetooth.bar_icon();
         }
     }
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
+            self.hint.subscription().map(Message::HintReady),
             if self.bar.is_some() {
                 self.osd
                     .subscription(&self.config.osd, &self.osd_leds)
@@ -490,6 +491,18 @@ impl Desktop {
             }
             Message::Pointer(id, point) => {
                 self.pointers.insert(id, point.x);
+                if self.hint.surface.is_none()
+                    && let Some((origin, _)) = &mut self.hint.pending
+                    && self
+                        .surfaces
+                        .windows
+                        .get(&id)
+                        .is_some_and(|(output, kind)| {
+                            *output == origin.output && *kind == Kind::Bar
+                        })
+                {
+                    origin.x = point.x;
+                }
             }
             Message::FromBar(id, message) => {
                 if let Some((output, Kind::Bar)) = self.surfaces.windows.get(&id) {
@@ -498,7 +511,43 @@ impl Desktop {
                         x: self.pointers.get(&id).copied().unwrap_or(0.0),
                     });
                 }
-                return self.update(Message::Bar(message));
+                let hint = if matches!(
+                    &message,
+                    bar::Message::Hint(_) | bar::Message::Tray(tray::Message::Hint(_))
+                ) {
+                    Task::none()
+                } else {
+                    self.close_hint()
+                };
+                return Task::batch([hint, self.update(Message::Bar(message))]);
+            }
+            Message::Bar(bar::Message::Tray(tray::Message::Hint(label)))
+            | Message::Bar(bar::Message::Hint(label)) => {
+                let previous = self.close_hint();
+                if let Some(label) = label
+                    && let Some(origin) = self.selected_origin()
+                {
+                    let label: String = label
+                        .chars()
+                        .filter(|c| !c.is_control())
+                        .take(160)
+                        .collect();
+                    if !label.is_empty() {
+                        self.hint.pending = Some((origin, label));
+                    }
+                }
+                return previous;
+            }
+            Message::HintReady(serial) if serial == self.hint.serial => {
+                if let Some((origin, label)) = &self.hint.pending
+                    && let Some(size) = self.output_sizes.get(&origin.output)
+                    && self.hint.surface.is_none()
+                {
+                    let id = window::Id::unique();
+                    let settings = super::hint::settings(&self.config, *size, *origin, label);
+                    self.hint.surface = Some((id, origin.output));
+                    return Task::done(Message::NewLayerShell { id, settings });
+                }
             }
             Message::Outside(id) if self.panel.as_ref().is_some_and(|p| p.shield == id) => {
                 return self.close_panel();
@@ -512,15 +561,6 @@ impl Desktop {
                 panel.focused = focused;
                 if acquired && matches!(panel.plugin, PanelPlugin::Clipboard(_)) {
                     return iced::widget::operation::focus("clipboard-query");
-                }
-                if acquired && self.panel_probe {
-                    return Task::perform(
-                        async move {
-                            tokio::time::sleep(std::time::Duration::from_secs(8)).await;
-                            id
-                        },
-                        Message::ProbeClose,
-                    );
                 }
             }
             Message::Config(update) if update.config.renderer == self.config.renderer => {
@@ -536,7 +576,8 @@ impl Desktop {
                 }
                 self.osd.configure(&self.config.osd, &update.config.osd);
                 self.config = update.config;
-                let panel_task = Task::batch([self.layout_panel(), self.layout_osd()]);
+                let panel_task =
+                    Task::batch([self.layout_panel(), self.layout_osd(), self.close_hint()]);
                 if changes.bar_geometry {
                     return Task::batch([
                         panel_task,
@@ -648,9 +689,7 @@ impl Desktop {
                     return Task::done(Message::Bluetooth(id, bluetooth::Message::Action(command)));
                 }
             }
-            Message::Escape(id) | Message::ProbeClose(id)
-                if self.panel.as_ref().is_some_and(|panel| panel.id == id) =>
-            {
+            Message::Escape(id) if self.panel.as_ref().is_some_and(|panel| panel.id == id) => {
                 return self.close_panel();
             }
             Message::Shell(ShellEvent::WindowOutputChanged { window, output }) => {
@@ -711,6 +750,7 @@ impl Desktop {
                 }
             }
             Message::Shell(ShellEvent::OutputAdded(info) | ShellEvent::OutputUpdated(info)) => {
+                let hint = self.close_hint();
                 let capture_changed = self.output_sizes.contains_key(&info.id)
                     && self.panel.as_ref().is_some_and(|p| {
                         p.output == Some(info.id) && matches!(p.plugin, PanelPlugin::Screenshot(_))
@@ -740,6 +780,7 @@ impl Desktop {
                     self.layout_panel()
                 };
                 return Task::batch([
+                    hint,
                     open,
                     self.layout_osd(),
                     Task::batch(added.into_iter().map(|(id, kind)| {
@@ -752,6 +793,16 @@ impl Desktop {
             }
             Message::Shell(ShellEvent::OutputRemoved(info)) => {
                 self.output_sizes.remove(&info.id);
+                let hint = if self
+                    .hint
+                    .pending
+                    .as_ref()
+                    .is_some_and(|(origin, _)| origin.output == info.id)
+                {
+                    self.close_hint()
+                } else {
+                    Task::none()
+                };
                 let osd = if self
                     .osd_surface
                     .as_ref()
@@ -771,6 +822,7 @@ impl Desktop {
                 return Task::batch([
                     close,
                     osd,
+                    hint,
                     Task::batch(
                         self.surfaces
                             .remove_output(info.id)
@@ -780,6 +832,10 @@ impl Desktop {
                 ]);
             }
             Message::Shell(ShellEvent::Closed(id)) => {
+                if self.hint.surface.is_some_and(|(window, _)| window == id) {
+                    self.hint.surface = None;
+                    self.hint.pending = None;
+                }
                 if self.osd_surface.as_ref().is_some_and(|s| s.id == id) {
                     self.osd_surface = None;
                     self.osd.active = None;
@@ -803,6 +859,15 @@ impl Desktop {
         self.osd_surface
             .take()
             .map(|s| Task::done(Message::RemoveWindow(s.id)))
+            .unwrap_or_else(Task::none)
+    }
+    fn close_hint(&mut self) -> Task<Message> {
+        self.hint.serial = self.hint.serial.wrapping_add(1);
+        self.hint.pending = None;
+        self.hint
+            .surface
+            .take()
+            .map(|(id, _)| Task::done(Message::RemoveWindow(id)))
             .unwrap_or_else(Task::none)
     }
     fn layout_osd(&mut self) -> Task<Message> {
@@ -881,6 +946,7 @@ impl Desktop {
         }))
     }
     fn close_panel(&mut self) -> Task<Message> {
+        let hint = self.close_hint();
         self.audio.close();
         if self.bluetooth_open() {
             self.bluetooth_generation = self.bluetooth_generation.wrapping_add(1);
@@ -897,7 +963,8 @@ impl Desktop {
         {
             let _ = bar.tray.update(tray::Message::Close);
         }
-        self.panel
+        let panel = self
+            .panel
             .take()
             .map(|panel| {
                 if matches!(&panel.plugin,PanelPlugin::Screenshot(picker) if !picker.mapped()) {
@@ -908,7 +975,8 @@ impl Desktop {
                     Task::done(Message::RemoveWindow(panel.shield)),
                 ])
             })
-            .unwrap_or_else(Task::none)
+            .unwrap_or_else(Task::none);
+        Task::batch([hint, panel])
     }
     fn selected_origin(&self) -> Option<Origin> {
         self.origin
@@ -1152,6 +1220,17 @@ impl Desktop {
         ])
     }
     fn view(&self, id: window::Id) -> Element<'_, Message> {
+        if self.hint.surface.is_some_and(|(window, _)| window == id)
+            && let Some((_, label)) = &self.hint.pending
+        {
+            return iced::widget::container(ui::body(&self.config, label).width(Length::Fill))
+                .padding([8, 12])
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_y(Length::Fill)
+                .style(ui::raised)
+                .into();
+        }
         if self.osd_surface.as_ref().is_some_and(|s| s.id == id) {
             return self.osd.view(&self.config).map(Message::Osd);
         }
@@ -1209,6 +1288,7 @@ impl Desktop {
                             .map(move |message| Message::FromBar(id, message)),
                         )
                         .on_move(move |point| Message::Pointer(id, point))
+                        .on_exit(Message::FromBar(id, bar::Message::Hint(None)))
                         .into();
                     }
                 }
@@ -1228,6 +1308,7 @@ mod tests {
     use super::*;
     fn desktop() -> Desktop {
         Desktop {
+            hint: Default::default(),
             osd: osd::Feedback::default(),
             osd_surface: None,
             osd_leds: osd::default_leds(),
@@ -1243,7 +1324,6 @@ mod tests {
             pointers: BTreeMap::new(),
             audio: audio::Audio::new(cabby_audio::Client::default()),
             open_audio_on_output: false,
-            panel_probe: false,
             bluetooth: bluetooth::Bluetooth::new(cabby_bluetooth::Endpoint::System),
             bluetooth_generation: 0,
             open_bluetooth_on_output: false,
@@ -1251,6 +1331,32 @@ mod tests {
             tray_probe_stage: None,
             output_sizes: BTreeMap::from([(1, (320, 400))]),
         }
+    }
+    #[test]
+    fn bar_hints_are_cancelled_and_stale_timers_cannot_reopen_them() {
+        let mut state = desktop();
+        let _ = state.update(Message::Bar(bar::Message::Hint(Some(
+            "Network unavailable".into(),
+        ))));
+        let serial = state.hint.serial;
+        let _ = state.update(Message::Bar(bar::Message::Hint(None)));
+        let _ = state.update(Message::HintReady(serial));
+        assert!(state.hint.surface.is_none());
+        let _ = state.update(Message::Bar(bar::Message::Hint(Some(
+            "Clipboard history".into(),
+        ))));
+        let _ = state.update(Message::HintReady(state.hint.serial));
+        assert!(state.hint.surface.is_some());
+        assert!(state.panel.is_none());
+        let old = state.hint.surface.unwrap().0;
+        let _ = state.update(Message::Bar(bar::Message::Hint(Some(
+            "Night light off".into(),
+        ))));
+        let _ = state.update(Message::Shell(ShellEvent::Closed(old)));
+        let _ = state.update(Message::HintReady(state.hint.serial));
+        assert!(state.hint.surface.is_some());
+        let _ = state.open_clipboard();
+        assert!(state.hint.surface.is_none() && state.hint.pending.is_none());
     }
     #[test]
     fn old_tray_snapshots_cannot_cancel_a_new_item_menu() {

@@ -160,6 +160,13 @@ impl Bluetooth {
             format!("Bluetooth {connected}")
         }
     }
+    pub(crate) fn bar_icon(&self) -> crate::ui::symbol::Symbol {
+        if self.state.available && self.state.adapters.iter().any(|a| a.powered) {
+            crate::ui::symbol::Symbol::Bluetooth
+        } else {
+            crate::ui::symbol::Symbol::BluetoothOff
+        }
+    }
     fn send(&mut self, command: Command) {
         if self
             .sender
