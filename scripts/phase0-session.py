@@ -58,6 +58,10 @@ def inside(directory, interactive, renderer, only=None):
                 raise RuntimeError(f"Required probe protocol missing: {protocol}")
         outputs = json.loads(run("niri", "msg", "--json", "outputs"))
         (directory / "outputs.json").write_text(json.dumps(outputs, indent=2))
+        if only == "readiness":
+            from readiness_acceptance import check
+            check(directory, renderer, children, selected_adapter)
+            return
         if only in ("clipboard", "screenshot"):
             config = directory / (only+"-only.toml")
             config.write_text('renderer="'+('vulkan' if renderer=='gpu' else 'software')+'"\n')
@@ -585,7 +589,7 @@ def main():
     parser.add_argument("--interactive", action="store_true", help="Wait for bar inspection and lock release")
     parser.add_argument("--renderer", choices=("gpu", "software"), default="gpu",
                         help="gpu requires hardware Vulkan; software explicitly selects tiny-skia")
-    parser.add_argument("--only", choices=("clipboard", "screenshot"), help="Run only the selected isolated workflow")
+    parser.add_argument("--only", choices=("clipboard", "screenshot", "readiness"), help="Run only the selected isolated workflow")
     parser.add_argument("--inside", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.inside:
