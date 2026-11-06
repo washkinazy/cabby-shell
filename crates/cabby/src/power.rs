@@ -109,6 +109,35 @@ pub fn request(session: &str, locker: &str, suspend: bool) -> Result<()> {
     }
     Ok(())
 }
+pub enum SessionAction {
+    Logout,
+    Reboot,
+    PowerOff,
+}
+pub fn session_action(session: &str, action: SessionAction) -> Result<()> {
+    ctl(
+        &["--user", "is-active", "--quiet", session],
+        QUERY_TIMEOUT,
+        "checking active compositor session",
+    )?;
+    match action {
+        SessionAction::Logout => ctl(
+            &["--user", "--no-block", "stop", session],
+            SUSPEND_TIMEOUT,
+            "ending graphical session",
+        ),
+        SessionAction::Reboot => ctl(
+            &["--check-inhibitors=yes", "--no-block", "reboot"],
+            SUSPEND_TIMEOUT,
+            "requesting reboot",
+        ),
+        SessionAction::PowerOff => ctl(
+            &["--check-inhibitors=yes", "--no-block", "poweroff"],
+            SUSPEND_TIMEOUT,
+            "requesting power off",
+        ),
+    }
+}
 
 /// Niri retains output configuration; this is DPMS, never output removal.
 pub fn monitors(off: bool) -> Result<()> {

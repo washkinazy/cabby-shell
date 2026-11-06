@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Command {
     Clipboard,
+    SessionMenu,
     Screenshot(bool),
     ScreenshotCancel,
 }
@@ -79,6 +80,7 @@ fn events(root: &Path) -> impl iced::futures::Stream<Item = Command> + use<> {
                 };
                 let command = match line.as_str() {
                     "clipboard\n" => Command::Clipboard,
+                    "session-menu\n" => Command::SessionMenu,
                     "screenshot\n" => Command::Screenshot(false),
                     "screenshot-monitor\n" => Command::Screenshot(true),
                     "screenshot-cancel\n" => Command::ScreenshotCancel,

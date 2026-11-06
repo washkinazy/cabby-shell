@@ -26,3 +26,4 @@ pub(crate) mod clipboard;
 mod lock_keys;
 pub(crate) mod osd;
 pub(crate) mod screenshot;
+pub(crate) mod session;

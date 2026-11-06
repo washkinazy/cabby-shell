@@ -20,6 +20,30 @@ fn main() {
     let left = [40, 90, 130];
     let right = [180, 130, 60];
     match args[2].as_str() {
+        mode if mode.starts_with("session-menu-") => {
+            let n: Vec<u32> = mode
+                .trim_start_matches("session-menu-")
+                .split('-')
+                .map(|v| v.parse().unwrap())
+                .collect();
+            let (lw, lh, x, y, width, height) = (n[0], n[1], n[2], n[3], n[4], n[5]);
+            let px = |v: u32| v * w / lw;
+            let py = |v: u32| v * h / lh;
+            check(px(x + width / 2), py(y + 8), [24, 27, 34]);
+            let mut ink = 0;
+            for yy in py(y + 12)..py(y + height - 12) {
+                for xx in px(x + 12)..px(x + width - 12) {
+                    let i = ((yy * w + xx) * 4) as usize;
+                    ink += usize::from(
+                        asset.rgba[i..i + 3]
+                            .iter()
+                            .zip([229u8, 233, 240])
+                            .all(|(a, b)| a.abs_diff(b) < 12),
+                    );
+                }
+            }
+            assert!(ink > 150, "session menu content missing: {ink}");
+        }
         "bar-all-icons" => {
             for index in 0..9 {
                 let right = w - 8 - index * 34;

@@ -4,7 +4,7 @@ use super::{
     panel::{self, Origin},
 };
 use crate::{
-    plugins::{audio, bar, bluetooth, clipboard, osd, screenshot, tray, wallpaper},
+    plugins::{audio, bar, bluetooth, clipboard, osd, screenshot, session, tray, wallpaper},
     ui,
 };
 use cabby_config::{BarPosition, Config};
@@ -58,6 +58,7 @@ impl Surfaces {
 }
 
 enum PanelPlugin {
+    Session(session::Menu),
     Clipboard(clipboard::Picker),
     Screenshot(Box<screenshot::Picker>),
     Tray,
@@ -99,6 +100,8 @@ struct Desktop {
 #[to_exwlshell_message]
 #[derive(Clone, Debug)]
 enum Message {
+    Navigate(window::Id, i32),
+    Session(window::Id, session::Message),
     HintReady(u64),
     Osd(osd::Message),
     Bar(bar::Message),
@@ -379,12 +382,21 @@ impl Desktop {
                 }) = &event
                 {
                     let command = match key {
-                        iced::keyboard::key::Named::ArrowUp => Some(clipboard::Message::Move(-1)),
-                        iced::keyboard::key::Named::ArrowDown => Some(clipboard::Message::Move(1)),
+                        iced::keyboard::key::Named::ArrowUp => Some(Message::Navigate(id, -1)),
+                        iced::keyboard::key::Named::ArrowDown => Some(Message::Navigate(id, 1)),
+                        iced::keyboard::key::Named::ArrowLeft => {
+                            Some(Message::Session(id, session::Message::Move(-1)))
+                        }
+                        iced::keyboard::key::Named::ArrowRight => {
+                            Some(Message::Session(id, session::Message::Move(1)))
+                        }
+                        iced::keyboard::key::Named::Enter => {
+                            Some(Message::Session(id, session::Message::Activate))
+                        }
                         _ => None,
                     };
                     if let Some(command) = command {
-                        return Some(Message::Clipboard(id, command));
+                        return Some(command);
                     }
                 }
                 matches!(
@@ -406,6 +418,33 @@ impl Desktop {
     }
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Navigate(id, delta) => {
+                return if self
+                    .panel
+                    .as_ref()
+                    .is_some_and(|p| p.id == id && matches!(p.plugin, PanelPlugin::Session(_)))
+                {
+                    self.update(Message::Session(id, session::Message::Move(delta)))
+                } else {
+                    self.update(Message::Clipboard(id, clipboard::Message::Move(delta)))
+                };
+            }
+            Message::Control(super::control::Command::SessionMenu) => {
+                return self.open_session_menu();
+            }
+            Message::Session(id, message) => {
+                if let Some(panel) = &mut self.panel
+                    && panel.id == id
+                    && let PanelPlugin::Session(menu) = &mut panel.plugin
+                {
+                    let (task, close) = menu.update(message);
+                    return if close {
+                        self.close_panel()
+                    } else {
+                        task.map(move |m| Message::Session(id, m))
+                    };
+                }
+            }
             Message::Osd(osd::Message::Keys(keys)) => {
                 if let Some(value) = self.osd.keys(keys, &self.config.osd) {
                     return self.show_osd(value);
@@ -554,7 +593,12 @@ impl Desktop {
             }
             Message::Focus(id, focused) if self.panel.as_ref().is_some_and(|p| p.id == id) => {
                 let panel = self.panel.as_mut().unwrap();
-                if !focused && panel.focused {
+                // The confirmed-lock suspend path must finish after its own
+                // locker takes focus; ordinary focus loss still dismisses menus.
+                if !focused
+                    && panel.focused
+                    && !matches!(&panel.plugin, PanelPlugin::Session(menu) if menu.pending())
+                {
                     return self.close_panel();
                 }
                 let acquired = focused && !panel.focused;
@@ -1051,6 +1095,18 @@ impl Desktop {
     }
     fn panel_geometry(&self, p: &DevicePanel, size: (u32, u32)) -> panel::Geometry {
         let mut g = panel::geometry(&self.config, size, p.origin.x);
+        if matches!(p.plugin, PanelPlugin::Session(_)) {
+            g.height = g.height.min(400);
+            g.anchor = Anchor::Top | Anchor::Left;
+            g.shield_anchor = Anchor::all();
+            g.shield_size = LayerSize::FILL;
+            g.margin = (
+                (size.1.saturating_sub(g.height) / 2) as i32,
+                0,
+                0,
+                (size.0.saturating_sub(g.width) / 2) as i32,
+            );
+        }
         if let PanelPlugin::Screenshot(picker) = &p.plugin {
             g.anchor = Anchor::Top | Anchor::Left;
             g.shield_anchor = Anchor::all();
@@ -1130,6 +1186,47 @@ impl Desktop {
         });
         let begin = self.update(Message::Screenshot(id, screenshot::Message::Begin));
         previous.chain(begin)
+    }
+    fn open_session_menu(&mut self) -> Task<Message> {
+        if self
+            .panel
+            .as_ref()
+            .is_some_and(|p| matches!(p.plugin, PanelPlugin::Session(_)))
+        {
+            return self.close_panel();
+        }
+        let previous = self.close_panel();
+        let output = self
+            .bar
+            .as_ref()
+            .and_then(|b| b.focused_output())
+            .and_then(|name| {
+                self.surfaces
+                    .outputs
+                    .iter()
+                    .find(|(_, n)| n.as_str() == name)
+                    .map(|(id, _)| *id)
+            })
+            .filter(|id| self.output_sizes.contains_key(id));
+        let origin = output
+            .map(|output| Origin {
+                output,
+                x: self.output_sizes[&output].0 as f32 / 2.,
+            })
+            .or_else(|| self.selected_origin());
+        let Some(origin) = origin else {
+            return previous;
+        };
+        let id = window::Id::unique();
+        self.panel = Some(DevicePanel {
+            id,
+            output: Some(origin.output),
+            origin,
+            shield: window::Id::unique(),
+            focused: false,
+            plugin: PanelPlugin::Session(session::Menu::default()),
+        });
+        previous.chain(self.create_panel("cabby-session-menu"))
     }
     fn open_clipboard(&mut self) -> Task<Message> {
         let previous = self.close_panel();
@@ -1249,6 +1346,9 @@ impl Desktop {
             && panel.id == id
         {
             return match &panel.plugin {
+                PanelPlugin::Session(menu) => menu
+                    .view(&self.config)
+                    .map(move |m| Message::Session(id, m)),
                 PanelPlugin::Screenshot(picker) => picker
                     .view(&self.config)
                     .map(move |m| Message::Screenshot(id, m)),
@@ -1331,6 +1431,33 @@ mod tests {
             tray_probe_stage: None,
             output_sizes: BTreeMap::from([(1, (320, 400))]),
         }
+    }
+    #[test]
+    fn session_menu_is_centered_toggles_and_keeps_pending_suspend_through_lock_focus() {
+        let mut state = desktop();
+        let _ = state.open_session_menu();
+        let first = state.panel.as_ref().unwrap().id;
+        let g = state.panel_geometry(state.panel.as_ref().unwrap(), (320, 400));
+        assert_eq!(g.margin.3, (320 - g.width) as i32 / 2);
+        assert_eq!(g.margin.0, (400 - g.height) as i32 / 2);
+        let _ = state.update(Message::Focus(first, true));
+        let _ = state.update(Message::Session(
+            first,
+            session::Message::Choose(session::Action::Suspend),
+        ));
+        let _ = state.update(Message::Focus(first, false));
+        assert!(
+            state.panel.is_some(),
+            "lock acquisition must not cancel the following suspend request"
+        );
+        let _ = state.update(Message::Session(first, session::Message::Done(Ok(()))));
+        assert!(state.panel.is_none());
+        let _ = state.open_session_menu();
+        let second = state.panel.as_ref().unwrap().id;
+        let _ = state.update(Message::Session(first, session::Message::Done(Ok(()))));
+        assert_eq!(state.panel.as_ref().unwrap().id, second);
+        let _ = state.open_session_menu();
+        assert!(state.panel.is_none());
     }
     #[test]
     fn bar_hints_are_cancelled_and_stale_timers_cannot_reopen_them() {
